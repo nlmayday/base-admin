@@ -77,28 +77,41 @@ func TestMigrateCommand(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, latestStatus(t), out)
 
-	out, err = migrate("down", strconv.Itoa(int(latestVersion(t))))
+	// Roll back the application track first: its tables may reference the
+	// scaffold's.
+	if app := latestVersion(t, dbmigrate.AppTrack); app > 0 {
+		out, err = migrate("app", "down", strconv.Itoa(int(app)))
+		require.NoError(t, err)
+		assert.Equal(t, "app version=0 dirty=false applied=false\n", out)
+	}
+	out, err = migrate("base", "down", strconv.Itoa(int(latestVersion(t, dbmigrate.BaseTrack))))
 	require.NoError(t, err)
-	assert.Equal(t, "version=0 dirty=false applied=false\n", out)
+	assert.Equal(t, "base version=0 dirty=false applied=false\n", out)
 	assert.False(t, tableExists(), "down must drop the schema")
 
-	_, err = migrate("force", "999")
+	_, err = migrate("base", "force", "999")
 	assert.ErrorContains(t, err, "does not exist", "forcing an unknown version must be refused")
 
-	out, err = migrate("force", "1")
+	out, err = migrate("base", "force", "1")
 	require.NoError(t, err)
-	assert.Equal(t, "version=1 dirty=false applied=true\n", out)
+	assert.Equal(t, "base version=1 dirty=false applied=true\n", out)
 	assert.False(t, tableExists(), "force must not run migrations")
 
-	out, err = migrate("force", "-1")
+	out, err = migrate("base", "force", "-1")
 	require.NoError(t, err)
-	assert.Equal(t, "version=0 dirty=false applied=false\n", out)
+	assert.Equal(t, "base version=0 dirty=false applied=false\n", out)
 	_, err = migrate("up")
 	require.NoError(t, err, "up must work again after force -1")
 	assert.True(t, tableExists())
 
+	out, err = migrate("base", "up")
+	require.NoError(t, err)
+	assert.Equal(t, trackStatus(t, dbmigrate.BaseTrack), out, "one track only")
+
 	_, err = migrate("down")
 	assert.ErrorIs(t, err, ErrUsage)
+	_, err = migrate("down", "1")
+	assert.ErrorIs(t, err, ErrUsage, "down must name the track")
 }
 
 func TestMigrateVersionFailsOnDirtySchema(t *testing.T) {
@@ -115,7 +128,7 @@ func TestMigrateVersionFailsOnDirtySchema(t *testing.T) {
 	var out bytes.Buffer
 	err = Migrate(ctx, cfg, zap.NewNop(), &out, []string{"version"})
 	assert.ErrorIs(t, err, ErrDirtySchema)
-	assert.Equal(t, strings.Replace(latestStatus(t), "dirty=false", "dirty=true", 1), out.String())
+	assert.Equal(t, strings.Replace(latestStatus(t), "dirty=false", "dirty=true", 1), out.String(), "every track is reported")
 }
 
 func TestMigrateCommandUnreachableDatabase(t *testing.T) {
@@ -183,13 +196,24 @@ func statusOf(url string) int {
 	return resp.StatusCode
 }
 
-func latestVersion(t *testing.T) uint {
+func latestVersion(t *testing.T, track dbmigrate.Track) uint {
 	t.Helper()
-	v, err := dbmigrate.Latest()
+	v, err := track.Latest()
 	require.NoError(t, err)
 	return v
 }
 
+func trackStatus(t *testing.T, track dbmigrate.Track) string {
+	v := latestVersion(t, track)
+	return fmt.Sprintf("%s version=%d dirty=false applied=%t\n", track.Name, v, v > 0)
+}
+
+// latestStatus is the output of a migrated database: every track at its
+// latest version.
 func latestStatus(t *testing.T) string {
-	return fmt.Sprintf("version=%d dirty=false applied=true\n", latestVersion(t))
+	var out strings.Builder
+	for _, track := range dbmigrate.Tracks() {
+		out.WriteString(trackStatus(t, track))
+	}
+	return out.String()
 }

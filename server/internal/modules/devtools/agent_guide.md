@@ -74,7 +74,7 @@
 
 返回 `data`：`migration`（迁移文件名）、`up` / `down`（SQL）、`applied`（已执行）、`notes`。
 开发库还有没执行的迁移时返回 409 / 80004，不会建表；请用户先处理（执行迁移或删除那个文件）。
-迁移文件写在 `server/migrations/NNNNNN_create_<表名>.up.sql / .down.sql`，并已在开发库执行，
+迁移文件写在 `server/migrations/app/NNNNNN_create_<表名>.up.sql / .down.sql`（业务迁移，独立编号），并已在开发库执行，
 和手写的迁移一样随项目提交。
 
 ### 表规则

@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -117,7 +118,7 @@ type createTableRequest struct {
 }
 
 type createTableView struct {
-	// Migration is the file stem in server/migrations.
+	// Migration is the file stem in server/migrations/app.
 	Migration string   `json:"migration"`
 	Up        string   `json:"up"`
 	Down      string   `json:"down"`
@@ -126,8 +127,9 @@ type createTableView struct {
 }
 
 // createTable turns a table description into a migration following
-// docs/table-guide.md, writes it to server/migrations and applies it. The
-// development database must be at the last migration on disk, so only the
+// docs/table-guide.md, writes it to the application track
+// (server/migrations/app) and applies it. The development database must be
+// at the last application migration on disk, so only the
 // new migration runs. Repeating a request that already succeeded (a retry
 // after a lost response) returns the same result.
 func (m *Module) createTable(c *gin.Context) (any, error) {
@@ -145,7 +147,7 @@ func (m *Module) createTable(c *gin.Context) (any, error) {
 	if err != nil {
 		return nil, httpx.NewError(http.StatusConflict, CodeCodegenNoRepo, "找不到代码仓库，无法写入迁移文件")
 	}
-	dir := filepath.Join(root, "server", "migrations")
+	dir := filepath.Join(root, filepath.FromSlash(appMigrationsDir))
 	up, down := req.MigrationSQL()
 	ctx := c.Request.Context()
 
@@ -180,11 +182,11 @@ func (m *Module) createTable(c *gin.Context) (any, error) {
 	}
 	if err := m.applyMigrations(ctx, dir, last+1); err != nil {
 		return nil, httpx.NewError(http.StatusInternalServerError, httpx.CodeInternal,
-			"迁移文件已写入但执行失败，请人工检查 server/migrations/"+view.Migration+"："+err.Error()).WithCause(err)
+			"迁移文件已写入但执行失败，请人工检查 "+appMigrationsDir+"/"+view.Migration+"："+err.Error()).WithCause(err)
 	}
 	view.Applied = true
 	view.Notes = append(view.Notes,
-		"已写入 server/migrations/"+view.Migration+".up.sql / .down.sql 并在开发库执行",
+		"已写入 "+appMigrationsDir+"/"+view.Migration+".up.sql / .down.sql 并在开发库执行",
 		"下一步：POST "+m.deps.APIPrefix+agentPath+"/generate 生成模块")
 	return view, nil
 }
@@ -219,17 +221,14 @@ func (m *Module) sameTable(ctx context.Context, dir, table, up, down string) (cr
 	}}, true, nil
 }
 
-// schemaVersion reads the migration state of the database.
+// schemaVersion reads the application track's migration state.
 func (m *Module) schemaVersion(ctx context.Context) (version uint, dirty bool, err error) {
-	var rows []struct {
-		Version uint
-		Dirty   bool
-	}
-	err = m.deps.DB.WithContext(ctx).Raw("SELECT version, dirty FROM schema_migrations LIMIT 1").Scan(&rows).Error
-	if err != nil || len(rows) == 0 {
+	sqlDB, err := m.deps.DB.DB()
+	if err != nil {
 		return 0, false, err
 	}
-	return rows[0].Version, rows[0].Dirty, nil
+	v, dirty, err := dbmigrate.AppTrack.State(ctx, sqlDB)
+	return uint(v), dirty, err
 }
 
 // requireMigrated refuses to add a migration while the database is not at
@@ -245,8 +244,8 @@ func (m *Module) requireMigrated(ctx context.Context, last uint) error {
 			state += "（dirty，上次迁移执行失败）"
 		}
 		return httpx.NewError(http.StatusConflict, CodeMigrationState, fmt.Sprintf(
-			"开发库的迁移版本是 %s，而 server/migrations 最后一个迁移是 %06d：请先处理（执行 make migrate-up，或删除未执行的迁移文件）后再建表",
-			state, last))
+			"开发库的业务迁移版本是 %s，而 %s 最后一个迁移是 %06d：请先处理（执行 make migrate-up，或删除未执行的迁移文件）后再建表",
+			state, appMigrationsDir, last))
 	}
 	return nil
 }
@@ -279,6 +278,9 @@ func (m *Module) tableProblems(ctx context.Context, spec codegen.TableSpec) ([]c
 	return out, nil
 }
 
+// appMigrationsDir holds the application track, relative to the repository.
+const appMigrationsDir = "server/migrations/app"
+
 // errRollback ends trySQL's transaction.
 var errRollback = errors.New("rollback")
 
@@ -299,6 +301,9 @@ func (m *Module) trySQL(ctx context.Context, up string) error {
 
 func lastMigration(dir string) (uint, error) {
 	entries, err := os.ReadDir(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return 0, nil
+	}
 	if err != nil {
 		return 0, err
 	}
@@ -314,6 +319,9 @@ func lastMigration(dir string) (uint, error) {
 // writeMigration creates the up and down files; on failure it removes
 // what it created.
 func writeMigration(dir, stem, up, down string) (err error) {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return err
+	}
 	var created []string
 	defer func() {
 		if err != nil {
@@ -347,7 +355,9 @@ func (m *Module) applyMigrations(ctx context.Context, dir string, want uint) err
 	if err != nil {
 		return err
 	}
-	runner, err := dbmigrate.NewWithSource(sqlDB, os.DirFS(dir))
+	track := dbmigrate.AppTrack
+	track.Files = os.DirFS(dir)
+	runner, err := dbmigrate.New(sqlDB, track)
 	if err != nil {
 		_ = sqlDB.Close()
 		return err

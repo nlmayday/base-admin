@@ -24,7 +24,7 @@
 | GET | `/tables` | 数据表列表 |
 | GET | `/fields?table=` | 表字段与生成默认值 |
 | GET | `/dicts` | 数据字典 |
-| POST | `/tables` | 按结构化描述建表：生成 `server/migrations/NNNNNN_create_<表>.{up,down}.sql` 并在开发库执行；`dryRun` 只返回 SQL |
+| POST | `/tables` | 按结构化描述建表：生成 `server/migrations/app/NNNNNN_create_<表>.{up,down}.sql`（业务迁移轨道）并在开发库执行；`dryRun` 只返回 SQL |
 | POST | `/preview` | 预览生成结果 |
 | POST | `/generate` | 生成模块到项目 |
 
@@ -35,7 +35,7 @@
   权限后密钥立即失效；操作记入操作日志（操作人为创建人）。
 - 只接受结构化的表描述，**不接受 SQL**。表名、字段名、类型、默认值、选项都经过校验，中文名作为注释写入时会转义。
   建表 SQL 先在回滚的事务里试执行，失败不会留下文件或脏迁移。
-- 建表前要求开发库的迁移版本等于 `server/migrations` 里最后一个迁移，否则返回 409 / 80004，
+- 建表前要求开发库的业务迁移版本等于 `server/migrations/app` 里最后一个迁移，否则返回 409 / 80004，
   所以建表只会执行它自己生成的那个迁移，不会顺带执行手写的、还没执行的迁移。
 - 不是开发环境时，在查密钥之前就返回 403，生产环境不会因为这些请求去查库。
 - 只要请求带 `Authorization: Bearer` 且没有会话 Cookie，就不做 CSRF 校验：浏览器无法给跨站请求加这个请求头，

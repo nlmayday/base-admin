@@ -5,12 +5,14 @@
 ## 1. 流程
 
 ```bash
-make new-migration NAME=create_biz_orders   # 生成 server/migrations/NNNNNN_create_biz_orders.{up,down}.sql，up 文件已带好标准字段
+make new-migration NAME=create_biz_orders   # 生成 server/migrations/app/NNNNNN_create_biz_orders.{up,down}.sql，up 文件已带好标准字段
 # 修改业务字段与注释
 make migrate-up
 ```
 
 然后在「开发工具 → 代码生成」中选表生成。表结构只能通过迁移修改，不要在数据库里手工改。
+
+业务迁移放在 `server/migrations/app`，从 000001 起编号，和脚手架的 `server/migrations` 分开，合并上游时不会撞号（见 [module-guide.md](module-guide.md#migration-tracks)）。
 
 ## 2. 命名
 

@@ -107,13 +107,15 @@ docker compose -f deploy/docker/compose.prod.yaml --env-file deploy/docker/prod.
 ## 命令
 
 ```text
-admin serve              启动后端（默认）
-admin migrate up         执行未执行的迁移
-admin migrate down <n>   回滚 n 个迁移
-admin migrate version    显示数据库版本（dirty 时退出码为 1）
-admin migrate force <v>  从 dirty 状态恢复（v 为已有版本号，-1 表示无）
-gen -table … -module …   从数据表生成模块（go run ./cmd/gen -h）
+admin serve                      启动后端（默认）
+admin migrate up                 执行未执行的迁移（先脚手架轨道，再业务轨道）
+admin migrate version            显示两条轨道的版本（dirty 时退出码为 1）
+admin migrate <track> down <n>   回滚某条轨道的 n 个迁移
+admin migrate <track> force <v>  从 dirty 状态恢复（v 为已有版本号，-1 表示无）
+gen -table … -module …           从数据表生成模块（go run ./cmd/gen -h）
 ```
+
+迁移分两条轨道，各自编号、各有版本表：`server/migrations` 是脚手架自己的（`schema_migrations`），`server/migrations/app` 是业务的（`app_schema_migrations`）。合并上游时两边新增的迁移不会撞号。轨道名是 `base` 或 `app`，`up` 和 `version` 也可以只指定一条，如 `admin migrate app up`。
 
 数据库不是最新版本时 `serve` 拒绝启动，所以部署时要单独执行一步 `migrate up`。启动时先校验所有模块，再同步权限码、菜单和初始数据。第一次收到 SIGTERM 或 Ctrl-C 时优雅停止：处理完进行中的请求，等正在执行的任务结束，写完操作日志；第二次收到信号立即退出。
 
@@ -128,7 +130,7 @@ scripts/new-project.sh github.com/acme/crm/server "Acme CRM" acme-crm
 ## 添加业务模块
 
 详见 [docs/module-guide.md](docs/module-guide.md)。简单说：
-1. 执行 `make new-migration NAME=create_<表名>`，得到带标准字段的建表模板；填好业务字段和注释（[docs/table-guide.md](docs/table-guide.md)），再执行 `make migrate-up`。
+1. 执行 `make new-migration NAME=create_<表名>`，在 `server/migrations/app` 下得到带标准字段的建表模板；填好业务字段和注释（[docs/table-guide.md](docs/table-guide.md)），再执行 `make migrate-up`。
 2. 在「开发工具 → 代码生成」中：
    - 选择数据表；
    - 设置每个字段的中文名、是否在列表和表单中显示、下拉选项的来源（字段注释或数据字典）、搜索方式（模糊、精确或范围）；

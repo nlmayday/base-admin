@@ -37,10 +37,10 @@ run: ## Run the API server with console logs
 migrate-up: ## Apply database migrations
 	cd $(SERVER_DIR) && go run ./cmd/admin migrate up
 
-new-migration: ## Create a migration pair; NAME=create_<table> starts from the table template
-	@sh scripts/new-migration.sh "$(NAME)"
+new-migration: ## Create a migration pair in server/migrations/app; NAME=create_<table> starts from the table template (TRACK=base for scaffold migrations)
+	@sh scripts/new-migration.sh "$(NAME)" "$(TRACK)"
 
-migrate-version: ## Print the schema version
+migrate-version: ## Print the schema version of each track
 	cd $(SERVER_DIR) && go run ./cmd/admin migrate version
 
 build: ## Compile everything, including integration tests

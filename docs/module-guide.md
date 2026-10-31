@@ -6,7 +6,7 @@ This guide shows two routes: generating a module from a table (recommended), and
 
 ## 1. Generate a module from a table (recommended)
 
-1. **Write the migration.** Run `make new-migration NAME=create_<table>`: it creates `server/migrations/NNNNNN_create_<table>.{up,down}.sql` from a table template with the standard columns. Edit the business columns and comments, then run `make migrate-up`. The conventions are in [table-guide.md](table-guide.md) (Chinese). To get the most out of the generator, the table should have:
+1. **Write the migration.** Run `make new-migration NAME=create_<table>`: it creates `server/migrations/app/NNNNNN_create_<table>.{up,down}.sql` from a table template with the standard columns (see [Migration tracks](#migration-tracks)). Edit the business columns and comments, then run `make migrate-up`. The conventions are in [table-guide.md](table-guide.md) (Chinese). To get the most out of the generator, the table should have:
    - `id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY`
    - `version integer NOT NULL DEFAULT 0` for optimistic locking
    - `created_at`, `updated_at`, `created_by`, `updated_by`
@@ -100,7 +100,7 @@ Rules that startup validation enforces (the server refuses to start if one is br
   - Every route goes through the `*module.Router` it receives, with `access.Public()`, `access.Authenticated()`, `access.Perm(code)` or `access.AnyPerm(codes...)`.
   - A route cannot reference a permission code nobody declared.
   - Routes registered directly on Gin under `/api` are rejected.
-- **Menus:** page menus reference their resource's `view` code; directories reference none.
+- **Menus:** page menus reference their resource's `view` code; directories reference none. Any `Sort` works: the scaffold's directories use 90–96, so a smaller value puts yours above them, and the scaffold's tests find menus by code, not by position.
 - **Code format:** codes and menu codes start with the module name.
 
 Conventions the reviewers expect:
@@ -133,3 +133,32 @@ Conventions the reviewers expect:
 3. Add a migration that drops its tables. Never edit or delete migrations that have been applied.
 
 On the next start, its menus are removed and its permission codes are marked deprecated. Existing grants stay in the database but no longer do anything.
+
+## Migration tracks
+
+Migrations come in two tracks, each numbered from 000001 with its own version table:
+
+| Track | Directory | Version table | Who adds migrations |
+|---|---|---|---|
+| `base` | `server/migrations` | `schema_migrations` | the scaffold (upstream) |
+| `app` | `server/migrations/app` | `app_schema_migrations` | your project |
+
+`admin migrate up` (`make migrate-up`) runs `base`, then `app`, so business tables can reference `sys_*` tables. `serve` refuses to start unless both are current. `make new-migration`, the AI agent API and the generator's hints all use `app`; pass `TRACK=base` only when you change the scaffold itself. Because the numbers never mix, `git pull upstream main` can add scaffold migrations at any time and `migrate up` runs them, whatever version your `app` track has reached.
+
+`down` and `force` change one track and must name it: `admin migrate app down 1`, `admin migrate base force 15`.
+
+### Upgrading a project that kept business migrations in `server/migrations`
+
+Before the tracks existed, business migrations shared the scaffold's numbering. To move them, on a branch that merges the scaffold:
+
+1. Move your business migrations to `server/migrations/app` and renumber them from 000001, keeping their order. The scaffold's files in `server/migrations` must match upstream exactly.
+2. On every database (development, staging, production), before running the new binary, record what has already run. `B` is the last scaffold migration the database actually ran (check `server/migrations` as it was before the merge), `A` the number of business migrations it ran:
+
+   ```bash
+   admin migrate base force B   # the scaffold migrations that really ran
+   admin migrate app force A    # the business migrations, now numbered 1..A
+   admin migrate up             # runs the scaffold migrations after B, then any newer business ones
+   ```
+
+   Back up first. If a scaffold migration after `B` conflicts with something your business migrations created, fix that before `migrate up`.
+

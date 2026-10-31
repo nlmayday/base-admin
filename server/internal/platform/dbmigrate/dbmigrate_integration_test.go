@@ -23,7 +23,7 @@ func newRunner(t *testing.T) (*Runner, *sql.DB) {
 
 	db, err := database.OpenSQL(ctx, cfg, "migrate-test")
 	require.NoError(t, err)
-	runner, err := New(db)
+	runner, err := New(db, BaseTrack)
 	require.NoError(t, err)
 
 	// A separate pool for assertions; the runner owns and closes its own.
@@ -34,6 +34,10 @@ func newRunner(t *testing.T) (*Runner, *sql.DB) {
 		_ = runner.Close()
 	})
 	return runner, probe
+}
+
+func testTrack(files fstest.MapFS) Track {
+	return Track{Name: "test", Table: "schema_migrations", Files: files}
 }
 
 func tableExists(t *testing.T, db *sql.DB, name string) bool {
@@ -53,12 +57,12 @@ func TestUpIsRepeatableAndTracked(t *testing.T) {
 	require.NoError(t, runner.Up())
 	require.NoError(t, runner.Up(), "second run must be a no-op")
 
-	latest, err := Latest()
+	latest, err := BaseTrack.Latest()
 	require.NoError(t, err)
 	status, err = runner.Status()
 	require.NoError(t, err)
 	assert.Equal(t, Status{Version: latest, Dirty: false, Applied: true}, status)
-	require.NoError(t, RequireCurrent(context.Background(), probe))
+	require.NoError(t, BaseTrack.RequireCurrent(context.Background(), probe))
 
 	var version int64
 	require.NoError(t, probe.QueryRow("SELECT version FROM sys_auth_version WHERE id = 1").Scan(&version))
@@ -69,16 +73,16 @@ func TestDownAndUpAgain(t *testing.T) {
 	runner, probe := newRunner(t)
 	require.NoError(t, runner.Up())
 
-	latest, err := Latest()
+	latest, err := BaseTrack.Latest()
 	require.NoError(t, err)
 	require.NoError(t, runner.Down(1))
-	assert.Error(t, RequireCurrent(context.Background(), probe), "one step behind must be refused")
+	assert.Error(t, BaseTrack.RequireCurrent(context.Background(), probe), "one step behind must be refused")
 	require.NoError(t, runner.Down(int(latest)-1))
 	assert.False(t, tableExists(t, probe, "sys_auth_version"))
 	status, err := runner.Status()
 	require.NoError(t, err)
 	assert.False(t, status.Applied)
-	assert.Error(t, RequireCurrent(context.Background(), probe))
+	assert.Error(t, BaseTrack.RequireCurrent(context.Background(), probe))
 
 	require.NoError(t, runner.Up())
 	assert.True(t, tableExists(t, probe, "sys_auth_version"))
@@ -111,7 +115,7 @@ func TestFailedMigrationLeavesDirtyStateThatForceRecovers(t *testing.T) {
 		"000002_bad.up.sql":   {Data: []byte("CREATE TABLE t2 (id int); SELECT broken syntax here;")},
 		"000002_bad.down.sql": {Data: []byte("DROP TABLE IF EXISTS t2;")},
 	}
-	runner, err := NewWithSource(db, broken)
+	runner, err := New(db, testTrack(broken))
 	require.NoError(t, err)
 	defer func() { _ = runner.Close() }()
 
@@ -146,7 +150,7 @@ func TestStopOnDoneStopsBeforeNextMigration(t *testing.T) {
 		"000002_b.up.sql":   {Data: []byte("CREATE TABLE b (id int);")},
 		"000002_b.down.sql": {Data: []byte("DROP TABLE b;")},
 	}
-	runner, err := NewWithSource(db, files)
+	runner, err := New(db, testTrack(files))
 	require.NoError(t, err)
 	defer func() { _ = runner.Close() }()
 
@@ -162,4 +166,71 @@ func TestStopOnDoneStopsBeforeNextMigration(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, status.Dirty, "a graceful stop never leaves the schema dirty")
 	assert.Less(t, status.Version, uint(2), "the run must stop before applying everything")
+}
+
+// Tracks number their migrations independently: the same version on both
+// runs both, and a scaffold migration added after the application track
+// moved on still runs.
+func TestTracksAreIndependent(t *testing.T) {
+	cfg := testinfra.Database(t)
+	ctx := context.Background()
+	probe, err := database.OpenSQL(ctx, cfg, "migrate-probe")
+	require.NoError(t, err)
+	defer func() { _ = probe.Close() }()
+
+	base := Track{Name: "base", Table: "schema_migrations", Files: fstest.MapFS{
+		"000001_base.up.sql":   {Data: []byte("CREATE TABLE base_a (id int PRIMARY KEY);")},
+		"000001_base.down.sql": {Data: []byte("DROP TABLE base_a;")},
+	}}
+	app := Track{Name: "app", Table: "app_schema_migrations", Files: fstest.MapFS{
+		"000001_app.up.sql":   {Data: []byte("CREATE TABLE app_a (id int REFERENCES base_a (id));")},
+		"000001_app.down.sql": {Data: []byte("DROP TABLE app_a;")},
+		"000002_app.up.sql":   {Data: []byte("CREATE TABLE app_b (id int);")},
+		"000002_app.down.sql": {Data: []byte("DROP TABLE app_b;")},
+	}}
+	up := func(tr Track) Status {
+		t.Helper()
+		db, err := database.OpenSQL(ctx, cfg, "migrate-test")
+		require.NoError(t, err)
+		r, err := New(db, tr)
+		require.NoError(t, err)
+		defer func() { _ = r.Close() }()
+		require.NoError(t, r.Up())
+		st, err := r.Status()
+		require.NoError(t, err)
+		return st
+	}
+
+	assert.Error(t, app.RequireCurrent(ctx, probe), "app track not applied yet")
+	assert.Equal(t, uint(1), up(base).Version)
+	assert.Equal(t, uint(2), up(app).Version)
+	require.NoError(t, base.RequireCurrent(ctx, probe))
+	require.NoError(t, app.RequireCurrent(ctx, probe))
+
+	// Upstream adds scaffold migration 2 after the app track reached 2.
+	base.Files.(fstest.MapFS)["000002_base.up.sql"] = &fstest.MapFile{Data: []byte("CREATE TABLE base_b (id int);")}
+	base.Files.(fstest.MapFS)["000002_base.down.sql"] = &fstest.MapFile{Data: []byte("DROP TABLE base_b;")}
+	assert.Error(t, base.RequireCurrent(ctx, probe), "a new scaffold migration is pending")
+	assert.Equal(t, uint(2), up(base).Version)
+	assert.True(t, tableExists(t, probe, "base_b"))
+	require.NoError(t, base.RequireCurrent(ctx, probe))
+	require.NoError(t, app.RequireCurrent(ctx, probe))
+}
+
+// An application track without migrations is a no-op and counts as current.
+func TestEmptyTrack(t *testing.T) {
+	cfg := testinfra.Database(t)
+	ctx := context.Background()
+	db, err := database.OpenSQL(ctx, cfg, "migrate-test")
+	require.NoError(t, err)
+	empty := Track{Name: "app", Table: "app_schema_migrations", Files: fstest.MapFS{"README.md": {Data: []byte("x")}}}
+	r, err := New(db, empty)
+	require.NoError(t, err)
+	defer func() { _ = r.Close() }()
+	require.NoError(t, r.Up())
+	assert.ErrorContains(t, r.Down(1), "no migrations")
+	st, err := r.Status()
+	require.NoError(t, err)
+	assert.Equal(t, Status{}, st)
+	assert.NoError(t, empty.RequireCurrent(ctx, db))
 }

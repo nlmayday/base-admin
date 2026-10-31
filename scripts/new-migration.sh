@@ -1,12 +1,16 @@
 #!/usr/bin/env sh
-# 新建一对迁移文件（server/migrations/NNNNNN_<name>.up.sql / .down.sql）。
+# 新建一对迁移文件，默认是业务迁移（server/migrations/app/NNNNNN_<name>.up.sql / .down.sql）。
+# 业务迁移和脚手架迁移（server/migrations）各自编号，合并上游时不会冲突；
+# 只有修改脚手架本身时才用 TRACK=base。
 # 名称以 create_ 开头时，up 文件是一张业务表的模板，已带上标准字段
 # （见 docs/table-guide.md），改好业务字段和注释后运行 make migrate-up。
 #
 #   make new-migration NAME=create_biz_orders
+#   make new-migration NAME=add_sys_x TRACK=base
 set -eu
 
 name="${1:-}"
+track="${2:-app}"
 case "$name" in
   '' | *[!a-z0-9_]* | [!a-z]*)
     echo "用法：make new-migration NAME=create_biz_orders（小写字母开头，只含小写字母、数字、下划线）" >&2
@@ -14,7 +18,15 @@ case "$name" in
     ;;
 esac
 
-dir="$(cd "$(dirname "$0")/.." && pwd)/server/migrations"
+case "$track" in
+  app) dir="$(cd "$(dirname "$0")/.." && pwd)/server/migrations/app" ;;
+  base) dir="$(cd "$(dirname "$0")/.." && pwd)/server/migrations" ;;
+  *)
+    echo "TRACK 只能是 app（默认，业务迁移）或 base（脚手架迁移）" >&2
+    exit 2
+    ;;
+esac
+mkdir -p "$dir"
 last=$(ls "$dir" | sed -n 's/^\([0-9]\{6\}\)_.*\.up\.sql$/\1/p' | sort | tail -n 1)
 next=$(printf '%06d' "$(expr "${last:-0}" + 1)")
 up="$dir/${next}_${name}.up.sql"

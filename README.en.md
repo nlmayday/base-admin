@@ -107,13 +107,15 @@ Production checklist:
 ## Commands
 
 ```text
-admin serve              run the API server (default)
-admin migrate up         apply pending migrations
-admin migrate down <n>   roll back n migrations
-admin migrate version    print the schema version (exit 1 if dirty)
-admin migrate force <v>  recover from a dirty state (v = existing version, or -1 for none)
-gen -table … -module …   generate a module from a table (go run ./cmd/gen -h)
+admin serve                      run the API server (default)
+admin migrate up                 apply pending migrations (scaffold track first, then app)
+admin migrate version            print the version of each track (exit 1 if dirty)
+admin migrate <track> down <n>   roll back n migrations of a track
+admin migrate <track> force <v>  recover from a dirty state (v = existing version, or -1 for none)
+gen -table … -module …           generate a module from a table (go run ./cmd/gen -h)
 ```
+
+Migrations come in two tracks, each numbered independently with its own version table: `server/migrations` is the scaffold's (`schema_migrations`), `server/migrations/app` is the application's (`app_schema_migrations`). Migrations added upstream and downstream never collide when you merge. Tracks are named `base` and `app`; `up` and `version` can also target one, e.g. `admin migrate app up`.
 
 `serve` refuses to start unless the schema is at the latest version, so run `migrate up` as a separate deployment step. At startup the server validates every module, then syncs permission codes, menus and seed data. The first SIGTERM or Ctrl-C starts a graceful stop: in-flight requests drain, running jobs finish, and the audit log flushes. A second signal exits immediately.
 
@@ -128,7 +130,7 @@ The script rewrites the Go module path everywhere: imports, the code generator's
 ## Adding a business module
 
 See [docs/module-guide.md](docs/module-guide.md). In short:
-1. Run `make new-migration NAME=create_<table>` for a table template with the standard columns, fill in the business columns and comments ([docs/table-guide.md](docs/table-guide.md)), then run `make migrate-up`.
+1. Run `make new-migration NAME=create_<table>` for a table template in `server/migrations/app` with the standard columns, fill in the business columns and comments ([docs/table-guide.md](docs/table-guide.md)), then run `make migrate-up`.
 2. In Dev tools → Code generator (开发工具 → 代码生成):
    - pick the table;
    - set each field's Chinese name, whether it shows in the list and the form, where its select options come from (the column comment or a data dictionary), and how it is searched (contains, exact or range);

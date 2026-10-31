@@ -20,20 +20,25 @@ import (
 	"base-admin/server/internal/platform/config"
 )
 
-// agentRepo is a fake repository holding a copy of the real migrations, so
-// the agent API can number, write and apply a new one.
+// agentRepo is a fake repository holding a copy of the real migrations of
+// both tracks, so the agent API can number, write and apply a new one.
 func agentRepo(t *testing.T) string {
 	t.Helper()
 	root := fakeRepo(t)
-	dst := filepath.Join(root, "server", "migrations")
-	require.NoError(t, os.MkdirAll(dst, 0o750))
-	src := filepath.Join("..", "..", "..", "migrations")
-	entries, err := os.ReadDir(src)
-	require.NoError(t, err)
-	for _, e := range entries {
-		raw, err := os.ReadFile(filepath.Join(src, e.Name())) //nolint:gosec // test fixture
+	for _, sub := range []string{"", "app"} {
+		dst := filepath.Join(root, "server", "migrations", sub)
+		require.NoError(t, os.MkdirAll(dst, 0o750))
+		src := filepath.Join("..", "..", "..", "migrations", sub)
+		entries, err := os.ReadDir(src)
 		require.NoError(t, err)
-		require.NoError(t, os.WriteFile(filepath.Join(dst, e.Name()), raw, 0o600))
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			raw, err := os.ReadFile(filepath.Join(src, e.Name())) //nolint:gosec // test fixture
+			require.NoError(t, err)
+			require.NoError(t, os.WriteFile(filepath.Join(dst, e.Name()), raw, 0o600))
+		}
 	}
 	return root
 }
@@ -192,7 +197,7 @@ func TestAgentCreateTable(t *testing.T) {
 	root := agentRepo(t)
 	h := newHarness(t, config.EnvDev, root)
 	key := h.newKey(h.agentUser("builder", true), map[string]any{"name": "builder"}).Key
-	dir := filepath.Join(root, "server", "migrations")
+	dir := filepath.Join(root, "server", "migrations", "app")
 	before, err := os.ReadDir(dir)
 	require.NoError(t, err)
 

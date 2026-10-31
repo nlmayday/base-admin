@@ -126,28 +126,38 @@ func TestListenFailsOnBusyPort(t *testing.T) {
 func TestParseMigrateArgs(t *testing.T) {
 	valid := []struct {
 		args   []string
+		tracks []string
 		action string
 		n      int
 	}{
-		{[]string{"up"}, "up", 0},
-		{[]string{"version"}, "version", 0},
-		{[]string{"down", "2"}, "down", 2},
-		{[]string{"force", "-1"}, "force", -1},
-		{[]string{"force", "3"}, "force", 3},
+		{[]string{"up"}, []string{"base", "app"}, "up", 0},
+		{[]string{"version"}, []string{"base", "app"}, "version", 0},
+		{[]string{"app", "up"}, []string{"app"}, "up", 0},
+		{[]string{"base", "version"}, []string{"base"}, "version", 0},
+		{[]string{"base", "down", "2"}, []string{"base"}, "down", 2},
+		{[]string{"app", "force", "-1"}, []string{"app"}, "force", -1},
+		{[]string{"app", "force", "3"}, []string{"app"}, "force", 3},
 	}
 	for _, tc := range valid {
-		action, n, err := parseMigrateArgs(tc.args)
+		cmd, err := parseMigrateArgs(tc.args)
 		require.NoError(t, err, tc.args)
-		assert.Equal(t, tc.action, action)
-		assert.Equal(t, tc.n, n)
+		var names []string
+		for _, tr := range cmd.tracks {
+			names = append(names, tr.Name)
+		}
+		assert.Equal(t, tc.tracks, names, tc.args)
+		assert.Equal(t, tc.action, cmd.action)
+		assert.Equal(t, tc.n, cmd.n)
 	}
 
 	invalid := [][]string{
-		nil, {"sideways"}, {"up", "1"}, {"version", "x"},
-		{"down"}, {"down", "0"}, {"down", "-1"}, {"down", "x"}, {"force", "-2"}, {"force"},
+		nil, {"app"}, {"sideways"}, {"up", "1"}, {"version", "x"}, {"other", "up"},
+		{"down", "2"}, {"force", "3"}, // down and force must name the track
+		{"app", "down"}, {"app", "down", "0"}, {"app", "down", "-1"}, {"app", "down", "x"},
+		{"base", "force", "-2"}, {"base", "force"},
 	}
 	for _, args := range invalid {
-		_, _, err := parseMigrateArgs(args)
+		_, err := parseMigrateArgs(args)
 		assert.True(t, errors.Is(err, ErrUsage), "args %v: %v", args, err)
 	}
 }

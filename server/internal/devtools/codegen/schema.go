@@ -76,7 +76,7 @@ type TableInfo struct {
 
 // excludedTable reports tables owned by the core (sys_*) or the migrator.
 func excludedTable(name string) bool {
-	return strings.HasPrefix(name, "sys_") || name == "schema_migrations"
+	return strings.HasPrefix(name, "sys_") || name == "schema_migrations" || name == "app_schema_migrations"
 }
 
 // ListTables lists the generator candidates of the current schema.

@@ -1,5 +1,7 @@
 // Package dbmigrate applies the embedded SQL migrations with golang-migrate.
-// A PostgreSQL advisory lock prevents concurrent runs.
+// Migrations come in tracks, each with its own numbering and version table:
+// the scaffold's and the application's. A PostgreSQL advisory lock per
+// version table prevents concurrent runs.
 package dbmigrate
 
 import (
@@ -8,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database"
@@ -22,11 +25,43 @@ import (
 // migrations applied.
 const NilVersion = database.NilVersion
 
-// Runner applies migrations. It takes ownership of the *sql.DB passed to
-// New and closes it in Close.
+// Track is one sequence of migrations with its own version table.
+type Track struct {
+	Name  string
+	Table string
+	Files fs.FS
+}
+
+// The scaffold track keeps the original version table, so existing
+// databases need no conversion; the application track starts empty.
+var (
+	BaseTrack = Track{Name: "base", Table: "schema_migrations", Files: migrations.FS}
+	AppTrack  = Track{Name: "app", Table: "app_schema_migrations", Files: migrations.App}
+)
+
+// Tracks returns the tracks in the order they are applied: application
+// migrations may reference scaffold tables, never the reverse.
+func Tracks() []Track { return []Track{BaseTrack, AppTrack} }
+
+// TrackByName finds a track of Tracks.
+func TrackByName(name string) (Track, bool) {
+	for _, t := range Tracks() {
+		if t.Name == name {
+			return t, true
+		}
+	}
+	return Track{}, false
+}
+
+// Runner applies the migrations of one track. It takes ownership of the
+// *sql.DB passed to New and closes it in Close.
 type Runner struct {
 	m   *migrate.Migrate
 	src source.Driver
+	// empty is set when the track has no migrations: golang-migrate
+	// cannot run up from an empty source.
+	empty bool
+	track string
 }
 
 // Status is the current schema version.
@@ -37,18 +72,18 @@ type Status struct {
 	Applied bool
 }
 
-// New creates a Runner using the embedded migrations.
-func New(db *sql.DB) (*Runner, error) {
-	return NewWithSource(db, migrations.FS)
-}
-
-// NewWithSource creates a Runner from an arbitrary migration file system.
-func NewWithSource(db *sql.DB, files fs.FS) (*Runner, error) {
-	src, err := iofs.New(files, ".")
+// New creates a Runner for a track.
+func New(db *sql.DB, t Track) (*Runner, error) {
+	src, err := iofs.New(t.Files, ".")
 	if err != nil {
-		return nil, fmt.Errorf("open migration source: %w", err)
+		return nil, fmt.Errorf("open %s migrations: %w", t.Name, err)
 	}
-	driver, err := pgxmigrate.WithInstance(db, &pgxmigrate.Config{})
+	_, err = src.First()
+	empty := errors.Is(err, os.ErrNotExist)
+	if err != nil && !empty {
+		return nil, fmt.Errorf("read %s migrations: %w", t.Name, err)
+	}
+	driver, err := pgxmigrate.WithInstance(db, &pgxmigrate.Config{MigrationsTable: t.Table})
 	if err != nil {
 		return nil, fmt.Errorf("open migration driver: %w", err)
 	}
@@ -56,7 +91,7 @@ func NewWithSource(db *sql.DB, files fs.FS) (*Runner, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create migrator: %w", err)
 	}
-	return &Runner{m: m, src: src}, nil
+	return &Runner{m: m, src: src, empty: empty, track: t.Name}, nil
 }
 
 // StopOnDone asks a running Up/Down to stop after the current migration once
@@ -76,6 +111,9 @@ func (r *Runner) StopOnDone(ctx context.Context) (release func()) {
 
 // Up applies all pending migrations. Running it again is a no-op.
 func (r *Runner) Up() error {
+	if r.empty {
+		return nil
+	}
 	if err := r.m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return fmt.Errorf("migrate up: %w", err)
 	}
@@ -87,6 +125,9 @@ func (r *Runner) Up() error {
 func (r *Runner) Down(steps int) error {
 	if steps <= 0 {
 		return fmt.Errorf("migrate down: steps must be positive, got %d", steps)
+	}
+	if r.empty {
+		return fmt.Errorf("migrate down: the %s track has no migrations", r.track)
 	}
 	if err := r.m.Steps(-steps); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return fmt.Errorf("migrate down %d: %w", steps, err)
@@ -140,11 +181,11 @@ func (r *Runner) Close() error {
 	return errors.Join(srcErr, dbErr)
 }
 
-// Latest returns the highest version in the embedded migrations.
-func Latest() (uint, error) {
-	entries, err := fs.ReadDir(migrations.FS, ".")
+// Latest returns the highest version of the track; 0 when it has none.
+func (t Track) Latest() (uint, error) {
+	entries, err := fs.ReadDir(t.Files, ".")
 	if err != nil {
-		return 0, fmt.Errorf("read migrations: %w", err)
+		return 0, fmt.Errorf("read %s migrations: %w", t.Name, err)
 	}
 	var latest uint
 	for _, e := range entries {
@@ -156,21 +197,50 @@ func Latest() (uint, error) {
 	return latest, nil
 }
 
-// RequireCurrent fails unless the schema is clean and at the latest version,
-// so the server never runs against an unmigrated database.
+// RequireCurrent fails unless every track is clean and at its latest
+// version, so the server never runs against an unmigrated database.
 func RequireCurrent(ctx context.Context, db *sql.DB) error {
-	latest, err := Latest()
+	for _, t := range Tracks() {
+		if err := t.RequireCurrent(ctx, db); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// RequireCurrent fails unless the track is clean and at its latest version.
+func (t Track) RequireCurrent(ctx context.Context, db *sql.DB) error {
+	latest, err := t.Latest()
 	if err != nil {
 		return err
 	}
-	var version uint64
-	var dirty bool
-	err = db.QueryRowContext(ctx, "SELECT version, dirty FROM schema_migrations LIMIT 1").Scan(&version, &dirty)
+	version, dirty, err := t.State(ctx, db)
 	if err != nil {
-		return fmt.Errorf("schema not migrated (run `admin migrate up`): %w", err)
+		return err
 	}
 	if dirty || version != uint64(latest) {
-		return fmt.Errorf("schema is at version %d (dirty=%t) but the binary needs %d; run `admin migrate up`", version, dirty, latest)
+		return fmt.Errorf("%s schema is at version %d (dirty=%t) but the binary needs %d; run `admin migrate up`",
+			t.Name, version, dirty, latest)
 	}
 	return nil
+}
+
+// State reads the version table; a missing table or row is version 0.
+func (t Track) State(ctx context.Context, db *sql.DB) (version uint64, dirty bool, err error) {
+	var exists bool
+	if err := db.QueryRowContext(ctx, "SELECT to_regclass($1) IS NOT NULL", t.Table).Scan(&exists); err != nil {
+		return 0, false, fmt.Errorf("read %s schema version: %w", t.Name, err)
+	}
+	if !exists {
+		return 0, false, nil
+	}
+	// The table name is a constant of the track, not input.
+	err = db.QueryRowContext(ctx, "SELECT version, dirty FROM "+t.Table+" LIMIT 1").Scan(&version, &dirty) //nolint:gosec // G202: constant table name
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, fmt.Errorf("read %s schema version: %w", t.Name, err)
+	}
+	return version, dirty, nil
 }
