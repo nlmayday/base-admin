@@ -23,7 +23,7 @@ func TestReadinessWithRealDependencies(t *testing.T) {
 		App:      config.AppConfig{Name: "base-admin-test", Env: config.EnvTest},
 		HTTP:     testHTTPConfig(),
 		Database: testinfra.Database(t),
-		Redis:    testinfra.RedisDB(t, redisDBApp),
+		Redis:    testinfra.RedisDB(t),
 	}
 	ctx := context.Background()
 

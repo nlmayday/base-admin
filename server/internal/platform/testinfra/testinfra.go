@@ -7,7 +7,7 @@
 // Required environment:
 //
 //	ADMIN_TEST_DATABASE_URL  URL of a database the test user can CREATE DATABASE from
-//	ADMIN_TEST_REDIS_ADDR    host:port of a Redis instance
+//	ADMIN_TEST_REDIS_ADDR    host:port of a Redis instance (see RedisDB for the databases it uses)
 package testinfra
 
 import (
@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/redis/go-redis/v9"
 
 	"base-admin/server/internal/platform/config"
 )
@@ -98,19 +97,4 @@ func Redis(t *testing.T) config.RedisConfig {
 		WriteTimeout:              2 * time.Second,
 		RequireSafeEvictionPolicy: true,
 	}
-}
-
-// RedisDB returns a config for Redis logical database index, flushed before
-// the test. Test databases reuse the same user IDs, so packages that write
-// keys must each use their own index; tests inside a package run serially.
-func RedisDB(t *testing.T, index int) config.RedisConfig {
-	t.Helper()
-	cfg := Redis(t)
-	cfg.DB = index
-	client := redis.NewClient(&redis.Options{Addr: cfg.Addr, DB: index})
-	defer func() { _ = client.Close() }()
-	if err := client.FlushDB(context.Background()).Err(); err != nil {
-		t.Fatalf("flush redis db %d: %v", index, err)
-	}
-	return cfg
 }

@@ -15,6 +15,7 @@ import (
 	"gorm.io/gorm"
 
 	"base-admin/server/internal/platform/httpx"
+	"base-admin/server/internal/platform/testinfra"
 )
 
 // Scenario tests for design doc 6.5.5. Each test name carries its ID.
@@ -258,7 +259,7 @@ func TestC3_RedisDataLossLogsEveryoneOut(t *testing.T) {
 	h.createUser("judy")
 	c := h.newClient()
 	c.mustLogin("judy")
-	require.NoError(t, h.rdb.FlushDB(context.Background()).Err())
+	testinfra.FlushRedis(t, h.rdb)
 	assert.Equal(t, http.StatusUnauthorized, c.ping())
 	c.mustLogin("judy")
 	assert.Equal(t, http.StatusOK, c.ping())

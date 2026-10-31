@@ -28,8 +28,6 @@ import (
 	"base-admin/server/internal/platform/testinfra/migrated"
 )
 
-const redisDBSystem = 5
-
 type harness struct {
 	t      *testing.T
 	db     *gorm.DB
@@ -87,7 +85,7 @@ func newHarness(t *testing.T) *harness {
 	require.NoError(t, err)
 	gdb, err := database.NewGorm(sqlDB, dbCfg, zap.NewNop())
 	require.NoError(t, err)
-	redisCfg := testinfra.RedisDB(t, redisDBSystem)
+	redisCfg := testinfra.RedisDB(t)
 	rdb := redis.NewClient(&redis.Options{Addr: redisCfg.Addr, DB: redisCfg.DB})
 	t.Cleanup(func() { _ = rdb.Close(); _ = sqlDB.Close() })
 

@@ -33,9 +33,8 @@ import (
 )
 
 const (
-	redisDBAuth = 2
-	origin      = "http://admin.test"
-	testPass    = "correct-horse-1"
+	origin   = "http://admin.test"
+	testPass = "correct-horse-1"
 )
 
 var fastHash = password.Params{Memory: 1024, Iterations: 1, Parallelism: 1, SaltLength: 16, KeyLength: 32}
@@ -72,7 +71,7 @@ func newHarness(t *testing.T) *harness {
 	require.NoError(t, err)
 	gdb, err := database.NewGorm(sqlDB, dbCfg, zap.NewNop())
 	require.NoError(t, err)
-	redisCfg := testinfra.RedisDB(t, redisDBAuth)
+	redisCfg := testinfra.RedisDB(t)
 	rdb := redis.NewClient(&redis.Options{Addr: redisCfg.Addr, DB: redisCfg.DB})
 	t.Cleanup(func() { _ = rdb.Close(); _ = sqlDB.Close() })
 

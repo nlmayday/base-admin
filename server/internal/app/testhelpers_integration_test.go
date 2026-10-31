@@ -8,9 +8,6 @@ import (
 	"base-admin/server/internal/platform/config"
 )
 
-// Redis logical databases per package (see testinfra.RedisDB).
-const redisDBApp = 1
-
 func testAuthConfig() config.AuthConfig {
 	return config.AuthConfig{
 		CookieName: "sid", CookieSecure: false,

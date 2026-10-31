@@ -114,7 +114,7 @@ Conventions the reviewers expect:
 - **Login rules:** IP allowlists and login hours are built into 安全中心 → 安全策略. For a rule of your own (a contract expired, a tenant suspended), implement `auth.LoginGuard` and register it with `core.AddLoginGuard(yourModule)` in `internal/app/modules.go`. It runs after the password check and before the session is created; return an `*httpx.Error` (403, a code in your module's range) to refuse with your own message. Refusals are logged with reason `denied`.
 - **Large uploads and downloads:** chain `.MaxBody(n)` and `.Timeout(d)` on the route. Only that route gets the larger body limit and the longer request and connection deadlines.
 - **Settings and dictionaries:** read runtime settings through the system module (`GetString`, `GetInt`) and validate dictionary values with `HasDictValue`. Take them as small interfaces in your `Deps` instead of importing the system package.
-- **Integration tests:** use the `integration` build tag with `testinfra/migrated.Database(t)` and your own Redis logical DB index via `testinfra.RedisDB(t, n)`.
+- **Integration tests:** use the `integration` build tag with `testinfra/migrated.Database(t)` and `testinfra.RedisDB(t)`, which leases a Redis logical database for the test. To simulate Redis data loss mid-test use `testinfra.FlushRedis(t, client)`, not `FLUSHDB`, which would drop the lease.
 
 ## 3. Frontend pages
 

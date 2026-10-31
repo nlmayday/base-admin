@@ -26,13 +26,11 @@ import (
 	"base-admin/server/internal/platform/database"
 	"base-admin/server/internal/platform/httpx"
 	"base-admin/server/internal/platform/requestid"
-	"base-admin/server/internal/platform/testinfra"
 	"base-admin/server/internal/platform/testinfra/migrated"
 )
 
 const (
-	redisDBAudit = 4
-	apiPrefix    = "/api/v1"
+	apiPrefix = "/api/v1"
 	// Test guard headers: the caller's user id and comma-separated codes.
 	hdrUser  = "X-Test-User"
 	hdrPerms = "X-Test-Perms"
@@ -86,9 +84,6 @@ func openDB(t *testing.T) *gorm.DB {
 	gdb, err := database.NewGorm(sqlDB, cfg, zap.NewNop())
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = sqlDB.Close() })
-	// The audit module keeps no Redis state; the index is still reserved
-	// (and flushed) per the package numbering convention.
-	_ = testinfra.RedisDB(t, redisDBAudit)
 	return gdb
 }
 

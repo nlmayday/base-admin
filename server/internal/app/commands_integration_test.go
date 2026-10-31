@@ -39,7 +39,7 @@ func integrationConfig(t *testing.T) config.Config {
 		App:       config.AppConfig{Name: "base-admin-test", Env: config.EnvTest},
 		HTTP:      testHTTPConfig(),
 		Database:  testinfra.Database(t),
-		Redis:     testinfra.RedisDB(t, redisDBApp),
+		Redis:     testinfra.RedisDB(t),
 		Metrics:   config.MetricsConfig{Enabled: true},
 		Auth:      testAuthConfig(),
 		Bootstrap: config.BootstrapConfig{AdminUsername: "admin", AdminPassword: "bootstrap-pass-123"},

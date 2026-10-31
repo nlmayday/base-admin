@@ -34,7 +34,6 @@ import (
 )
 
 const (
-	redisDBOps = 7
 	permHeader = "X-Test-Perms"
 )
 
@@ -146,7 +145,7 @@ func newEnv(t *testing.T) *env {
 	require.NoError(t, err)
 	gdb, err := database.NewGorm(sqlDB, dbCfg, zap.NewNop())
 	require.NoError(t, err)
-	redisCfg := testinfra.RedisDB(t, redisDBOps)
+	redisCfg := testinfra.RedisDB(t)
 	rdb := redis.NewClient(&redis.Options{Addr: redisCfg.Addr, DB: redisCfg.DB})
 	t.Cleanup(func() { _ = rdb.Close(); _ = sqlDB.Close() })
 

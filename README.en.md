@@ -156,7 +156,8 @@ Steps 1–2 can also be done over HTTP. Create a key in Dev tools → AI API (�
 
 - `make test`: unit tests; needs no dependencies.
 - `make test-integration`: adds the tests tagged `integration`, which run against the Compose services.
-  - Each test creates and drops its own PostgreSQL database, and each package uses its own Redis logical database.
+  - Each test creates and drops its own PostgreSQL database and leases a Redis logical database, which is flushed and returned when the test ends.
+  - Only empty databases 1–15, or ones left by earlier test runs, are leased; database 0 and databases holding other data are never touched. Tests can therefore share Redis with your development server, and several test runs can go at once. Keep the development server on database 0 (the default) or on a database that already holds data.
   - If the environment variables are missing, these tests fail rather than skip.
 - `make web-check`: frontend lint (check only), type-check and Vitest unit tests (`pnpm test`; `pnpm test:watch` while developing).
 - `make codegen-web-check`: generates the frontend for several table shapes, then formats, lints and type-checks it.

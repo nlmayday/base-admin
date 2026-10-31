@@ -156,7 +156,8 @@ scripts/new-project.sh github.com/acme/crm/server "Acme CRM" acme-crm
 
 - `make test`：单元测试，不依赖任何外部服务。
 - `make test-integration`：再加上带 `integration` 标签的测试，连接 Compose 启动的服务运行。
-  - 每个测试创建并删除自己的 PostgreSQL 数据库，每个包使用独立的 Redis 逻辑库。
+  - 每个测试创建并删除自己的 PostgreSQL 数据库，并临时租用一个 Redis 逻辑库，结束时清空归还。
+  - 只会用 1–15 号库里空的或测试留下的库，不碰 0 号库和存有其他数据的库，所以可以和开发环境共用 Redis，也可以同时跑多份测试。开发服务请用 0 号库（默认）或已有数据的库。
   - 缺少环境变量时这些测试会失败，而不是跳过。
 - `make web-check`：前端 lint（只检查）、类型检查和 Vitest 单元测试（`pnpm test`；开发时用 `pnpm test:watch`）。
 - `make codegen-web-check`：为几种表结构生成前端代码，再格式化、lint 和类型检查。

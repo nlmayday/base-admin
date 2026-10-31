@@ -8,6 +8,8 @@ GOLANGCI_LINT := go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$
 ADMIN_DATABASE_URL      ?= postgres://admin:admin@127.0.0.1:15432/base_admin?sslmode=disable
 ADMIN_REDIS_ADDR        ?= 127.0.0.1:16380
 ADMIN_TEST_DATABASE_URL ?= $(ADMIN_DATABASE_URL)
+# Tests lease free Redis databases 1-15 and never touch database 0 or ones
+# holding other data, so sharing the development Redis is safe.
 ADMIN_TEST_REDIS_ADDR   ?= $(ADMIN_REDIS_ADDR)
 # Local development only: plain-HTTP cookies and a known first password
 # (the admin must change it at first login).
