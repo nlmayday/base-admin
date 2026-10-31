@@ -6,6 +6,7 @@ import (
 	"context"
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -334,29 +335,27 @@ func TestPositionsAndMenus(t *testing.T) {
 	admin.ok(http.MethodDelete, "/api/v1/users/"+u, nil)
 	admin.ok(http.MethodDelete, "/api/v1/positions/"+pos, nil)
 
-	var tree []struct {
-		ID       string `json:"id"`
-		Code     string `json:"code"`
-		Version  int    `json:"version"`
-		Children []struct {
-			ID      string `json:"id"`
-			Code    string `json:"code"`
-			Version int    `json:"version"`
-		} `json:"children"`
+	// Look menus up by code: downstream modules may sort theirs first.
+	type menuNode struct {
+		ID          string `json:"id"`
+		Code        string `json:"code"`
+		Version     int    `json:"version"`
+		Permissions []struct {
+			Code string `json:"code"`
+		} `json:"permissions"`
+		Children []menuNode `json:"children"`
 	}
+	var tree []menuNode
 	admin.ok(http.MethodGet, "/api/v1/menus/tree", nil).decode(t, &tree)
-	require.NotEmpty(t, tree)
-	userMenu := tree[0].Children[0]
-	var withPerms []struct {
-		Children []struct {
-			Permissions []struct {
-				Code string `json:"code"`
-			} `json:"permissions"`
-		} `json:"children"`
+	find := func(nodes []menuNode, code string) menuNode {
+		t.Helper()
+		i := slices.IndexFunc(nodes, func(n menuNode) bool { return n.Code == code })
+		require.NotEqual(t, -1, i, "menu %s", code)
+		return nodes[i]
 	}
-	admin.ok(http.MethodGet, "/api/v1/menus/tree", nil).decode(t, &withPerms)
-	require.NotEmpty(t, withPerms[0].Children[0].Permissions)
-	assert.Equal(t, "iam:user:view", withPerms[0].Children[0].Permissions[0].Code, "declaration order: view first")
+	userMenu := find(find(tree, "iam.system").Children, "iam.user")
+	require.NotEmpty(t, userMenu.Permissions)
+	assert.Equal(t, "iam:user:view", userMenu.Permissions[0].Code, "declaration order: view first")
 	assert.Equal(t, 30002, admin.do(http.MethodDelete, "/api/v1/menus/"+userMenu.ID, nil).Code, "module menus cannot be deleted")
 	admin.ok(http.MethodPut, "/api/v1/menus/"+userMenu.ID, gin.H{"title": "账号管理", "icon": "x", "sort": 9, "hidden": false, "version": userMenu.Version})
 
@@ -375,10 +374,13 @@ func TestPositionsAndMenus(t *testing.T) {
 	menus := admin.ok(http.MethodGet, "/api/v1/me/menus", nil)
 	assert.Contains(t, menus.Body, `"path":"https://example.com"`)
 
-	var permTree []struct {
-		Title string `json:"title"`
+	type permRoot struct {
+		MenuCode string `json:"menuCode"`
+		Title    string `json:"title"`
 	}
+	var permTree []permRoot
 	admin.ok(http.MethodGet, "/api/v1/permissions/tree", nil).decode(t, &permTree)
-	require.NotEmpty(t, permTree)
-	assert.Equal(t, "系统管理", permTree[0].Title)
+	i := slices.IndexFunc(permTree, func(n permRoot) bool { return n.MenuCode == "iam.system" })
+	require.NotEqual(t, -1, i)
+	assert.Equal(t, "系统管理", permTree[i].Title)
 }
