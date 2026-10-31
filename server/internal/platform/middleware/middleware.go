@@ -32,6 +32,11 @@ func RequestID() gin.HandlerFunc {
 
 // AccessLog writes one structured log line per request. The query string is
 // not logged because it may carry sensitive values.
+//
+// Levels: 5xx is Error, 429 Warn, other 4xx Info (expired sessions, missing
+// permissions and validation failures are ordinary outcomes), probes Debug.
+// Error texts are logged only for 5xx: a 4xx message is written for the user
+// and may quote their data, so only its error code is kept.
 func AccessLog(logger *zap.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
@@ -48,9 +53,7 @@ func AccessLog(logger *zap.Logger) gin.HandlerFunc {
 			zap.String("client_ip", c.ClientIP()),
 			zap.Int("bytes", c.Writer.Size()),
 		}
-		if len(c.Errors) > 0 {
-			fields = append(fields, zap.Strings("errors", c.Errors.Errors()))
-		}
+		fields = append(fields, errorFields(c.Errors, status)...)
 
 		// Probes repeat every few seconds; an expected 503 (dependency down,
 		// draining) must not flood the error log.
@@ -58,7 +61,7 @@ func AccessLog(logger *zap.Logger) gin.HandlerFunc {
 		switch {
 		case status >= http.StatusInternalServerError && !isProbe:
 			logger.Error("http request", fields...)
-		case status >= http.StatusBadRequest:
+		case status >= http.StatusInternalServerError, status == http.StatusTooManyRequests:
 			logger.Warn("http request", fields...)
 		case isProbe:
 			logger.Debug("http request", fields...)
@@ -66,6 +69,27 @@ func AccessLog(logger *zap.Logger) gin.HandlerFunc {
 			logger.Info("http request", fields...)
 		}
 	}
+}
+
+// errorFields returns the error codes of a request, plus the full error
+// texts for server errors.
+func errorFields(errs []*gin.Error, status int) []zap.Field {
+	if len(errs) == 0 {
+		return nil
+	}
+	codes := make([]int, len(errs))
+	for i, e := range errs {
+		codes[i] = httpx.AsError(e.Err).Code
+	}
+	fields := []zap.Field{zap.Ints("error_codes", codes)}
+	if status >= http.StatusInternalServerError {
+		texts := make([]string, len(errs))
+		for i, e := range errs {
+			texts[i] = e.Error()
+		}
+		fields = append(fields, zap.Strings("errors", texts))
+	}
+	return fields
 }
 
 // Recover turns a handler panic into a 500 response. http.ErrAbortHandler is

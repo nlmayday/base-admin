@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -63,13 +64,17 @@ func TestAccessLogLevels(t *testing.T) {
 	engine.GET("/health/live", func(c *gin.Context) { c.Status(http.StatusOK) })
 	engine.GET("/health/ready", func(c *gin.Context) { httpx.Fail(c, httpx.Unavailable("draining")) })
 	engine.GET("/bad", func(c *gin.Context) { httpx.Fail(c, httpx.BadRequest("bad")) })
+	engine.GET("/missing", func(c *gin.Context) { httpx.Fail(c, httpx.NotFound("missing")) })
+	engine.GET("/limited", func(c *gin.Context) { httpx.Fail(c, httpx.TooManyRequests()) })
 	engine.GET("/boom", func(c *gin.Context) { httpx.Fail(c, assert.AnError) })
 
 	cases := map[string]zapcore.Level{
 		"/ok":           zapcore.InfoLevel,
 		"/health/live":  zapcore.DebugLevel,
 		"/health/ready": zapcore.WarnLevel,
-		"/bad":          zapcore.WarnLevel,
+		"/bad":          zapcore.InfoLevel,
+		"/missing":      zapcore.InfoLevel,
+		"/limited":      zapcore.WarnLevel,
 		"/boom":         zapcore.ErrorLevel,
 	}
 	for path, level := range cases {
@@ -84,14 +89,30 @@ func TestAccessLogLevels(t *testing.T) {
 	}
 }
 
-func TestAccessLogRecordsErrors(t *testing.T) {
+func TestAccessLogErrorFields(t *testing.T) {
+	const userData = "客户「张三」已在李四的私海"
 	logger, logs := newObservedLogger()
 	engine := gin.New()
 	engine.Use(AccessLog(logger))
+	engine.GET("/conflict", func(c *gin.Context) {
+		httpx.Fail(c, httpx.Conflict(userData).WithCause(errors.New("duplicate key")))
+	})
 	engine.GET("/boom", func(c *gin.Context) { httpx.Fail(c, assert.AnError) })
+
+	do(engine, httptest.NewRequest(http.MethodGet, "/conflict", nil))
+	entry := logs.TakeAll()[0]
+	assert.Equal(t, zapcore.InfoLevel, entry.Level)
+	ctx := entry.ContextMap()
+	assert.NotContains(t, ctx, "errors")
+	assert.NotContains(t, fmt.Sprint(ctx), "张三", "a 4xx message may quote user data")
+	assert.Equal(t, []any{httpx.CodeConflict}, ctx["error_codes"])
+
 	do(engine, httptest.NewRequest(http.MethodGet, "/boom", nil))
-	entry := logs.All()[0]
-	assert.Contains(t, entry.ContextMap()["errors"], assert.AnError.Error())
+	entry = logs.TakeAll()[0]
+	assert.Equal(t, zapcore.ErrorLevel, entry.Level)
+	ctx = entry.ContextMap()
+	assert.Contains(t, ctx["errors"], assert.AnError.Error())
+	assert.Equal(t, []any{httpx.CodeInternal}, ctx["error_codes"])
 }
 
 func TestRecover(t *testing.T) {
