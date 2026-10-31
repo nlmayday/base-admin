@@ -42,7 +42,7 @@ services:
     networks: [backend]
 
   redis:
-    image: redis:7.4.12-alpine
+    image: redis:8.10.0-alpine
     restart: unless-stopped
     # Design doc 6.5.6: AOF on; keys without TTL are never evicted.
     command: >-
