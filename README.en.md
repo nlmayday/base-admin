@@ -139,7 +139,18 @@ See [docs/module-guide.md](docs/module-guide.md). In short:
    It writes the backend and frontend files and registers the module automatically. The CLI `go run ./cmd/gen … -fields '<JSON>'` does the same.
 3. Restart the backend, then grant the new permission codes to a role.
 
-To let an AI coding agent do steps 1–2, create a key in Dev tools → AI API (开发工具 → AI 接口) and give the agent the copied instructions. It reads the usage guide from the API, creates the table (migration file included) and generates the module ([docs/ai-agent-api.md](docs/ai-agent-api.md)).
+Steps 1–2 can also be done over HTTP. Create a key in Dev tools → AI API (开发工具 → AI 接口), then either
+- give an AI coding agent the copied instructions: it reads the usage guide from the API, creates the table (migration file included) and generates the module; or
+- call it yourself with curl. Two requests create the table and its CRUD module:
+
+  ```bash
+  curl -s -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
+    $BASE/tables -d '{"name":"biz_items","label":"商品","columns":[{"name":"title","type":"string","label":"名称","required":true}]}'
+  curl -s -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
+    $BASE/generate -d '{"table":"biz_items","module":"shop","resource":"item","name":"商品","moduleTitle":"商城管理"}'
+  ```
+
+  `BASE` is `http://localhost:8848/api/v1/devtools/agent` (development only). The full example and field options are in [docs/ai-agent-api.md](docs/ai-agent-api.md#用-curl-直接调用) (Chinese).
 
 ## Tests
 

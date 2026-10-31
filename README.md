@@ -139,7 +139,18 @@ scripts/new-project.sh github.com/acme/crm/server "Acme CRM" acme-crm
    会写入后端和前端文件并自动接入项目。命令行 `go run ./cmd/gen … -fields '<JSON>'` 效果相同。
 3. 重启后端，把新的权限码分配给角色。
 
-想让 AI 编程助手完成第 1–2 步：在「开发工具 → AI 接口」创建密钥，把复制的说明发给 AI。AI 会从接口读取使用说明，建表（包括迁移文件）并生成模块（[docs/ai-agent-api.md](docs/ai-agent-api.md)）。
+第 1–2 步也可以通过 HTTP 接口完成：在「开发工具 → AI 接口」创建密钥，然后
+- 把复制的说明发给 AI 编程助手，AI 会读取使用说明，建表（包括迁移文件）并生成模块；
+- 或者自己用 curl 调用，两条命令就能建好表和增删改查：
+
+  ```bash
+  curl -s -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
+    $BASE/tables -d '{"name":"biz_items","label":"商品","columns":[{"name":"title","type":"string","label":"名称","required":true}]}'
+  curl -s -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
+    $BASE/generate -d '{"table":"biz_items","module":"shop","resource":"item","name":"商品","moduleTitle":"商城管理"}'
+  ```
+
+  `BASE` 是 `http://localhost:8848/api/v1/devtools/agent`，只在开发环境可用。完整示例和字段写法见 [docs/ai-agent-api.md](docs/ai-agent-api.md#用-curl-直接调用)。
 
 ## 测试
 

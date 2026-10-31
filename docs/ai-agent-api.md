@@ -14,6 +14,48 @@
 
 任务做完就在列表里撤销密钥，撤销立即生效。
 
+## 用 curl 直接调用
+
+不经过 AI，自己用 curl 也能一步建好表和增删改查。下面的命令在本地开发环境跑通过：
+
+```bash
+KEY=bak_xxx                                        # 「创建密钥」弹窗里的密钥
+BASE=http://localhost:8848/api/v1/devtools/agent   # 弹窗说明里的基础地址
+J=(-s -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json')
+
+# 1. 建表：写出 server/migrations/app/NNNNNN_create_biz_items.{up,down}.sql 并在开发库执行
+#    （先加 "dryRun": true 可以只看 SQL）
+curl "${J[@]}" $BASE/tables -d '{
+  "name": "biz_items", "label": "商品", "status": true,
+  "columns": [
+    {"name": "title", "type": "string", "label": "名称", "required": true, "unique": true},
+    {"name": "kind", "type": "int", "label": "类型", "required": true, "default": "1",
+     "options": [{"value": "1", "label": "实物"}, {"value": "2", "label": "虚拟"}]},
+    {"name": "price", "type": "decimal", "label": "价格", "required": true, "default": "0"},
+    {"name": "remark", "type": "text", "label": "备注"}
+  ]
+}'
+
+# 2. 生成模块（先把 generate 换成 preview 可以只看要生成的文件、菜单和权限）
+curl "${J[@]}" $BASE/generate -d '{
+  "table": "biz_items", "module": "shop", "resource": "item",
+  "name": "商品", "moduleTitle": "商城管理",
+  "fields": [{"column": "title", "search": "like"}, {"column": "kind", "search": "eq"}]
+}'
+
+# 3. 重启后端（make run），菜单「商城管理 → 商品管理」和接口 /api/v1/items 就生效了
+```
+
+生成后会得到：
+
+- 后端模块 `server/internal/modules/shop/`，已注册到 `server/internal/app/modules.go`，包括集成测试；
+- 前端页面 `web/src/views/shop/item/` 和接口文件 `web/src/api/shop/item.ts`；
+- 接口 `GET/POST /api/v1/items`、`GET/PUT/DELETE /api/v1/items/:id`、`GET /api/v1/items/export`，
+  权限码 `shop:item:view/create/update/delete/export`。这些接口用登录会话调用，不能用 AI 接口的密钥调用。
+
+字段类型、开关和 `fields` 的全部写法见 `GET $BASE/guide`（即 [agent_guide.md](../server/internal/modules/devtools/agent_guide.md)）。
+请求失败时看返回的 `data.fields`，它会指出是哪个字段、哪里不对。
+
 ## 接口
 
 基础路径 `/api/v1/devtools/agent`，每个请求带 `Authorization: Bearer <密钥>`：
