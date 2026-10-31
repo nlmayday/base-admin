@@ -1,0 +1,180 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:17.11-alpine
+        env:
+          POSTGRES_USER: admin
+          POSTGRES_PASSWORD: admin
+          POSTGRES_DB: base_admin
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U admin -d base_admin"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+      redis:
+        image: redis:7.4.12-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+
+    env:
+      ADMIN_DATABASE_URL: postgres://admin:admin@127.0.0.1:5432/base_admin?sslmode=disable
+      ADMIN_REDIS_ADDR: 127.0.0.1:6379
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      - name: Build
+        run: make build
+
+      - name: Lint
+        run: make lint
+
+      - name: Test (unit + integration)
+        run: make test-integration
+
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Install
+        run: make web-install
+
+      - name: Lint and type-check (check only, nothing is rewritten)
+        run: make web-check
+
+      - name: Build
+        run: make web-build
+
+      - name: Checks left the tree unchanged
+        run: git diff --exit-code
+
+  e2e:
+    # Playwright against a real API on a fresh database: the admin starts
+    # with the bootstrap password and global-setup changes it first.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:17.11-alpine
+        env:
+          POSTGRES_USER: admin
+          POSTGRES_PASSWORD: admin
+          POSTGRES_DB: base_admin
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U admin -d base_admin"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+      redis:
+        image: redis:7.4.12-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+
+    env:
+      ADMIN_DATABASE_URL: postgres://admin:admin@127.0.0.1:5432/base_admin?sslmode=disable
+      ADMIN_REDIS_ADDR: 127.0.0.1:6379
+      ADMIN_HTTP_ADDR: 127.0.0.1:8080
+      ADMIN_METRICS_ADDR: 127.0.0.1:9090
+      ADMIN_AUTH_COOKIE_SECURE: "false"
+      # Throwaway credentials for this job's ephemeral database only.
+      ADMIN_BOOTSTRAP_ADMIN_PASSWORD: Ci-Bootstrap-Pass-2026
+      E2E_BOOTSTRAP_PASSWORD: Ci-Bootstrap-Pass-2026
+      E2E_ADMIN_USERNAME: admin
+      E2E_ADMIN_PASSWORD: Ci-Admin-Pass-2026
+      VITE_API_PROXY_TARGET: http://127.0.0.1:8080
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Install
+        run: make web-install
+
+      - name: Generated frontend code passes lint and type-check
+        run: make codegen-web-check
+
+      - name: Install Playwright browser
+        working-directory: web
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Migrate
+        run: make migrate-up
+
+      - name: Start API
+        working-directory: server
+        run: |
+          go build -o bin/admin ./cmd/admin
+          nohup ./bin/admin serve > "$RUNNER_TEMP/api.log" 2>&1 &
+          for i in $(seq 1 60); do
+            ./bin/admin health ready 2>/dev/null && exit 0
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/api.log"
+          exit 1
+
+      - name: E2E
+        working-directory: web
+        run: pnpm test:e2e
+
+      - name: Upload report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-report
+          path: |
+            web/tests/e2e/playwright-report/
+            web/tests/e2e/test-results/
+            ${{ runner.temp }}/api.log
+          retention-days: 7

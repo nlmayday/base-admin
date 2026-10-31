@@ -1,0 +1,4 @@
+# Git runs hooks from the repository root; the frontend lives in web/.
+[ -n "$CI" ] && exit 0
+. "$(dirname "$0")/common.sh"
+cd web && pnpm exec lint-staged

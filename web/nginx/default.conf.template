@@ -1,0 +1,53 @@
+# Serves the SPA and proxies /api to the backend on the same origin, which the
+# session cookie, SameSite policy and Origin check rely on.
+server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+
+    # Uploads: keep in line with the backend's file.max_upload_bytes.
+    client_max_body_size 100m;
+
+    gzip on;
+    gzip_types text/css application/javascript application/json image/svg+xml;
+
+    # Security headers. nginx drops server-level add_header in any location
+    # that sets its own, so locations with add_header include these again.
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+    add_header X-Frame-Options DENY always;
+
+    location /api/ {
+        proxy_pass http://${API_UPSTREAM};
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;
+        proxy_request_buffering off;
+    }
+
+    # Container healthcheck.
+    location = /healthz {
+        access_log off;
+        default_type text/plain;
+        return 200 "ok\n";
+    }
+
+    # Vite writes hashed bundles under /static/ (vite.config.ts): cache them
+    # for long. index.html and the unhashed public files must not be.
+    location /static/ {
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy strict-origin-when-cross-origin always;
+        add_header X-Frame-Options DENY always;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+        add_header Cache-Control "no-cache" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy strict-origin-when-cross-origin always;
+        add_header X-Frame-Options DENY always;
+    }
+}

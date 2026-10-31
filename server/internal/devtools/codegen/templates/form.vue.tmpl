@@ -1,0 +1,250 @@
+<script setup lang="ts">
+import { computed, reactive, ref, watch } from "vue";
+import type { FormInstance, FormRules } from "element-plus";
+import { message } from "@/utils/message";
+import { needsReload } from "@/utils/http/errors";
+import { useFieldErrors } from "@/composables/useFieldErrors";
+[[- if .DictFields]]
+import { [[.FormDictImport]] } from "@/composables/useDict";
+[[- end]]
+[[- if .Status]]
+import { STATUS_ENABLED, STATUS_OPTIONS, type Status } from "@/api/types";
+[[- end]]
+[[- if .Dept]]
+import { getDeptTree, type Dept } from "@/api/iam/dept";
+import { DEPT_TREE_PROPS } from "@/utils/tree-options";
+[[- end]]
+[[- if .RelationFields]]
+import ReRemoteSelect from "@/components/ReRemoteSelect/index.vue";
+[[- end]]
+[[- if .FormImage]]
+import ReImageUpload from "@/components/ReUpload/ImageUpload.vue";
+[[- end]]
+[[- if .FormFiles]]
+import ReFileUpload from "@/components/ReUpload/FileUpload.vue";
+import type { AttachmentRef } from "@/api/file";
+[[- end]]
+import {
+  create[[.TSUpper]],
+[[- range .RelationFields]]
+  [[.RelOptionsTS]],
+[[- end]]
+  update[[.TSUpper]],
+  type [[.TSUpper]],
+  type [[.TSUpper]]Payload
+} from "@/api/[[.Pkg]]/[[.Resource]]";
+
+defineOptions({ name: "[[.TSUpper]]FormDialog" });
+
+const props = defineProps<{ row: [[.TSUpper]] | null }>();
+const visible = defineModel<boolean>({ required: true });
+const emit = defineEmits<{ (e: "saved"): void; (e: "reload"): void }>();
+
+type [[.TSUpper]]Form = {
+[[- range .Writable]]
+  [[.JSONName]]: [[.TSForm]];
+[[- end]]
+};
+
+const emptyForm = (): [[.TSUpper]]Form => ({
+[[- range $i, $f := .Writable]]
+  [[$f.JSONName]]: [[$f.TSDefault]][[if ne (inc $i) (len $.Writable)]],[[end]]
+[[- end]]
+});
+
+const formRef = ref<FormInstance>();
+const saving = ref(false);
+const form = reactive<[[.TSUpper]]Form>(emptyForm());
+const { fieldErrors, clearFieldErrors, applyFieldErrors } = useFieldErrors();
+const isEdit = computed(() => props.row !== null);
+[[- range .DictFields]]
+const { items: [[.JSONName]]Options } = [[.DictSource]];
+[[- end]]
+[[- if .Dept]]
+const deptTree = ref<Dept[]>([]);
+
+async function loadDeptTree(): Promise<void> {
+  try {
+    deptTree.value = (await getDeptTree()) ?? [];
+  } catch {
+    deptTree.value = [];
+  }
+}
+[[- end]]
+
+const rules: FormRules = {
+[[- range $i, $f := .RequiredFields]]
+  [[$f.JSONName]]: [
+    { required: true, message: "[[if eq $f.RuleTrig "change"]]请选择[[else]]请输入[[end]][[$f.Label]]", trigger: "[[$f.RuleTrig]]" }
+  ][[if ne (inc $i) (len $.RequiredFields)]],[[end]]
+[[- end]]
+};
+
+watch(visible, open => {
+  if (!open) return;
+  clearFieldErrors();
+[[- if .Dept]]
+  loadDeptTree();
+[[- end]]
+  const r = props.row;
+  Object.assign(
+    form,
+    r
+      ? {
+[[- range $i, $f := .Writable]]
+          [[$f.JSONName]]: [[$f.TSFromView]][[if ne (inc $i) (len $.Writable)]],[[end]]
+[[- end]]
+        }
+      : emptyForm()
+  );
+  formRef.value?.clearValidate();
+});
+
+function toPayload(): [[.TSUpper]]Payload {
+  return {
+[[- range $i, $f := .Writable]]
+    [[$f.JSONName]]: [[$f.TSSubmit]][[if ne (inc $i) (len $.Writable)]],[[end]]
+[[- end]]
+  };
+}
+
+async function submit(): Promise<void> {
+  const valid = await formRef.value?.validate().catch(() => false);
+  if (!valid) return;
+  clearFieldErrors();
+  saving.value = true;
+  try {
+    if (props.row) {
+[[- if .Version]]
+      await update[[.TSUpper]](props.row.id, {
+        ...toPayload(),
+        version: props.row.version
+      });
+[[- else]]
+      await update[[.TSUpper]](props.row.id, toPayload());
+[[- end]]
+    } else {
+      await create[[.TSUpper]](toPayload());
+    }
+    message(isEdit.value ? "[[.Name]]已更新" : "[[.Name]]已创建", { type: "success" });
+    visible.value = false;
+    emit("saved");
+  } catch (err) {
+    applyFieldErrors(err);
+    if (needsReload(err)) {
+      visible.value = false;
+      emit("reload");
+    }
+  } finally {
+    saving.value = false;
+  }
+}
+</script>
+
+<template>
+  <el-dialog
+    v-model="visible"
+    :title="isEdit ? '编辑[[.Name]]' : '新增[[.Name]]'"
+    width="560px"
+    destroy-on-close
+    :close-on-click-modal="false"
+  >
+    <el-form
+      ref="formRef"
+      :model="form"
+      :rules="rules"
+      :validate-on-rule-change="false"
+      label-width="100px"
+    >
+[[- range .Writable]]
+      <el-form-item
+        label="[[.Label]]"
+        prop="[[.JSONName]]"
+        :error="fieldErrors.[[.JSONName]]"
+      >
+[[- if eq .Widget "status"]]
+        <el-radio-group v-model="form.[[.JSONName]]">
+          <el-radio v-for="o in STATUS_OPTIONS" :key="o.value" :value="o.value">
+            {{ o.label }}
+          </el-radio>
+        </el-radio-group>
+[[- else if eq .Widget "dept"]]
+        <el-tree-select
+          v-model="form.[[.JSONName]]"
+          :data="deptTree"
+          :props="DEPT_TREE_PROPS"
+          node-key="id"
+          check-strictly
+          clearable
+          filterable
+          default-expand-all
+          placeholder="选择部门"
+          class="w-full"
+        />
+[[- else if eq .Widget "dict"]]
+        <el-select
+          v-model="form.[[.JSONName]]"
+          placeholder="请选择[[.Label]]"
+          clearable
+          class="w-full"
+        >
+          <el-option
+            v-for="o in [[.JSONName]]Options"
+            :key="o.value"
+            :label="o.label"
+            :value="[[if .DictNumeric]]Number(o.value)[[else]]o.value[[end]]"
+          />
+        </el-select>
+[[- else if eq .Widget "relation"]]
+        <ReRemoteSelect
+          v-model="form.[[.JSONName]]"
+          :fetch="[[.RelOptionsTS]]"
+          :label="props.row?.[[.LabelJSON]]"
+          placeholder="输入关键字搜索[[.Label]]"
+          class="w-full"
+        />
+[[- else if eq .Widget "image"]]
+        <ReImageUpload v-model="form.[[.JSONName]]" />
+[[- else if eq .Widget "files"]]
+        <ReFileUpload v-model="form.[[.JSONName]]" />
+[[- else if eq .Widget "number"]]
+        <el-input-number v-model="form.[[.JSONName]]" class="w-[200px]!" />
+[[- else if eq .Widget "switch"]]
+        <el-switch v-model="form.[[.JSONName]]" />
+[[- else if eq .Widget "datetime"]]
+        <el-date-picker
+          v-model="form.[[.JSONName]]"
+          type="datetime"
+          value-format="YYYY-MM-DDTHH:mm:ssZ"
+          placeholder="选择时间"
+          class="w-full!"
+        />
+[[- else if eq .Widget "date"]]
+        <el-date-picker
+          v-model="form.[[.JSONName]]"
+          type="date"
+          value-format="YYYY-MM-DD"
+          placeholder="选择日期"
+          class="w-full!"
+        />
+[[- else if eq .Widget "textarea"]]
+        <el-input
+          v-model="form.[[.JSONName]]"
+          type="textarea"
+          :rows="3"[[if .MaxLen]]
+          maxlength="[[.MaxLen]]"[[end]]
+        />
+[[- else]]
+        <el-input v-model="form.[[.JSONName]]"[[if .MaxLen]] maxlength="[[.MaxLen]]"[[end]] />
+[[- end]]
+      </el-form-item>
+[[- end]]
+    </el-form>
+    <template #footer>
+      <el-button @click="visible = false">取消</el-button>
+      <el-button type="primary" :loading="saving" @click="submit">
+        保存
+      </el-button>
+    </template>
+  </el-dialog>
+</template>

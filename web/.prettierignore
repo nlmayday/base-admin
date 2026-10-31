@@ -1,0 +1,5 @@
+# Generated: E2E session state and reports, build output
+tests/e2e/.auth/
+tests/e2e/test-results/
+tests/e2e/playwright-report/
+dist/

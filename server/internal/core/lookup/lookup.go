@@ -1,0 +1,77 @@
+// Package lookup serves relation fields of generated modules: the options
+// of a select that refers to another table by id, and the check that a
+// chosen id exists. Table and column names come from generated code; they
+// are still checked so a mistake cannot reach SQL.
+package lookup
+
+import (
+	"context"
+	"fmt"
+	"regexp"
+	"strings"
+
+	"gorm.io/gorm"
+
+	"base-admin/server/internal/platform/ids"
+)
+
+// MaxOptions bounds one options request; users narrow the list by typing.
+const MaxOptions = 50
+
+var identPattern = regexp.MustCompile(`^[a-z_][a-z0-9_]{0,62}$`)
+
+// Target is a referenced table: its id column is "id", Label is the column
+// shown to users, SoftDelete hides rows whose deleted_at is set.
+type Target struct {
+	Table      string
+	Label      string
+	SoftDelete bool
+}
+
+// Option is one selectable row.
+type Option struct {
+	ID    ids.ID `json:"id"`
+	Label string `json:"label"`
+}
+
+func (t Target) query(ctx context.Context, db *gorm.DB) (*gorm.DB, error) {
+	if !identPattern.MatchString(t.Table) || !identPattern.MatchString(t.Label) {
+		return nil, fmt.Errorf("lookup: invalid target %s.%s", t.Table, t.Label)
+	}
+	q := db.WithContext(ctx).Table(`"` + t.Table + `" AS x`)
+	if t.SoftDelete {
+		q = q.Where("x.deleted_at IS NULL")
+	}
+	return q, nil
+}
+
+// Options lists rows whose label contains keyword (all rows when empty),
+// ordered by label, at most MaxOptions.
+func (t Target) Options(ctx context.Context, db *gorm.DB, keyword string) ([]Option, error) {
+	q, err := t.query(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	label := `COALESCE(x."` + t.Label + `"::text, '')`
+	if kw := strings.TrimSpace(keyword); kw != "" {
+		q = q.Where(label+` ILIKE ?`, "%"+escapeLike(kw)+"%")
+	}
+	out := []Option{}
+	err = q.Select("x.id AS id, " + label + " AS label").Order(label + ", x.id").Limit(MaxOptions).Scan(&out).Error
+	return out, err
+}
+
+// Exists reports whether id is a visible row of the target.
+func (t Target) Exists(ctx context.Context, db *gorm.DB, id int64) (bool, error) {
+	q, err := t.query(ctx, db)
+	if err != nil {
+		return false, err
+	}
+	var n int64
+	err = q.Where("x.id = ?", id).Limit(1).Count(&n).Error
+	return n > 0, err
+}
+
+func escapeLike(s string) string {
+	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
+}

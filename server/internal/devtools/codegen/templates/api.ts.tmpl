@@ -1,0 +1,77 @@
+import { http } from "@/utils/http";
+import {
+  compactParams,
+  type Page,
+  type PageQuery[[if .Relations]],
+  type LookupOption[[end]][[if .Status]],
+  type Status[[end]]
+} from "@/api/types";
+[[- if .HasFiles]]
+import type { AttachmentRef } from "@/api/file";
+[[- end]]
+
+/** [[.Name]]（[[.Table]]），由 cmd/gen 生成 */
+export type [[.TSUpper]] = {
+[[- range .Fields]]
+  /** [[.Label]] */
+  [[.JSONName]]: [[.TSType]];
+[[- end]]
+[[- if .DeptJoin]]
+  /** 部门名称 */
+  deptName: string;
+[[- end]]
+[[- range .Relations]]
+  /** [[.Label]]名称 */
+  [[.LabelJSON]]: string;
+[[- end]]
+};
+
+[[- if .SearchFields]]
+export type [[.TSUpper]]Filter = {
+[[- range .SearchFields]]
+[[- range .FilterTS]]
+  [[.]]
+[[- end]]
+[[- end]]
+};
+[[- else]]
+export type [[.TSUpper]]Filter = Record<string, never>;
+[[- end]]
+
+export type [[.TSUpper]]Payload = {
+[[- range .Writable]]
+  [[.JSONName]]: [[.TSReqType]];
+[[- end]]
+};
+[[- if .Version]]
+
+export type [[.TSUpper]]UpdatePayload = [[.TSUpper]]Payload & { version: number };
+[[- end]]
+
+const enc = encodeURIComponent;
+
+export const list[[.TSPluralUpper]] = (query: PageQuery & [[.TSUpper]]Filter) =>
+  http.get<Page<[[.TSUpper]]>>("[[.URLPath]]", compactParams(query));
+
+export const get[[.TSUpper]] = (id: string) =>
+  http.get<[[.TSUpper]]>(`[[.URLPath]]/${enc(id)}`);
+
+export const create[[.TSUpper]] = (data: [[.TSUpper]]Payload) =>
+  http.post<[[.TSUpper]]>("[[.URLPath]]", data);
+
+export const update[[.TSUpper]] = (
+  id: string,
+  data: [[.TSUpper]][[if .Version]]Update[[end]]Payload
+) => http.put<[[.TSUpper]]>(`[[.URLPath]]/${enc(id)}`, data);
+
+export const delete[[.TSUpper]] = (id: string) =>
+  http.delete<null>(`[[.URLPath]]/${enc(id)}`);
+
+export const export[[.TSPluralUpper]] = (filter: [[.TSUpper]]Filter) =>
+  http.download("[[.URLPath]]/export", compactParams(filter), "[[.URLName]].csv");
+[[- range .Relations]]
+
+/** [[.Label]]选项：按关键字搜索 [[.RelTable]] */
+export const [[.RelOptionsTS]] = (keyword: string) =>
+  http.get<LookupOption[]>("/[[$.URLName]]/options/[[.JSONName]]", { keyword });
+[[- end]]

@@ -1,0 +1,10 @@
+DROP TABLE IF EXISTS sys_user_positions;
+DROP TABLE IF EXISTS sys_positions;
+DROP TABLE IF EXISTS sys_role_permissions;
+DROP TABLE IF EXISTS sys_user_roles;
+DROP TABLE IF EXISTS sys_role_depts;
+DROP TABLE IF EXISTS sys_roles;
+ALTER TABLE IF EXISTS sys_departments DROP CONSTRAINT IF EXISTS sys_departments_leader_fk;
+DROP TABLE IF EXISTS sys_users;
+DROP FUNCTION IF EXISTS sys_users_session_gen_monotonic();
+DROP TABLE IF EXISTS sys_departments;

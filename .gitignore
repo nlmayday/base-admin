@@ -1,0 +1,31 @@
+.DS_Store
+.idea/
+.vscode/
+.env
+.env.*
+# Vite mode files of the frontend: non-secret build settings, committed
+!web/.env
+!web/.env.development
+!web/.env.production
+!web/.env.staging
+.pnpm-store/
+
+# Go
+server/bin/
+server/coverage.out
+server/*.test
+
+# Frontend (added in P0 step 5)
+web/node_modules/
+web/dist/
+
+# Deployment secrets
+deploy/docker/prod.env
+
+# Local file storage (file.driver=local)
+server/data/
+
+# E2E artifacts; .auth holds a live admin session cookie
+web/tests/e2e/.auth/
+web/tests/e2e/test-results/
+web/tests/e2e/playwright-report/
