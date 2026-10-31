@@ -913,7 +913,7 @@ P1–P3 按 [p1-p3-plan.md](p1-p3-plan.md) 交付：审计、系统配置、安�
 | E2E 未进 CI | 新增 e2e 任务：全新数据库、初始密码启动，E2E 初始化时自动完成首次改密 |
 | nginx 长缓存写在 `/assets/`，实际产物在 `/static/`；location 内 `add_header` 让安全头丢失 | 改为 `/static/` 一年缓存，各 location 显式带安全头，新增 `/healthz` |
 | 生产 Compose 的 API、Web 没有健康检查 | `admin health [live|ready]` 子命令（distroless 无 shell）；API 只读根文件系统、去掉全部 capability；Web 等 API 健康后启动 |
-| 镜像 tag 漂移、无依赖与漏洞扫描 | 镜像固定到补丁版本；Dependabot；`security.yml` 每周跑 govulncheck 与 `pnpm audit --prod`。扫描发现并修复：Go 1.26.0 → 1.26.9（标准库 35 个可达漏洞）、quic-go、axios、vue、lodash 等生产依赖（审计归零）；剩 1 个需 Go 1.26.10 修复 |
+| 镜像 tag 漂移、无依赖与漏洞扫描 | 镜像固定到补丁版本；依赖升级直接提交到 main（不用 Dependabot PR）；`security.yml` 每周跑 govulncheck 与 `pnpm audit --prod`。扫描发现并修复：Go 1.26.0 → 1.26.9（标准库 35 个可达漏洞）、quic-go、axios、vue、lodash 等生产依赖（审计归零）；剩 1 个需 Go 1.26.10 修复 |
 | 前端大 chunk，告警阈值调到 4 MB | 阈值恢复 800 KB；分出 vue / element-plus / echarts；只注册用到的 Element Plus 组件（`check-el-components.mjs` 防遗漏），生产构建经 `element-plus-entry.ts` 按组件子路径导入（element-plus 块 953 → 613 KB）；菜单搜索与拼音库改为首次打开时加载 |
 | 依赖升级 | Element Plus 2.11 → 2.14：表格插槽的 row 改为通用类型，传给强类型函数处加断言（生成模板同步）；树选择的 props 类型漏了 value，集中在 `treeSelectProps()`；vue-tsc 3.3 会把模板属性里的 "//" 误判、连带后续 v-model 报错，相关占位符改为脚本常量。开发依赖在原大版本内升级（Vite 7.3、ESLint 9.39、prettier 3.9 等），`pnpm audit` 生产与开发依赖均为 0 |
 | 前端单元测试 | Vitest（`pnpm test`，并入 `make web-check` 与 CI）：动态路由转换、登录跳转防开放重定向、错误处理、按钮权限、字典缓存、分页表格、字段错误、树工具、格式化、上传前检查。另有 `make codegen-web-check`：把各种表结构生成的前端代码格式化后跑 eslint 与 vue-tsc（CI 的 e2e 任务执行） |

@@ -1,8 +1,8 @@
 name: security
 
 # Vulnerability scans. Not a merge gate: a fix may not be released yet (e.g.
-# a Go patch version), and Dependabot opens the upgrade PRs. Failures show
-# up on main and in the weekly run.
+# a Go patch version). Failures show up on main and in the weekly run; the
+# upgrades are then committed directly.
 on:
   push:
     branches: [main]

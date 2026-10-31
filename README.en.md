@@ -84,7 +84,7 @@ Runtime settings live in the database and are edited in the UI: Basic settings (
 - the API, as a distroless non-root image with a read-only root file system and no capabilities; its healthcheck runs `admin health ready` (PostgreSQL and Redis reachable);
 - nginx, serving the SPA (hashed bundles under `/static/` cached for a year, `index.html` never) and proxying `/api`; healthcheck `/healthz`.
 
-Image tags are pinned to patch versions; Dependabot (`.github/dependabot.yml`) proposes updates weekly.
+Image tags are pinned to patch versions. Dependency upgrades are committed directly to main, without pull requests; `security.yml` scans for vulnerabilities weekly and flags what needs upgrading.
 
 ```bash
 cp deploy/docker/prod.env.example deploy/docker/prod.env   # fill in every value

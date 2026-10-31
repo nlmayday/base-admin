@@ -84,7 +84,7 @@ API_URL=http://127.0.0.1:18080 make web-dev
 - 后端：distroless 非 root 镜像，根文件系统只读，不授予任何 capability；健康检查执行 `admin health ready`（检查 PostgreSQL 和 Redis 能否连通）；
 - nginx：提供前端页面（`/static/` 下带哈希的文件缓存一年，`index.html` 不缓存）并代理 `/api`；健康检查 `/healthz`。
 
-镜像版本固定到补丁版本，Dependabot（`.github/dependabot.yml`）每周提交更新。
+镜像版本固定到补丁版本。依赖升级直接提交到 main，不走 PR；`security.yml` 每周扫描漏洞，发现问题时再升级。
 
 ```bash
 cp deploy/docker/prod.env.example deploy/docker/prod.env   # 填好每一项

@@ -7,7 +7,7 @@ RUN --mount=type=cache,target=/root/.local/share/pnpm/store pnpm install --froze
 COPY . .
 RUN pnpm build
 
-FROM nginx:1.27.5-alpine
+FROM nginx:1.31.7-alpine
 # The template is rendered by the image's entrypoint with envsubst, so the
 # API upstream is configurable at run time (API_UPSTREAM, default api:8080).
 ENV API_UPSTREAM=api:8080
