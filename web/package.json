@@ -68,7 +68,7 @@
     "mitt": "^3.0.1",
     "nprogress": "^0.2.0",
     "path-browserify": "^1.0.1",
-    "pinia": "^3.0.4",
+    "pinia": "^4.1.0",
     "pinyin-pro": "^3.29.5",
     "qs": "^6.17.1",
     "responsive-storage": "^2.2.0",
