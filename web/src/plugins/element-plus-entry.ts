@@ -82,6 +82,7 @@ export {
   ElTimeline,
   ElTimelineItem
 } from "element-plus/es/components/timeline/index.mjs";
+export { ElTimeSelect } from "element-plus/es/components/time-select/index.mjs";
 export { ElTooltip } from "element-plus/es/components/tooltip/index.mjs";
 export { ElTree } from "element-plus/es/components/tree/index.mjs";
 export { ElTreeSelect } from "element-plus/es/components/tree-select/index.mjs";

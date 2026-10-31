@@ -21,7 +21,7 @@ import (
 func (m *Module) inboxRoutes(r *module.Router) {
 	g := r.Group("/me/notices")
 	g.GET("", access.Authenticated(), handle(m.listInbox)).Doc(module.Doc{Summary: "我的消息", Query: inboxFilter{}, Response: httpx.Page[inboxView]{}})
-	g.GET("/unread-count", access.Authenticated(), handle(m.unreadCount)).Doc(module.Doc{Summary: "未读消息数", Response: unreadView{}})
+	g.GET("/unread-count", access.Authenticated(), handle(m.unreadCount)).Doc(module.Doc{Summary: "未读消息数", Description: "公告与个人消息合计，并分别给出", Response: unreadView{}})
 	g.GET("/:id", access.Authenticated(), handle(m.readInbox)).Doc(module.Doc{Summary: "消息详情", Description: "同时标记为已读", Response: inboxView{}})
 	g.POST("/read-all", access.Authenticated(), handle(m.readAll)).Doc(module.Doc{Summary: "全部标记为已读", Response: readAllView{}})
 }
@@ -69,7 +69,10 @@ type inboxFilter struct {
 }
 
 type unreadView struct {
-	Count int64 `json:"count"`
+	// Count is the bell's number: unread notices plus personal messages.
+	Count    int64 `json:"count" doc:"未读总数（公告 + 个人消息）"`
+	Notices  int64 `json:"notices" doc:"未读公告数"`
+	Messages int64 `json:"messages" doc:"未读个人消息数"`
 }
 
 type readAllView struct {
@@ -123,9 +126,15 @@ func (m *Module) listInbox(c *gin.Context) (any, error) {
 }
 
 func (m *Module) unreadCount(c *gin.Context) (any, error) {
-	var n int64
-	err := m.inbox(c).Where("r.read_at IS NULL").Count(&n).Error
-	return unreadView{Count: n}, err
+	var notices int64
+	if err := m.inbox(c).Where("r.read_at IS NULL").Count(&notices).Error; err != nil {
+		return nil, err
+	}
+	messages, err := m.unreadMessages(c)
+	if err != nil {
+		return nil, err
+	}
+	return unreadView{Count: notices + messages, Notices: notices, Messages: messages}, nil
 }
 
 // readInbox returns one published notice and marks it read.

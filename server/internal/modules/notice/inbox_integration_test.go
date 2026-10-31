@@ -39,6 +39,7 @@ func (userGuard) Require(access.Level) gin.HandlerFunc {
 
 type inboxHarness struct {
 	t      *testing.T
+	m      *Module
 	h      http.Handler
 	db     *gorm.DB
 	admin  int64
@@ -59,7 +60,8 @@ func newInboxHarness(t *testing.T) *inboxHarness {
 	r := module.NewRouter(engine.Group("/api/v1"), Name, userGuard{}, module.NewRegistry())
 	m.noticeRoutes(r)
 	m.inboxRoutes(r)
-	x := &inboxHarness{t: t, h: engine, db: db}
+	m.messageRoutes(r)
+	x := &inboxHarness{t: t, m: m, h: engine, db: db}
 	x.admin = x.user("notice_admin", "发布人")
 	x.reader = x.user("notice_reader", "读者")
 	return x

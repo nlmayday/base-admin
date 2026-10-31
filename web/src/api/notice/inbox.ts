@@ -25,8 +25,11 @@ const enc = encodeURIComponent;
 export const listInbox = (query: PageQuery & InboxFilter) =>
   http.get<Page<InboxNotice>>("/me/notices", compactParams(query));
 
+/** 未读数：count 为公告与个人消息合计 */
+export type UnreadCount = { count: number; notices: number; messages: number };
+
 export const getUnreadCount = () =>
-  http.get<{ count: number }>("/me/notices/unread-count", undefined, {
+  http.get<UnreadCount>("/me/notices/unread-count", undefined, {
     skipErrorHandler: true
   });
 

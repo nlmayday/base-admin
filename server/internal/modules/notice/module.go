@@ -66,6 +66,7 @@ func (m *Module) Menus() []menu.Def {
 func (m *Module) Routes(r *module.Router) {
 	m.noticeRoutes(r)
 	m.inboxRoutes(r)
+	m.messageRoutes(r)
 	// codegen:routes — 代码生成器在此行之上加入新资源
 }
 

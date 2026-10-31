@@ -74,6 +74,9 @@ func buildApplication(ctx context.Context, cfg config.Config, logger *zap.Logger
 	}
 	registry := module.NewRegistry()
 	iamModule := iam.New(d.db, core, registry, cfg.Bootstrap)
+	// noticeModule also sends personal messages: give it to business modules
+	// as a message.Sender (docs/module-guide.md).
+	noticeModule := notice.New(notice.Deps{DB: d.db, Dict: systemModule})
 	mods := []module.Module{
 		auth.NewModule(core, iamModule.Me, auth.WithTargetGuard(iamModule.EnsureManageable)),
 		iamModule,
@@ -83,7 +86,7 @@ func buildApplication(ctx context.Context, cfg config.Config, logger *zap.Logger
 			Registry: registry, DB: d.db, Env: cfg.App.Env, Logger: logger,
 			APIPrefix: APIPrefix, SessionCookie: cfg.Auth.CookieName, Database: cfg.Database,
 		}),
-		notice.New(notice.Deps{DB: d.db, Dict: systemModule}),
+		noticeModule,
 		// codegen:modules — 代码生成器在此行之上加入新模块
 	}
 	store, err := storage.New(cfg.File)

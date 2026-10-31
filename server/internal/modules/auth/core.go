@@ -51,6 +51,7 @@ type Core struct {
 	// afterLoginLock lets tests pause login while it holds the row lock.
 	afterLoginLock func()
 	observer       LoginObserver
+	guards         []LoginGuard
 	policies       *policyStore
 	captchas       *captchas
 	lockout        *lockout

@@ -5,7 +5,14 @@ export type LoginLogKind = "login" | "logout";
 
 /** 登录失败原因（后端 auth.Reason*） */
 export type LoginFailReason =
-  "bad_credentials" | "rate_limited" | "captcha" | "locked" | "error";
+  | "bad_credentials"
+  | "rate_limited"
+  | "captcha"
+  | "locked"
+  | "ip_denied"
+  | "time_window"
+  | "denied"
+  | "error";
 
 export type LoginLog = {
   id: string;

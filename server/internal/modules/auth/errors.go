@@ -15,6 +15,12 @@ const (
 	CodePasswordChangeRequired = 20005
 	CodeAccountLocked          = 20006
 	CodeCaptchaRequired        = 20007
+	// CodeLoginIPDenied / CodeLoginTimeDenied: the security policy's IP
+	// allowlist or login window refuses the login (403).
+	CodeLoginIPDenied   = 20008
+	CodeLoginTimeDenied = 20009
+	// CodeLoginDenied: a LoginGuard refused the login without its own code.
+	CodeLoginDenied = 20010
 )
 
 var (

@@ -39,6 +39,11 @@ This is the HTTP contract between the backend (`server/`) and the frontend (`web
 | 20003 | 403 | CSRF / origin check failed | toast, then reload the page |
 | 20004 | 401 | wrong username or password (login only) | show on the login form |
 | 20005 | 403 | password change required | go to the change-password page |
+| 20006 | 403 | account locked after repeated failures; `data.retryAfterSeconds` | show on the login form |
+| 20007 | 401 | captcha missing or wrong; `data.captchaRequired` | show the captcha |
+| 20008 | 403 | the security policy's IP allowlist refuses this IP (checked before the password) | show on the login form |
+| 20009 | 403 | outside the security policy's login window; `data = {start, end, timeZone}` | show on the login form |
+| 20010 | 403 | a business module's `LoginGuard` refused the login | show on the login form |
 | 30001 | 422 | permission grant violates dependencies; `data = {missing: [], unknown: []}` | highlight missing codes |
 | 30002 | 409 | protected resource (built-in role, last super admin, yourself) | toast message |
 | 30003 | 409 | resource in use (department has children or users, role or position assigned) | toast message |

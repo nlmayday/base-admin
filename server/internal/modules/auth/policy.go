@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -30,7 +31,14 @@ type Policy struct {
 	CaptchaAfterFailures  int    `json:"captchaAfterFailures" binding:"min=1,max=20"`
 	LockoutThreshold      int    `json:"lockoutThreshold" binding:"min=0,max=100"`
 	LockoutMinutes        int    `json:"lockoutMinutes" binding:"min=1,max=1440"`
-	Version               int    `json:"version"`
+	// Login restrictions (login_restrictions.go): an empty allowlist or
+	// window means no limit; the exempt roles skip both.
+	IPAllowlist      []string `json:"ipAllowlist" binding:"max=200,dive,max=64" doc:"允许登录的 IP 或网段（CIDR），空表示不限制"`
+	LoginExemptRoles []string `json:"loginExemptRoles" binding:"max=50,dive,max=64" doc:"不受 IP 白名单和登录时段限制的角色编码"`
+	LoginTimeStart   string   `json:"loginTimeStart" binding:"omitempty,datetime=15:04" doc:"允许登录的开始时间 HH:MM，空表示不限制"`
+	LoginTimeEnd     string   `json:"loginTimeEnd" binding:"omitempty,datetime=15:04" doc:"结束时间 HH:MM；早于开始时间表示跨过午夜"`
+	LoginTimeZone    string   `json:"loginTimeZone" binding:"max=64" doc:"登录时段的时区，如 Asia/Shanghai"`
+	Version          int      `json:"version"`
 }
 
 // defaultPolicy is used only if the policy row cannot be read; it matches
@@ -38,6 +46,7 @@ type Policy struct {
 var defaultPolicy = Policy{
 	PasswordMinLength: 8, PasswordRequireDigit: true, CaptchaMode: CaptchaAfterFailures,
 	CaptchaAfterFailures: 3, LockoutThreshold: 5, LockoutMinutes: 15,
+	IPAllowlist: []string{}, LoginExemptRoles: []string{}, LoginTimeZone: defaultLoginTimeZone,
 }
 
 // CheckPassword returns a Chinese description of the first unmet rule, or
@@ -99,7 +108,27 @@ type policyStore struct {
 
 const policyColumns = `password_min_length, password_require_upper, password_require_lower,
 	password_require_digit, password_require_symbol, captcha_mode, captcha_after_failures,
-	lockout_threshold, lockout_minutes, version`
+	lockout_threshold, lockout_minutes, ip_allowlist::text AS ip_allowlist_json,
+	login_exempt_roles::text AS login_exempt_roles_json, login_time_start, login_time_end, login_time_zone, version`
+
+// policyRow is a policy as scanned: the lists are JSON text.
+type policyRow struct {
+	Policy
+	IPAllowlistJSON      string
+	LoginExemptRolesJSON string
+}
+
+func (r policyRow) policy() (Policy, error) {
+	p := r.Policy
+	p.IPAllowlist, p.LoginExemptRoles = []string{}, []string{}
+	if err := json.Unmarshal([]byte(r.IPAllowlistJSON), &p.IPAllowlist); err != nil {
+		return Policy{}, fmt.Errorf("decode ip_allowlist: %w", err)
+	}
+	if err := json.Unmarshal([]byte(r.LoginExemptRolesJSON), &p.LoginExemptRoles); err != nil {
+		return Policy{}, fmt.Errorf("decode login_exempt_roles: %w", err)
+	}
+	return p, nil
+}
 
 func (s *policyStore) get(ctx context.Context) (Policy, error) {
 	s.mu.Lock()
@@ -107,13 +136,17 @@ func (s *policyStore) get(ctx context.Context) (Policy, error) {
 	if !s.at.IsZero() && time.Since(s.at) < s.ttl {
 		return s.cached, nil
 	}
-	var p Policy
-	res := s.db.WithContext(ctx).Raw("SELECT " + policyColumns + " FROM sys_security_policy WHERE id = 1").Scan(&p)
+	var row policyRow
+	res := s.db.WithContext(ctx).Raw("SELECT " + policyColumns + " FROM sys_security_policy WHERE id = 1").Scan(&row)
 	if res.Error != nil {
 		return Policy{}, fmt.Errorf("load security policy: %w", res.Error)
 	}
-	if res.RowsAffected == 0 {
-		p = defaultPolicy
+	p := defaultPolicy
+	if res.RowsAffected > 0 {
+		var err error
+		if p, err = row.policy(); err != nil {
+			return Policy{}, err
+		}
 	}
 	s.cached, s.at = p, time.Now()
 	return p, nil

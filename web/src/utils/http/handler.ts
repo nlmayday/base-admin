@@ -9,6 +9,9 @@ import { useUserStoreHook } from "@/store/modules/user";
 const CALLER_HANDLED_CODES = new Set<number>([
   ErrorCode.BAD_CREDENTIALS,
   ErrorCode.ACCOUNT_LOCKED,
+  ErrorCode.LOGIN_IP_DENIED,
+  ErrorCode.LOGIN_TIME_DENIED,
+  ErrorCode.LOGIN_DENIED,
   ErrorCode.CAPTCHA_REQUIRED,
   ErrorCode.PERMISSION_DEPENDENCY
 ]);

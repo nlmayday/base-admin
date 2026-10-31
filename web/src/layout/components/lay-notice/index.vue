@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
-import { listInbox, readAllInbox, type InboxNotice } from "@/api/notice/inbox";
+import { listInbox, readAllInbox } from "@/api/notice/inbox";
+import {
+  isSafeLink,
+  listMessages,
+  readAllMessages,
+  readMessage
+} from "@/api/notice/messages";
 import { useUnreadNotices } from "@/composables/useUnreadNotices";
 import { formatDateTime } from "@/utils/format";
 import BellIcon from "~icons/ri/notification-3-line";
@@ -12,9 +18,17 @@ defineOptions({ name: "LayNotice" });
 const POLL_MS = 60_000;
 const LATEST = 5;
 
+/** 铃铛里的一条未读：公告或个人消息 */
+type BellItem = {
+  kind: "notice" | "message";
+  id: string;
+  title: string;
+  at: string;
+};
+
 const router = useRouter();
 const { unread, refreshUnread } = useUnreadNotices();
-const latest = ref<InboxNotice[]>([]);
+const latest = ref<BellItem[]>([]);
 const loading = ref(false);
 const visible = ref(false);
 let timer: ReturnType<typeof setInterval> | undefined;
@@ -22,8 +36,28 @@ let timer: ReturnType<typeof setInterval> | undefined;
 async function loadLatest(): Promise<void> {
   loading.value = true;
   try {
-    const page = await listInbox({ page: 1, pageSize: LATEST, unread: true });
-    latest.value = page?.list ?? [];
+    const query = { page: 1, pageSize: LATEST, unread: true };
+    const [notices, messages] = await Promise.all([
+      listInbox(query),
+      listMessages(query)
+    ]);
+    const items: BellItem[] = [
+      ...(notices?.list ?? []).map(n => ({
+        kind: "notice" as const,
+        id: n.id,
+        title: n.title,
+        at: n.publishedAt
+      })),
+      ...(messages?.list ?? []).map(m => ({
+        kind: "message" as const,
+        id: m.id,
+        title: m.title,
+        at: m.createdAt
+      }))
+    ];
+    latest.value = items
+      .sort((a, b) => b.at.localeCompare(a.at))
+      .slice(0, LATEST);
   } catch {
     latest.value = [];
   } finally {
@@ -36,16 +70,40 @@ function onShow(): void {
   loadLatest();
 }
 
-function open(id?: string): void {
+function openAll(): void {
   visible.value = false;
-  router.push({ path: "/message/index", query: id ? { id } : {} });
+  router.push({ path: "/message/index" });
+}
+
+/** 公告在「我的消息」里打开；个人消息标记已读后跳到它的链接 */
+async function open(item: BellItem): Promise<void> {
+  visible.value = false;
+  if (item.kind === "notice") {
+    router.push({ path: "/message/index", query: { id: item.id } });
+    return;
+  }
+  try {
+    const msg = await readMessage(item.id);
+    refreshUnread();
+    if (msg.link && isSafeLink(msg.link)) {
+      router.push(msg.link);
+      return;
+    }
+  } catch {
+    // 错误提示已由 http 拦截器处理
+  }
+  router.push({
+    path: "/message/index",
+    query: { tab: "messages", id: item.id }
+  });
 }
 
 async function readAll(): Promise<void> {
   try {
-    await readAllInbox();
+    await Promise.all([readAllInbox(), readAllMessages()]);
     unread.value = 0;
     latest.value = [];
+    refreshUnread();
   } catch {
     // 错误提示已由 http 拦截器处理
   }
@@ -100,14 +158,23 @@ onBeforeUnmount(() => {
     <div v-loading="loading" class="min-h-[80px]">
       <div
         v-for="n in latest"
-        :key="n.id"
+        :key="n.kind + n.id"
         class="notice-item"
         data-testid="nav-notice-item"
-        @click="open(n.id)"
+        @click="open(n)"
       >
-        <div class="truncate">{{ n.title }}</div>
+        <div class="flex items-center gap-1">
+          <el-tag
+            size="small"
+            :type="n.kind === 'notice' ? 'primary' : 'success'"
+            disable-transitions
+          >
+            {{ n.kind === "notice" ? "公告" : "提醒" }}
+          </el-tag>
+          <span class="truncate">{{ n.title }}</span>
+        </div>
         <div class="text-xs text-[var(--el-text-color-secondary)]">
-          {{ formatDateTime(n.publishedAt) }}
+          {{ formatDateTime(n.at) }}
         </div>
       </div>
       <el-empty
@@ -117,7 +184,7 @@ onBeforeUnmount(() => {
       />
     </div>
     <div class="pt-2 text-center border-t">
-      <el-button link type="primary" @click="open()">查看全部消息</el-button>
+      <el-button link type="primary" @click="openAll">查看全部消息</el-button>
     </div>
   </el-popover>
 </template>

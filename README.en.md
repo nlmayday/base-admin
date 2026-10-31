@@ -2,7 +2,7 @@
 
 [简体中文](README.md) | English
 
-A reusable admin system template: a Go + Gin backend plus a Vue 3 + Element Plus frontend built on pure-admin-thin. The user interface is in Chinese; the Chinese menu names are given in parentheses below. The architecture baseline is [docs/rebuild-plan-v2.md](docs/rebuild-plan-v2.md), the P0 HTTP contract is [docs/api-p0.md](docs/api-p0.md), and the P1–P3 feature plan is [docs/p1-p3-plan.md](docs/p1-p3-plan.md). The other documents under `docs/` are in Chinese.
+A reusable admin system template: a Go + Gin backend plus a Vue 3 + Element Plus frontend built on pure-admin-thin. The user interface is in Chinese; the Chinese menu names are given in parentheses below. The architecture baseline is [docs/rebuild-plan-v2.md](docs/rebuild-plan-v2.md), the P0 HTTP contract is [docs/api-p0.md](docs/api-p0.md), and the P1–P3 feature plan is [docs/p1-p3-plan.md](docs/p1-p3-plan.md). Some documents under `docs/` are in Chinese.
 
 ## Features
 
@@ -11,8 +11,8 @@ A reusable admin system template: a Go + Gin backend plus a Vue 3 + Element Plus
 | Dashboard (工作台) | Greeting, permission-aware statistic cards, quick links, system status, and 7-day login and operation trends |
 | System (系统管理) | Users (with CSV import: template, row-by-row errors, all or nothing), roles (menu, button and API permissions, data scope), departments, positions, menus (icons picked from a built-in offline icon set) |
 | Settings (系统配置) | Data dictionaries (with tag styles), system parameters (typed, change history), basic settings (site name and logo, upload rules, log retention) |
-| Messages (消息中心) | Notices with attachments: drafts, publish and revoke; every user sees new notices in the header bell (unread count) and in My messages (我的消息) |
-| Security (安全中心) | Online sessions (force logout per session or per user), and a security policy covering password complexity, captcha (off, after N failures, always) and account lockout |
+| Messages (消息中心) | Notices with attachments: drafts, publish and revoke; personal messages that business modules send to one user (a click opens the business page); both show in the header bell (unread count) and in My messages (我的消息) |
+| Security (安全中心) | Online sessions (force logout per session or per user), and a security policy covering password complexity, captcha (off, after N failures, always), account lockout, an IP allowlist and login hours (with exempt roles); business modules can register their own login checks |
 | Audit (日志审计) | Login logs and operation logs (route summary, duration, result, request ID, sensitive-field masking), with statistics and CSV export |
 | Files (资源管理) | Image and attachment upload components for business forms (any signed-in user, links that need a login but no file permission); media library (categories, grid and table views, preview, signed links, drag-and-drop upload with content sniffing) and storage overview; local disk or S3/MinIO |
 | Operations (运维管理) | Scheduled jobs (cron with preview, retries, timeouts, single run per fire across instances, manual runs) and run history; server and application monitoring |
@@ -54,7 +54,7 @@ API_URL=http://127.0.0.1:18080 make web-dev
 
 Nothing has to be imported by hand, but **the migrations must run first**: `make run` exits with a hint when the schema is not at the latest version.
 
-- `make migrate-up` creates the tables and the default data: data dictionaries, the security policy and the built-in scheduled jobs (log and file cleanup).
+- `make migrate-up` creates the tables and the default data: data dictionaries, the security policy and the built-in scheduled jobs (log, file and personal-message cleanup).
 - Every start syncs the permission codes, menus and system parameters of all modules, so new menus and permissions appear after a restart.
 - When no user exists yet, the server creates the super admin role and the `admin` account with the password in `ADMIN_BOOTSTRAP_ADMIN_PASSWORD`; without that variable it refuses to start.
 

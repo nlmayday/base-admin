@@ -78,9 +78,17 @@ onMounted(async () => {
   }
 });
 
-/** 登录失败后的界面反馈：账号锁定、验证码、账号或密码错误 */
+/** 显示在登录表单上的拒绝：账号锁定、IP 或时段限制、业务规则 */
+const REFUSAL_CODES = [
+  ErrorCode.ACCOUNT_LOCKED,
+  ErrorCode.LOGIN_IP_DENIED,
+  ErrorCode.LOGIN_TIME_DENIED,
+  ErrorCode.LOGIN_DENIED
+];
+
+/** 登录失败后的界面反馈：拒绝登录、验证码、账号或密码错误 */
 function showLoginFailure(err: unknown): void {
-  if (hasErrorCode(err, ErrorCode.ACCOUNT_LOCKED)) {
+  if (isApiError(err) && REFUSAL_CODES.some(code => code === err.code)) {
     loginError.value = err.message;
   } else if (hasErrorCode(err, ErrorCode.CAPTCHA_REQUIRED)) {
     requireCaptcha(captcha.visible ? err.message : "请输入验证码");

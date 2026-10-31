@@ -86,6 +86,8 @@ func (m *Module) Routes(r *module.Router) {
 	p.GET("/policy", access.Perm("auth:policy:view"), handle(m.getPolicy)).Doc(module.Doc{Summary: "安全策略", Response: policyView{}})
 	p.PUT("/policy", access.Perm("auth:policy:update"), handle(m.updatePolicy)).
 		Doc(module.Doc{Summary: "修改安全策略", Body: Policy{}, Response: policyView{}})
+	p.GET("/roles", access.Perm("auth:policy:view"), handle(m.listPolicyRoles)).
+		Doc(module.Doc{Summary: "可豁免登录限制的角色", Response: []policyRole{}})
 	p.POST("/unlock", access.Perm("auth:policy:update"), handle(m.unlockAccount)).
 		Doc(module.Doc{Summary: "解除账号锁定", Body: unlockRequest{}})
 }
@@ -131,6 +133,13 @@ func (m *Module) login(c *gin.Context) {
 		return
 	}
 	if ok {
+		if err := m.core.checkGuards(ctx, LoginAttempt{
+			UserID: uid, Username: account, IP: ip, UserAgent: c.Request.UserAgent(), At: m.core.now(),
+		}); err != nil {
+			m.recordLogin(c, account, uid, ReasonDenied)
+			httpx.Fail(c, err)
+			return
+		}
 		token, sess, err := m.core.establishSession(ctx, uid, hash, ip, c.Request.UserAgent())
 		switch {
 		case err == nil:
@@ -154,13 +163,23 @@ func (m *Module) login(c *gin.Context) {
 	}))
 }
 
-// loginGate applies the account lock and the captcha requirement before any
-// password is checked (security policy).
+// loginGate applies the login restrictions, the account lock and the
+// captcha requirement before any password is checked (security policy).
 func (m *Module) loginGate(c *gin.Context, account string, req loginRequest) (Policy, error) {
 	ctx := c.Request.Context()
 	policy, err := m.core.policies.get(ctx)
 	if err != nil {
 		return Policy{}, unavailable(err)
+	}
+	if policy.restricted() {
+		roles, err := accountRoles(ctx, m.core.db, account)
+		if err != nil {
+			return Policy{}, unavailable(err)
+		}
+		if reason, err := policy.loginRefusal(c.ClientIP(), roles, m.core.now()); err != nil {
+			m.recordLogin(c, account, 0, reason)
+			return Policy{}, err
+		}
 	}
 	lockedFor, err := m.core.lockout.locked(ctx, account, c.ClientIP())
 	if err != nil {

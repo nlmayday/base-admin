@@ -52,6 +52,9 @@ export const REASON_LABELS: Record<string, string> = {
   rate_limited: "请求过于频繁",
   captcha: "验证码错误",
   locked: "账号已锁定",
+  ip_denied: "IP 不在白名单",
+  time_window: "不在允许登录时段",
+  denied: "业务规则拒绝",
   error: "系统错误"
 };
 

@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"slices"
@@ -213,6 +214,23 @@ type policyView struct {
 	// Session timeouts come from configuration and are shown read-only.
 	SessionIdleMinutes     int `json:"sessionIdleMinutes"`
 	SessionAbsoluteMinutes int `json:"sessionAbsoluteMinutes"`
+	// ClientIP is the caller's address as the server sees it, for the
+	// allowlist.
+	ClientIP string `json:"clientIp" doc:"当前请求的 IP（服务端看到的地址）"`
+}
+
+type policyRole struct {
+	Code string `json:"code"`
+	Name string `json:"name"`
+}
+
+// listPolicyRoles lists the roles that can be made exempt from the login
+// restrictions.
+func (m *Module) listPolicyRoles(c *gin.Context) (any, error) {
+	roles := []policyRole{}
+	err := m.core.db.WithContext(c.Request.Context()).
+		Raw(`SELECT code, name FROM sys_roles ORDER BY sort, id`).Scan(&roles).Error
+	return roles, err
 }
 
 func (m *Module) getPolicy(c *gin.Context) (any, error) {
@@ -220,7 +238,7 @@ func (m *Module) getPolicy(c *gin.Context) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return policyView{Policy: p,
+	return policyView{Policy: p, ClientIP: c.ClientIP(),
 		SessionIdleMinutes:     int(m.core.cfg.IdleTimeout.Minutes()),
 		SessionAbsoluteMinutes: int(m.core.cfg.AbsoluteTimeout.Minutes()),
 	}, nil
@@ -232,15 +250,28 @@ func (m *Module) updatePolicy(c *gin.Context) (any, error) {
 		return nil, err
 	}
 	ctx := c.Request.Context()
+	if err := m.checkRestrictions(c, &req); err != nil {
+		return nil, err
+	}
+	ips, err := json.Marshal(req.IPAllowlist)
+	if err != nil {
+		return nil, err
+	}
+	roles, err := json.Marshal(req.LoginExemptRoles)
+	if err != nil {
+		return nil, err
+	}
 	res := m.core.db.WithContext(ctx).Exec(`UPDATE sys_security_policy SET
 			password_min_length = ?, password_require_upper = ?, password_require_lower = ?,
 			password_require_digit = ?, password_require_symbol = ?, captcha_mode = ?,
 			captcha_after_failures = ?, lockout_threshold = ?, lockout_minutes = ?,
-			version = version + 1, updated_at = now(), updated_by = ?
+			ip_allowlist = ?::jsonb, login_exempt_roles = ?::jsonb, login_time_start = ?, login_time_end = ?,
+			login_time_zone = ?, version = version + 1, updated_at = now(), updated_by = ?
 		WHERE id = 1 AND version = ?`,
 		req.PasswordMinLength, req.PasswordRequireUpper, req.PasswordRequireLower, req.PasswordRequireDigit,
 		req.PasswordRequireSymbol, req.CaptchaMode, req.CaptchaAfterFailures, req.LockoutThreshold,
-		req.LockoutMinutes, actor.From(ctx).UserID(), req.Version)
+		req.LockoutMinutes, string(ips), string(roles), req.LoginTimeStart, req.LoginTimeEnd,
+		req.LoginTimeZone, actor.From(ctx).UserID(), req.Version)
 	if res.Error != nil {
 		return nil, res.Error
 	}
@@ -249,6 +280,38 @@ func (m *Module) updatePolicy(c *gin.Context) (any, error) {
 	}
 	m.core.policies.invalidate()
 	return m.getPolicy(c)
+}
+
+// checkRestrictions validates the login restrictions of a new policy and
+// refuses one that would keep the administrator saving it from logging in
+// again (from this IP, at this time).
+func (m *Module) checkRestrictions(c *gin.Context, p *Policy) error {
+	if problems := p.normalizeRestrictions(); len(problems) > 0 {
+		return httpx.Validation(problems)
+	}
+	ctx := c.Request.Context()
+	missing, err := unknownRoles(ctx, m.core.db, p.LoginExemptRoles)
+	if err != nil {
+		return err
+	}
+	if len(missing) > 0 {
+		return fieldError("loginExemptRoles", "角色不存在："+strings.Join(missing, "、"))
+	}
+	roles, err := userRoles(ctx, m.core.db, actor.From(ctx).UserID())
+	if err != nil {
+		return err
+	}
+	switch reason, _ := p.loginRefusal(c.ClientIP(), roles, m.core.now()); reason {
+	case ReasonIPDenied:
+		return fieldError("ipAllowlist", "保存后你将无法登录：当前 IP "+c.ClientIP()+" 不在白名单中（可加入白名单，或把你的角色设为豁免）")
+	case ReasonTimeWindow:
+		return fieldError("loginTimeEnd", "保存后你将无法登录：现在不在允许登录的时段内（可调整时段，或把你的角色设为豁免）")
+	}
+	return nil
+}
+
+func fieldError(field, msg string) error {
+	return httpx.Validation([]httpx.FieldError{{Field: field, Message: msg}})
 }
 
 type unlockRequest struct {

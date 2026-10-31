@@ -12,11 +12,16 @@ import { useDict } from "@/composables/useDict";
 import { useUnreadNotices } from "@/composables/useUnreadNotices";
 import { formatDateTime } from "@/utils/format";
 import { message } from "@/utils/message";
+import PersonalMessages from "./components/PersonalMessages.vue";
 
 defineOptions({ name: "MyMessages" });
 
 const route = useRoute();
-const { refreshUnread } = useUnreadNotices();
+const { refreshUnread, unreadNotices, unreadMessages } = useUnreadNotices();
+/** 公告 / 个人消息；从铃铛点个人消息进来时带 ?tab=messages */
+const tab = ref<"notices" | "messages">(
+  route.query.tab === "messages" ? "messages" : "notices"
+);
 const { labelOf: typeLabel, tagTypeOf: typeTagType } = useDict("notice_type");
 
 const onlyUnread = ref(false);
@@ -59,15 +64,23 @@ async function readAll(): Promise<void> {
   }
 }
 
-/** 从顶栏铃铛点进来时带 ?id=，直接打开该消息 */
+/** 从顶栏铃铛点进来时带 ?id=，直接打开该公告 */
 async function openFromQuery(): Promise<void> {
   const id = route.query.id;
+  if (route.query.tab === "messages") return;
   if (typeof id === "string" && id) await open(id);
 }
 
 watch(() => route.query.id, openFromQuery);
+watch(
+  () => route.query.tab,
+  t => {
+    if (t === "messages") tab.value = "messages";
+  }
+);
 // 先标记已读再加载列表，列表里的未读标记才是最新的
 onMounted(async () => {
+  refreshUnread();
   await openFromQuery();
   reload();
 });
@@ -76,58 +89,82 @@ onMounted(async () => {
 <template>
   <div class="main">
     <el-card shadow="never">
-      <div class="mb-3 flex items-center justify-between">
-        <div class="flex items-center gap-4">
-          <span class="font-medium">我的消息</span>
-          <el-radio-group v-model="onlyUnread" size="small" @change="search">
-            <el-radio-button :value="false">全部</el-radio-button>
-            <el-radio-button :value="true">未读</el-radio-button>
-          </el-radio-group>
-        </div>
-        <el-button @click="readAll">全部标记为已读</el-button>
-      </div>
-      <el-table
-        v-loading="loading"
-        :data="rows"
-        row-key="id"
-        class="cursor-pointer"
-        @row-click="(row: InboxNotice) => open(row.id)"
-      >
-        <el-table-column label="标题" min-width="260">
-          <template #default="{ row }">
-            <span class="inline-flex items-center gap-2">
-              <el-badge is-dot :hidden="row.read" />
-              <span :class="row.read ? '' : 'font-medium'">
-                {{ row.title }}
-              </span>
-            </span>
+      <el-tabs v-model="tab">
+        <el-tab-pane name="notices">
+          <template #label>
+            <el-badge
+              :value="unreadNotices"
+              :hidden="unreadNotices === 0"
+              :max="99"
+              class="tab-badge"
+            >
+              公告
+            </el-badge>
           </template>
-        </el-table-column>
-        <el-table-column label="类型" width="100">
-          <template #default="{ row }">
-            <el-tag :type="typeTagType(row.type)" disable-transitions>
-              {{ typeLabel(row.type) }}
-            </el-tag>
+          <div class="mb-3 flex items-center justify-between">
+            <el-radio-group v-model="onlyUnread" size="small" @change="search">
+              <el-radio-button :value="false">全部</el-radio-button>
+              <el-radio-button :value="true">未读</el-radio-button>
+            </el-radio-group>
+            <el-button @click="readAll">全部标记为已读</el-button>
+          </div>
+          <el-table
+            v-loading="loading"
+            :data="rows"
+            row-key="id"
+            class="cursor-pointer"
+            @row-click="(row: InboxNotice) => open(row.id)"
+          >
+            <el-table-column label="标题" min-width="260">
+              <template #default="{ row }">
+                <span class="inline-flex items-center gap-2">
+                  <el-badge is-dot :hidden="row.read" />
+                  <span :class="row.read ? '' : 'font-medium'">
+                    {{ row.title }}
+                  </span>
+                </span>
+              </template>
+            </el-table-column>
+            <el-table-column label="类型" width="100">
+              <template #default="{ row }">
+                <el-tag :type="typeTagType(row.type)" disable-transitions>
+                  {{ typeLabel(row.type) }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="publisher" label="发布人" width="140" />
+            <el-table-column label="发布时间" width="170">
+              <template #default="{ row }">
+                {{ formatDateTime(row.publishedAt) }}
+              </template>
+            </el-table-column>
+          </el-table>
+          <el-pagination
+            class="mt-3 justify-end"
+            :current-page="pagination.currentPage"
+            :page-size="pagination.pageSize"
+            :page-sizes="[10, 20, 50, 100]"
+            :total="pagination.total"
+            layout="total, sizes, prev, pager, next"
+            background
+            @size-change="onSizeChange"
+            @current-change="onCurrentChange"
+          />
+        </el-tab-pane>
+        <el-tab-pane name="messages" lazy>
+          <template #label>
+            <el-badge
+              :value="unreadMessages"
+              :hidden="unreadMessages === 0"
+              :max="99"
+              class="tab-badge"
+            >
+              个人消息
+            </el-badge>
           </template>
-        </el-table-column>
-        <el-table-column prop="publisher" label="发布人" width="140" />
-        <el-table-column label="发布时间" width="170">
-          <template #default="{ row }">
-            {{ formatDateTime(row.publishedAt) }}
-          </template>
-        </el-table-column>
-      </el-table>
-      <el-pagination
-        class="mt-3 justify-end"
-        :current-page="pagination.currentPage"
-        :page-size="pagination.pageSize"
-        :page-sizes="[10, 20, 50, 100]"
-        :total="pagination.total"
-        layout="total, sizes, prev, pager, next"
-        background
-        @size-change="onSizeChange"
-        @current-change="onCurrentChange"
-      />
+          <PersonalMessages />
+        </el-tab-pane>
+      </el-tabs>
     </el-card>
 
     <el-dialog
@@ -157,6 +194,10 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.tab-badge :deep(.el-badge__content) {
+  top: 8px;
+}
+
 .notice-content {
   max-height: 60vh;
   overflow-y: auto;
