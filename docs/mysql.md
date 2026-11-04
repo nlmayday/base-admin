@@ -1,6 +1,6 @@
 # 使用 MySQL
 
-PostgreSQL 是主线数据库，MySQL 8.4 是可选的另一种数据库：同一份代码，按 `ADMIN_DATABASE_URL` 的协议头选择，不需要单独的开关。
+PostgreSQL 是主线数据库，MySQL（8.0.30 及以上，含 8.4）是可选的另一种数据库：同一份代码，按 `ADMIN_DATABASE_URL` 的协议头选择，不需要单独的开关。
 
 ```text
 postgres://admin:admin@127.0.0.1:15432/base_admin?sslmode=disable   # PostgreSQL（默认）
@@ -31,9 +31,10 @@ make test-integration-mysql   # 全部后端测试在 MySQL 上跑一遍
 
 用 Docker 部署时直接用 `deploy/docker/compose.prod.mysql.yaml`（MySQL 8.4、Redis、迁移、后端、nginx），下面几条它都已经设置好。数据库密码会拼进连接地址，只用字母、数字和 `-_.~`，其他字符要做 URL 编码（`@` 写成 `%40`）。
 
-- MySQL 8.4 及以上（用到 CHECK 约束、函数索引、表达式默认值、`INSERT … AS excluded` 行别名）。
+- MySQL 8.0.30 及以上（8.0 和 8.4 都在 CI 上跑全部测试）。用到的 CHECK 约束、函数索引、表达式默认值、`INSERT … AS excluded` 行别名在 8.0.19 起都有；低于 8.0.30 或者 MariaDB 时，程序启动就报错。
+- 应用账号只需要本库的普通权限（`ALL ON <库>.*`），不需要 `SUPER`。
 - 数据库建议 `CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_as_cs`。迁移建的每张表都显式指定了这个排序规则，数据库默认值不同也不影响。
-- 迁移会创建一个触发器（`sys_users_session_gen_monotonic`，保证会话代数只增不减）。开启 binlog 时，执行迁移的账号需要 `TRIGGER` 权限，并且要么有 `SUPER`，要么服务器设置了 `log_bin_trust_function_creators=1`。
+- 迁移不建触发器、存储过程或函数，所以执行迁移的账号不需要 `SUPER`，开启 binlog 也不用设置 `log_bin_trust_function_creators`。「会话代数只增不减」由程序保证（PostgreSQL 另有触发器兜底）。用早期版本的分支迁移过、已经建了触发器的库，可以保留它，也可以执行 `DROP TRIGGER IF EXISTS sys_users_session_gen_monotonic` 删掉。
 - URL 里可以带驱动参数，例如 `?tls=true`。`parseTime`、`loc`、`charset`、`collation`、`sql_mode`、`time_zone`、`transaction_isolation`、`multiStatements`、`clientFoundRows` 由程序设置，写在 URL 里会被拒绝。
 
 程序给每个连接设置的会话参数，用来让 MySQL 的行为和 PostgreSQL 一致：

@@ -54,15 +54,21 @@ jobs:
       - name: Test (unit + integration)
         run: make test-integration
 
-  # The same backend tests on MySQL (docs/mysql.md). The tests create and
-  # drop one database per test, so they connect as root.
+  # The same backend tests on MySQL (docs/mysql.md), on the oldest and the
+  # newest supported release, with binary logging on (the image default)
+  # and an account without SUPER, as on managed databases. The tests create
+  # and drop one database per test, named test_<hex>.
   server-mysql:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        mysql: ["8.0.46", "8.4.13"]
 
     services:
       mysql:
-        image: mysql:8.4.13
+        image: mysql:${{ matrix.mysql }}
         env:
           MYSQL_ROOT_PASSWORD: admin
           MYSQL_DATABASE: base_admin
@@ -80,7 +86,7 @@ jobs:
           --health-interval 2s --health-timeout 3s --health-retries 30
 
     env:
-      ADMIN_DATABASE_URL: mysql://root:admin@127.0.0.1:3306/base_admin
+      ADMIN_DATABASE_URL: mysql://app:app@127.0.0.1:3306/base_admin
       ADMIN_REDIS_ADDR: 127.0.0.1:6379
 
     steps:
@@ -90,6 +96,13 @@ jobs:
         with:
           go-version-file: server/go.mod
           cache-dependency-path: server/go.sum
+
+      - name: Application account without SUPER
+        run: |
+          docker exec ${{ job.services.mysql.id }} mysql -uroot -padmin -e "
+            CREATE USER 'app'@'%' IDENTIFIED BY 'app';
+            GRANT ALL ON base_admin.* TO 'app'@'%';
+            GRANT ALL ON \`test\\_%\`.* TO 'app'@'%';"
 
       - name: Test (unit + integration)
         run: make test-integration

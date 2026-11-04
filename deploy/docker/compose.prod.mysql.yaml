@@ -39,9 +39,6 @@ services:
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_0900_as_cs
-      # Lets the application user (no SUPER) create the trigger of the
-      # migrations while binary logging is on.
-      - --log-bin-trust-function-creators=1
     volumes: [mysqldata:/var/lib/mysql]
     # Over TCP: the first-start initialization runs a server without
     # networking, which must not count as healthy.

@@ -48,7 +48,7 @@ ADMIN_HTTP_ADDR=:18080 make run
 API_URL=http://127.0.0.1:18080 make web-dev
 ```
 
-MySQL 8.4 can replace PostgreSQL: `make deps-up-mysql`, `make migrate-up-mysql`, `make run-mysql`. The conventions and limits are in [docs/mysql.md](docs/mysql.md) (in Chinese); the code generator and the agent table API work on both databases.
+MySQL (8.0.30 or later) can replace PostgreSQL: `make deps-up-mysql`, `make migrate-up-mysql`, `make run-mysql`. The conventions and limits are in [docs/mysql.md](docs/mysql.md) (in Chinese); the code generator and the agent table API work on both databases.
 
 `make help` lists every target. `make ci` runs build, lint, the backend unit and integration tests, the frontend lint and type-check, and the frontend build.
 

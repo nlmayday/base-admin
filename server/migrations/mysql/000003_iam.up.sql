@@ -49,16 +49,11 @@ CREATE TABLE sys_users (
 CREATE UNIQUE INDEX sys_users_username_uq ON sys_users ((CASE WHEN deleted_at IS NULL THEN lower(username) END));
 CREATE INDEX sys_users_dept_id_idx ON sys_users (dept_id);
 
--- Invariant I3 enforced in the database: the session generation never
--- decreases, whatever the application does.
-CREATE TRIGGER sys_users_session_gen_monotonic
-    BEFORE UPDATE ON sys_users
-    FOR EACH ROW
-BEGIN
-    IF NEW.session_gen < OLD.session_gen THEN
-        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'session_gen must not decrease';
-    END IF;
-END;
+-- Invariant I3 (the session generation never decreases) is kept by the
+-- application on MySQL: the only writer sets GREATEST(session_gen, ?) under
+-- the row lock (auth/revoke.go). PostgreSQL also has a trigger; creating one
+-- here would need SUPER (or log_bin_trust_function_creators) with binary
+-- logging on, which managed databases rarely grant.
 
 ALTER TABLE sys_departments
     ADD CONSTRAINT sys_departments_leader_fk FOREIGN KEY (leader_user_id) REFERENCES sys_users (id) ON DELETE SET NULL;

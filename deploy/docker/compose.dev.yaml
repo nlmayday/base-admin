@@ -33,9 +33,6 @@ services:
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_0900_as_cs
-      # Lets a user without SUPER create the triggers of the migrations
-      # while binary logging is on.
-      - --log-bin-trust-function-creators=1
     ports:
       - "127.0.0.1:13307:3306"
     volumes:
