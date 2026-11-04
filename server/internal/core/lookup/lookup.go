@@ -21,12 +21,21 @@ const MaxOptions = 50
 
 var identPattern = regexp.MustCompile(`^[a-z_][a-z0-9_]{0,62}$`)
 
-// Target is a referenced table: its id column is "id", Label is the column
-// shown to users, SoftDelete hides rows whose deleted_at is set.
+// Target is a referenced table: Key is its bigint key column ("" for id),
+// Label the column shown to users, SoftDelete hides rows whose deleted_at
+// is set.
 type Target struct {
 	Table      string
 	Label      string
 	SoftDelete bool
+	Key        string
+}
+
+func (t Target) key() string {
+	if t.Key == "" {
+		return "id"
+	}
+	return t.Key
 }
 
 // Option is one selectable row.
@@ -36,7 +45,7 @@ type Option struct {
 }
 
 func (t Target) query(ctx context.Context, db *gorm.DB) (*gorm.DB, error) {
-	if !identPattern.MatchString(t.Table) || !identPattern.MatchString(t.Label) {
+	if !identPattern.MatchString(t.Table) || !identPattern.MatchString(t.Label) || !identPattern.MatchString(t.key()) {
 		return nil, fmt.Errorf("lookup: invalid target %s.%s", t.Table, t.Label)
 	}
 	q := db.WithContext(ctx).Table(`"` + t.Table + `" AS x`)
@@ -58,7 +67,7 @@ func (t Target) Options(ctx context.Context, db *gorm.DB, keyword string) ([]Opt
 		q = q.Where(`LOWER(`+label+`) LIKE LOWER(?)`, "%"+escapeLike(kw)+"%")
 	}
 	out := []Option{}
-	err = q.Select("x.id AS id, " + label + " AS label").Order(label + ", x.id").Limit(MaxOptions).Scan(&out).Error
+	err = q.Select("x." + t.key() + " AS id, " + label + " AS label").Order(label + ", x." + t.key()).Limit(MaxOptions).Scan(&out).Error
 	return out, err
 }
 
@@ -69,7 +78,7 @@ func (t Target) Exists(ctx context.Context, db *gorm.DB, id int64) (bool, error)
 		return false, err
 	}
 	var n int64
-	err = q.Where("x.id = ?", id).Limit(1).Count(&n).Error
+	err = q.Where("x."+t.key()+" = ?", id).Limit(1).Count(&n).Error
 	return n > 0, err
 }
 

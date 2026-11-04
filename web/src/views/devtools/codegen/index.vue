@@ -25,6 +25,9 @@ import {
 import CodeBlock from "../shared/CodeBlock.vue";
 import PreviewPanel from "./components/PreviewPanel.vue";
 import FieldConfig from "./components/FieldConfig.vue";
+import AdvancedOptions, {
+  type AdvancedModel
+} from "./components/AdvancedOptions.vue";
 
 defineOptions({ name: "DevtoolsCodegen" });
 
@@ -34,7 +37,10 @@ const UNSAFE_RE = /["'`\\<>{}]/;
 
 const CLI_USAGE = `cd server
 go run ./cmd/gen -table biz_orders -module sales -resource order -name '订单' \\
-  [-module-title '销售管理'] [-fields '<字段配置 JSON>'] [-force] [-dry-run]`;
+  [-module-title '销售管理'] [-fields '<字段配置 JSON>'] [-key-mode generated] \\
+  [-read-only] [-children '<子表 JSON>'] [-force] [-dry-run]
+# 批量：每项与本页的请求相同（table、module、resource、name、fields、keyMode、readOnly、children）
+go run ./cmd/gen -spec specs.json [-force]`;
 
 const loadingTables = ref(false);
 const disabled = ref(false);
@@ -51,6 +57,13 @@ const form = reactive<CodegenRequest>({
   moduleTitle: ""
 });
 const { fieldErrors, clearFieldErrors, applyFieldErrors } = useFieldErrors();
+const emptyAdvanced = (): AdvancedModel => ({
+  keyMode: "",
+  readOnly: false,
+  refs: [],
+  children: []
+});
+const advanced = ref<AdvancedModel>(emptyAdvanced());
 /** 字段配置：defaults 是后端给出的默认值，fields 是当前编辑的副本 */
 const defaults = ref<CodegenFieldInfo[]>([]);
 const fields = ref<CodegenFieldInfo[]>([]);
@@ -128,6 +141,19 @@ async function restoreLast(): Promise<void> {
     const o = overrides.get(f.column);
     return o ? { ...f, ...o } : f;
   });
+  advanced.value = {
+    keyMode: req.keyMode ?? "",
+    readOnly: req.readOnly ?? false,
+    refs: (req.fields ?? [])
+      .filter(f => f.refTable)
+      .map(f => ({
+        column: f.column,
+        refTable: f.refTable ?? "",
+        refKey: f.refKey ?? "",
+        relation: f.relation ?? ""
+      })),
+    children: req.children ?? []
+  };
   result.value = last.result;
 }
 const { copy, isSupported } = useClipboard({ legacy: true });
@@ -193,8 +219,34 @@ const fieldsValid = computed(() =>
   })
 );
 
+/** 字段配置加上手动声明的关联（同一列合并为一项） */
+function allFieldOptions(): CodegenFieldOption[] {
+  const out = fieldOptions();
+  for (const r of advanced.value.refs) {
+    if (!r.column || !r.refTable) continue;
+    let o = out.find(x => x.column === r.column);
+    if (!o) {
+      o = { column: r.column };
+      out.push(o);
+    }
+    o.refTable = r.refTable.trim();
+    if (r.refKey.trim()) o.refKey = r.refKey.trim();
+    if (r.relation.trim()) o.relation = r.relation.trim();
+  }
+  return out;
+}
+
 function request(): CodegenRequest {
-  return { ...form, name: form.name.trim(), fields: fieldOptions() };
+  const a = advanced.value;
+  const children = a.readOnly ? [] : a.children.filter(c => c.table);
+  return {
+    ...form,
+    name: form.name.trim(),
+    fields: allFieldOptions(),
+    ...(a.keyMode ? { keyMode: a.keyMode } : {}),
+    ...(a.readOnly ? { readOnly: true } : {}),
+    ...(children.length ? { children } : {})
+  };
 }
 
 const command = computed(() => {
@@ -207,8 +259,13 @@ const command = computed(() => {
     `-name '${form.name.trim() || "<中文名>"}'`
   ];
   if (form.moduleTitle) parts.push(`-module-title '${form.moduleTitle}'`);
-  const opts = fieldOptions();
-  if (opts.length) parts.push(`-fields '${JSON.stringify(opts)}'`);
+  const req = request();
+  if (req.fields?.length) parts.push(`-fields '${JSON.stringify(req.fields)}'`);
+  if (req.keyMode) parts.push(`-key-mode ${req.keyMode}`);
+  if (req.readOnly) parts.push("-read-only");
+  if (req.children?.length) {
+    parts.push(`-children '${JSON.stringify(req.children)}'`);
+  }
   return parts.join(" ");
 });
 
@@ -225,6 +282,7 @@ function onTableChange(name: string): void {
   if (!t) return;
   form.resource = guessResource(t.name);
   if (t.comment) form.name = t.comment.slice(0, 20);
+  advanced.value = emptyAdvanced();
   preview.value = null;
   result.value = null;
   loadFields(name);
@@ -479,6 +537,14 @@ onMounted(async () => {
           :dicts="dicts"
           class="mb-4"
           @reset="resetFields"
+        />
+        <AdvancedOptions
+          v-if="form.table"
+          v-model="advanced"
+          :columns="defaults.map(f => f.column)"
+          :tables="tables"
+          :dicts="dicts"
+          class="mb-4"
         />
         <div class="mb-4 flex flex-wrap items-center gap-2">
           <el-button :loading="previewing" @click="onPreview">

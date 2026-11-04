@@ -46,6 +46,8 @@ This guide shows two routes: generating a module from a table (recommended), and
    ```
    Flags:
    - `-fields`: the field configuration as JSON; only the columns that differ from the defaults are needed.
+   - `-key-mode`, `-read-only`, `-children`: the options below.
+   - `-spec specs.json`: generates a list of tables in one run. Each entry has the fields of the page's request (`table`, `module`, `resource`, `name`, `moduleTitle`, `parentMenu`, `fields`, `keyMode`, `readOnly`, `children`); with `-force` the same file regenerates them.
    - `-module-title`: the title of the new module's menu directory.
    - `-parent-menu`: attaches the page to an existing directory instead of creating one.
    - `-dsn`: the database URL; defaults to `$ADMIN_DATABASE_URL`.
@@ -58,8 +60,16 @@ This guide shows two routes: generating a module from a table (recommended), and
    - `web/src/api/<module>/<resource>.ts`
    - `web/src/views/<module>/<resource>/index.vue` and `components/<Resource>FormDialog.vue`
 
+   **Tables owned by another service** (a game server's tables, created by its migrations) need no change for the generator; 高级选项 on the page (and the same JSON keys in the CLI) cover them:
+   - **Primary key** (`keyMode`). Any single-column bigint, integer or text key. `auto`: the database assigns it (IDENTITY, AUTO_INCREMENT). `generated`: a bigint the module assigns on create with `NextID()`, from `Deps.NewID` (default `ids.Next`, a snowflake id); pass the other service's generator in `modules.go` when both write the table. `input`: typed in the create form and never changed, such as `cfg_key` or `level`; a duplicate is a field error. By default, database-assigned keys are `auto`, other bigint keys `generated`, the rest `input`.
+   - **Read-only** (`readOnly`): only the list, the detail and the export (with the `:view` and `:export` codes) for ledgers, orders and logs.
+   - **Declared relations** (`fields[].refTable`, `refKey`, `relation`): `{"column":"user_id","refTable":"lg_user","relation":"nickname"}` shows a bigint column as the name of the referenced row without a foreign key; `refKey` is the referenced column (default `id`).
+   - **Child tables** (`children`): `{"table":"lg_item_i18n","foreignKey":"item_id","keyColumn":"lang","keyDict":"lang","label":"多语言"}` edits a translation table with each row. The form shows one tab per enabled item of the dictionary `keyDict` (maintained in 数据字典); rows with all fields empty are not stored. The detail returns the rows; an update without them keeps them. The child's key is `(foreignKey, keyColumn)` or its own id (database-assigned or generated). Composite keys of other tables are not supported.
+   - Missing standard columns (`version`, `created_by`, ...) only add a note. A `status` column with options in its comment keeps those options instead of 启用/停用. Columns with comment options are exported as their labels.
+   - The generated integration test skips when the table is not created by this project's migrations; create the table in the test to run it.
+
    What the generator supports:
-   - **Column types:** text, integer and numeric, boolean, date and time, uuid, json and inet. `*_id` columns become string IDs.
+   - **Column types:** text, integer and numeric, boolean, date and time, uuid, json and inet. `*_id` columns and bigint keys become string IDs.
    - **Skipped:** array, bytea and interval columns, and columns whose names look like secrets (password, token, …). The generator prints a note for each.
    - **Other behaviour:**
      - A duplicate value on a column with a unique index is reported on that field ("订单号已存在"), not as a 409.

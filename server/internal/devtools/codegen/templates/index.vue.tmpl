@@ -3,7 +3,10 @@ import { computed, onMounted, reactive, ref } from "vue";
 import { usePagedTable } from "@/composables/usePagedTable";
 import { confirmAction } from "@/composables/useConfirmAction";
 import {
+[[- if not .ReadOnly]]
   delete[[.TSUpper]],
+  [[.Lower]]Key,
+[[- end]]
   export[[.TSPluralUpper]],
   list[[.TSPluralUpper]],
 [[- range .RelationSearch]]
@@ -28,13 +31,18 @@ import { DEPT_TREE_PROPS } from "@/utils/tree-options";
 [[- if .TableHasTime]]
 import { formatDateTime } from "@/utils/format";
 [[- end]]
+[[- if not .ReadOnly]]
 import { hasPerm } from "@/utils/permission";
+[[- end]]
 [[- if .IndexDicts]]
 import { [[.IndexDictImport]] } from "@/composables/useDict";
 [[- end]]
+[[- if not .ReadOnly]]
 import [[.TSUpper]]FormDialog from "./components/[[.TSUpper]]FormDialog.vue";
+[[- end]]
 
 defineOptions({ name: "[[.ViewName]]" });
+[[- if not .ReadOnly]]
 
 /** 没有任何行操作权限时隐藏「操作」列 */
 const showRowActions = computed(() =>
@@ -42,6 +50,7 @@ const showRowActions = computed(() =>
     hasPerm(code)
   )
 );
+[[- end]]
 
 [[- range .IndexDicts]]
 const { [[.DictBindings]] } = [[.DictSource]];
@@ -85,9 +94,10 @@ const {
 const deptTree = ref<Dept[]>([]);
 [[- end]]
 
+const exporting = ref(false);
+[[- if not .ReadOnly]]
 const dialogVisible = ref(false);
 const editing = ref<[[.TSUpper]] | null>(null);
-const exporting = ref(false);
 
 function openCreate(): void {
   editing.value = null;
@@ -104,13 +114,14 @@ function remove(row: [[.TSUpper]]): void {
 [[- if .DisplayField]]
     confirm: `确定删除[[.Name]]「${row.[[.DisplayField.JSONName]]}」吗？`,
 [[- else]]
-    confirm: `确定删除该[[.Name]]（ID：${row.id}）吗？`,
+    confirm: `确定删除该[[.Name]]（[[.PK.Label]]：${row.[[.PK.JSONName]]}）吗？`,
 [[- end]]
     success: "已删除",
-    action: () => delete[[.TSUpper]](row.id),
+    action: () => delete[[.TSUpper]]([[.Lower]]Key(row)),
     reload
   });
 }
+[[- end]]
 [[- if .SearchFields]]
 
 function resetFilter(): void {
@@ -290,6 +301,7 @@ onMounted(async () => {
       <div class="mb-3 flex justify-between">
         <span class="font-medium">[[.Name]]列表</span>
         <div>
+[[- if not .ReadOnly]]
           <el-button
             v-perm="'[[.PermPrefix]]:create'"
             type="primary"
@@ -297,6 +309,7 @@ onMounted(async () => {
           >
             新增[[.Name]]
           </el-button>
+[[- end]]
           <el-button
             v-perm="'[[.PermPrefix]]:export'"
             :loading="exporting"
@@ -306,7 +319,7 @@ onMounted(async () => {
           </el-button>
         </div>
       </div>
-      <el-table v-loading="loading" :data="rows" row-key="id" border>
+      <el-table v-loading="loading" :data="rows" row-key="[[.PK.JSONName]]" border>
 [[- range .TableFields]]
 [[- if eq .Role "status"]]
         <el-table-column label="[[.Label]]" width="[[.FixedWidth]]" align="center">
@@ -382,6 +395,7 @@ onMounted(async () => {
         />
 [[- end]]
 [[- end]]
+[[- if not .ReadOnly]]
         <el-table-column
           v-if="showRowActions"
           label="操作"
@@ -407,6 +421,7 @@ onMounted(async () => {
             </el-button>
           </template>
         </el-table-column>
+[[- end]]
       </el-table>
       <el-pagination
         class="mt-3 justify-end"
@@ -421,11 +436,13 @@ onMounted(async () => {
       />
     </el-card>
 
+[[- if not .ReadOnly]]
     <[[.TSUpper]]FormDialog
       v-model="dialogVisible"
       :row="editing"
       @saved="reload"
       @reload="reload"
     />
+[[- end]]
   </div>
 </template>

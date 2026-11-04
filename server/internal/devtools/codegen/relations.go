@@ -51,9 +51,13 @@ func (d *tmplData) deriveRelations() {
 		}
 		f.RelAlias = fmt.Sprintf("r%d", len(d.Relations)+1)
 		f.RelTable, f.RelLabelSQL = quoteIdent(f.ref.Table), quoteIdent(f.Relation)
+		f.RelKey = quoteIdent(f.ref.key())
 		f.LabelColumn, f.LabelGo, f.LabelJSON = label, goExported(label), lowerCamel(label)
 		f.RelVar = d.Lower + f.GoName + "Lookup"
 		f.RelTarget = fmt.Sprintf("lookup.Target{Table: %q, Label: %q, SoftDelete: %v}", f.ref.Table, f.Relation, f.ref.SoftDelete)
+		if k := f.ref.key(); k != "id" {
+			f.RelTarget = fmt.Sprintf("lookup.Target{Table: %q, Key: %q, Label: %q, SoftDelete: %v}", f.ref.Table, k, f.Relation, f.ref.SoftDelete)
+		}
 		f.RelOptionsTS = "list" + d.TSUpper + upperCamel(strings.ReplaceAll(f.Column, "_", "-")) + "Options"
 		f.Widget, f.RuleTrig = "relation", "change"
 		f.TSForm, f.TSDefault = "string | null", "null"

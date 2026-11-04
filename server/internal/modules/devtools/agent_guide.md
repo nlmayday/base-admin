@@ -148,6 +148,14 @@
   - `search`：`none` / `like`（包含）/ `eq`（等于）/ `range`（区间，数字和日期）
   - `dict`：数据字典编码；`"@comment"` 表示用建表时的 `options`；`""` 不用选项
   - `upload`：`image` / `files` / `""`
+  - `refTable`、`refKey`、`relation`：没有外键时手动声明关联，如
+    `{"column": "user_id", "refTable": "lg_user", "relation": "nickname"}`（`refKey` 默认 `id`）
+- `keyMode`：可选，主键来源。`auto` 数据库自增；`generated` 由模块用雪花 ID 生成（bigint 主键不是自增时的默认值）；
+  `input` 新增时填写、之后不能改（文本或整数主键的默认值，如 `cfg_key`、`level`）。
+- `readOnly`：可选，`true` 时只生成列表、详情和导出（流水、订单、日志类表）。
+- `children`：可选，随主表一起编辑的子表（多语言表）：
+  `[{"table": "lg_item_i18n", "foreignKey": "item_id", "keyColumn": "lang", "keyDict": "lang", "label": "多语言"}]`。
+  表单按字典 `keyDict` 的每一项列出一组输入，详情接口返回这些行。
   - `relation`：外键字段显示被引用表的哪一列；`""` 改为直接输入 ID
 - `force`（仅 generate）：覆盖已存在的文件。
 

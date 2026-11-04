@@ -153,7 +153,7 @@ func TestListTables(t *testing.T) {
 		assert.NotEqual(t, "schema_migrations", tb.Name)
 	}
 	assert.Equal(t, TableInfo{Name: "biz_gadgets", Comment: "小工具", Supported: true, Columns: 14}, byName["biz_gadgets"])
-	assert.True(t, byName["biz_legacy"].Supported == false && byName["biz_legacy"].Reason != "", "serial (int4) ids are rejected")
+	assert.True(t, byName["biz_legacy"].Supported, "serial (int4) ids are database-assigned keys")
 	assert.False(t, byName["biz_pairs"].Supported)
 }
 
@@ -224,4 +224,47 @@ func TestTableSpecRoundTrip(t *testing.T) {
 	assert.NotEmpty(t, defaults["ordered_at"], "DEFAULT now()")
 	delete(defaults, "ordered_at")
 	assert.Equal(t, map[string]string{"kind": "1", "channel": "web"}, defaults)
+}
+
+// TestLoadDeclaredRefsAndChildren reads a spec's declared relation (no
+// foreign key) and child table from the database.
+func TestLoadDeclaredRefsAndChildren(t *testing.T) {
+	db := openDB(t)
+	ddl := []string{
+		`CREATE TABLE lg_user (id bigint PRIMARY KEY, nickname varchar(32) NOT NULL)`,
+		`CREATE TABLE lg_item (id bigint PRIMARY KEY, code varchar(32) NOT NULL, owner bigint)`,
+		`CREATE TABLE lg_item_i18n (item_id bigint NOT NULL, lang varchar(8) NOT NULL, name varchar(64) NOT NULL,
+			PRIMARY KEY (item_id, lang))`,
+	}
+	for _, stmt := range ddl {
+		require.NoError(t, db.Exec(stmt).Error, stmt)
+	}
+	label := "nickname"
+	spec := Spec{Module: "game", Resource: "item", Name: "道具",
+		Fields:   []FieldOption{{Column: "owner", RefTable: "lg_user", Relation: &label}},
+		Children: []ChildSpec{{Table: "lg_item_i18n", ForeignKey: "item_id", KeyColumn: "lang", KeyDict: "lang"}}}
+	tb, err := Load(context.Background(), db, "lg_item", spec)
+	require.NoError(t, err)
+	owner, _ := tb.Column("owner")
+	require.NotNil(t, owner.Ref, "declared without a foreign key")
+	assert.Equal(t, "lg_user", owner.Ref.Table)
+	require.Len(t, tb.Children, 1)
+	assert.Equal(t, "lg_item_i18n", tb.Children[0].Table.Name)
+
+	res, err := Generate(tb, spec)
+	require.NoError(t, err)
+	src := res.Files[0].Content
+	assert.Contains(t, src, "LEFT JOIN lg_user r1 ON r1.id = t.owner")
+	assert.Contains(t, src, "saveItemI18n")
+
+	for _, bad := range []FieldOption{
+		{Column: "owner", RefTable: "lg_nope"},
+		{Column: "code", RefTable: "lg_user"},
+		{Column: "owner", RefTable: "lg_user", RefKey: "nickname"},
+	} {
+		_, err := Load(context.Background(), db, "lg_item", Spec{Fields: []FieldOption{bad}})
+		assert.ErrorIs(t, err, ErrSpec, "%+v", bad)
+	}
+	_, err = Load(context.Background(), db, "lg_item", Spec{Children: []ChildSpec{{Table: "lg_nope"}}})
+	assert.ErrorIs(t, err, ErrSpec)
 }

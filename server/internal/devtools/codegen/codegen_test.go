@@ -148,6 +148,12 @@ func TestSpecValidation(t *testing.T) {
 func TestCheckTable(t *testing.T) {
 	require.NoError(t, CheckTable(customerTable()))
 	require.NoError(t, CheckTable(minimalTable()), "bigserial ids are accepted")
+	require.NoError(t, CheckTable(func() Table {
+		tb := customerTable()
+		tb.Columns = append([]Column(nil), tb.Columns...)
+		tb.Columns[0].Identity = false
+		return tb
+	}()), "a bigint id the program generates")
 	mutate := func(fn func(*Table)) Table {
 		tb := customerTable()
 		tb.Columns = append([]Column(nil), tb.Columns...)
@@ -156,8 +162,8 @@ func TestCheckTable(t *testing.T) {
 	}
 	cases := map[string]Table{
 		"no id":         {Name: "x", Columns: []Column{{Name: "name", UDT: "text"}}},
-		"int id":        mutate(func(t *Table) { t.Columns[0].UDT = "int4" }),
-		"no identity":   mutate(func(t *Table) { t.Columns[0].Identity = false }),
+		"no pk":         mutate(func(t *Table) { t.Columns[0].Primary = false }),
+		"uuid pk":       mutate(func(t *Table) { t.Columns[0].UDT = "uuid" }),
 		"composite pk":  mutate(func(t *Table) { t.Columns[1].Primary = true }),
 		"bad table":     mutate(func(t *Table) { t.Name = "Bad-Table" }),
 		"reserved name": mutate(func(t *Table) { t.Name = "order" }),
@@ -204,7 +210,7 @@ func TestGenerateCustomer(t *testing.T) {
 		`var customerScope = datascope.Spec{DeptColumn: "t.dept_id", OwnerColumn: "t.created_by"}`,
 		`q = q.Where("t.deleted_at IS NULL")`,
 		`q = q.Joins("LEFT JOIN sys_departments d ON d.id = t.dept_id")`,
-		`updateVersioned(tx, customerTable, id, *req.Version, sets, customerDuplicate)`,
+		`res := tx.Table(customerTable).Where("id = ? AND version = ?", key, *req.Version).Updates(sets)`,
 		// A duplicate is a field error on the unique column, not a 409.
 		`{column: "phone", field: "phone", label: "手机号"},`,
 		`return duplicateError(constraint, customerUniqueFields, "客户已存在")`,
@@ -262,7 +268,7 @@ func TestGenerateWithoutOptionalColumns(t *testing.T) {
 	assert.NotContains(t, src, "updateVersioned")
 	assert.NotContains(t, src, "core/actor")
 	assert.Contains(t, src, "DELETE FROM biz_notes WHERE id = ?")
-	assert.Contains(t, src, `tx.Table(noteTable).Where("id = ?", id).Updates(sets)`)
+	assert.Contains(t, src, `tx.Table(noteTable).Where("id = ?", key).Updates(sets)`)
 	assert.Contains(t, src, `Order("t.id DESC")`)
 	assert.Contains(t, src, `q = q.Where("LOWER(t.body) LIKE LOWER(?)", "%"+escapeLike(v)+"%")`)
 	api := fileByPath(t, res, "/api/notes/note.ts").Content

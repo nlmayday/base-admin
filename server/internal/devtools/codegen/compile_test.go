@@ -50,6 +50,12 @@ func TestGeneratedGoCompiles(t *testing.T) {
 		{dealTable(), Spec{Module: "crmrel", Resource: "deal", Name: "商机", NewModule: true,
 			Fields: []FieldOption{{Column: "customer_id", Search: SearchEq}}}},
 	}
+	for _, c := range keyShapes("") {
+		cases = append(cases, struct {
+			table Table
+			spec  Spec
+		}{c.table, c.spec})
+	}
 	var pkgs []string
 	for _, c := range cases {
 		res, err := Generate(c.table, c.spec)

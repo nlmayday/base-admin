@@ -45,6 +45,11 @@ type FieldOption struct {
 	// Relation is the label column shown for a foreign key column ("" for
 	// a plain ID input); nil keeps the default (the best label column).
 	Relation *string `json:"relation,omitempty"`
+	// RefTable declares a relation without a foreign key: the bigint column
+	// refers to RefTable.RefKey (default id), and Relation names the label
+	// column, e.g. user_id → lg_user.nickname. Load reads the table.
+	RefTable string `json:"refTable,omitempty"`
+	RefKey   string `json:"refKey,omitempty"`
 }
 
 // OptionsFromComment as FieldOption.Dict uses the options parsed from the
@@ -101,8 +106,8 @@ func Describe(t Table) ([]FieldInfo, error) {
 	d := buildData(t, Spec{Module: "x", Resource: "x", Name: "x"})
 	out := make([]FieldInfo, 0, len(d.Fields))
 	for _, f := range d.Fields {
-		if f.Role == roleID {
-			continue // the primary key has nothing to configure
+		if f.Role == roleID && !f.CreateOnly {
+			continue // a key the system assigns has nothing to configure
 		}
 		locked, hint := formLock(f)
 		out = append(out, FieldInfo{
@@ -122,7 +127,7 @@ func formLock(f *Field) (bool, string) {
 	switch {
 	case !f.canWrite:
 		return true, "由系统维护"
-	case f.Role != "":
+	case f.Role != "" && !f.CreateOnly:
 		return true, "系统字段，固定在表单中"
 	case f.mustWrite:
 		return true, "不能为空且没有默认值，必须填写"
@@ -144,7 +149,7 @@ func searchModes(f *Field) []string {
 		modes = append(modes, SearchEq)
 	case f.Role == roleCreatedAt || f.Role == roleUpdatedAt:
 		modes = append(modes, SearchRange)
-	case f.Role != "":
+	case f.Role != "" && !f.CreateOnly:
 	case f.Kind == kindString:
 		modes = append(modes, SearchLike, SearchEq)
 	case f.Kind.numeric() || f.Kind == kindDecimal || f.Kind == kindDate:
@@ -291,6 +296,11 @@ func (d *tmplData) applyOptions() {
 			f.setChoices(*o.Dict)
 		case f.Upload == "":
 			f.setChoices("")
+		}
+	}
+	if d.ReadOnly {
+		for _, f := range d.Fields {
+			f.Writable = false
 		}
 	}
 	d.Writable = d.Writable[:0]

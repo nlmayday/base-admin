@@ -37,6 +37,12 @@ func TestGeneratedWebChecks(t *testing.T) {
 		{dealTable(), Spec{Module: "zzcgdeal", Resource: "deal", Name: "商机", NewModule: true,
 			Fields: []FieldOption{{Column: "customer_id", Search: SearchEq}}}},
 	}
+	for _, c := range keyShapes("zzcg") {
+		cases = append(cases, struct {
+			table Table
+			spec  Spec
+		}{c.table, c.spec})
+	}
 	var written []File
 	t.Cleanup(func() {
 		for _, c := range cases {
