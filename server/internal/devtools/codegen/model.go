@@ -32,6 +32,26 @@ type Spec struct {
 	ReadOnly bool `json:"readOnly,omitempty"`
 	// Children are tables edited together with each row (children.go).
 	Children []ChildSpec `json:"children,omitempty"`
+	// SoftDelete false makes deleted_at a plain time column (say, when an
+	// account was closed): every row is listed and delete removes the row.
+	// nil or true: a nullable deleted_at hides deleted rows.
+	SoftDelete *bool `json:"softDelete,omitempty"`
+}
+
+// plainColumns are the columns that lose their standard role under s: a
+// status with options of its own (FieldOption.Dict), deleted_at when soft
+// delete is off.
+func (s Spec) plainColumns() map[string]bool {
+	plain := map[string]bool{}
+	for _, o := range s.Fields {
+		if o.Column == "status" && o.Dict != nil && *o.Dict != "" {
+			plain["status"] = true
+		}
+	}
+	if s.SoftDelete != nil && !*s.SoftDelete {
+		plain["deleted_at"] = true
+	}
+	return plain
 }
 
 // reservedModules are existing core module names.
@@ -102,6 +122,8 @@ const (
 
 func columnRole(c Column, k kind) string {
 	switch {
+	case c.plain:
+		return ""
 	case c.Primary:
 		return roleID
 	case c.Name == "version" && (k == kindInt || k == kindInt16 || k == kindInt64) && !c.Nullable:
@@ -112,9 +134,10 @@ func columnRole(c Column, k kind) string {
 		return c.Name
 	case c.Name == "deleted_at" && k == kindTime && c.Nullable:
 		return roleDeletedAt
-	case c.Name == "status" && (k == kindInt16 || k == kindInt) && !c.Nullable && len(parseCommentOptions(c.Comment)) == 0:
-		// Options in the comment (状态：1=待支付,2=已支付) give the column its
-		// own meaning; otherwise it is the standard 1 启用 / 2 停用.
+	case c.Name == "status" && (k == kindInt16 || k == kindInt) && !c.Nullable && !strings.ContainsAny(c.Comment, "0123456789"):
+		// A comment with values (状态：1=待支付,2=已支付, or 1正常 2冻结)
+		// gives the column its own meaning; otherwise it is the standard
+		// 1 启用 / 2 停用.
 		return roleStatus
 	case c.Name == "sort" && (k == kindInt16 || k == kindInt):
 		return roleSort
@@ -201,6 +224,7 @@ type Field struct {
 	TSFromView string // view → form expression
 	MinWidth   int    // table column width
 	FixedWidth int    // width of tag columns (status, booleans)
+	DictRowTS  string // the value looked up in the options, in the list
 
 	// Search form: filter struct field(s), WHERE code, TypeScript filter
 	// properties and initial values, sample query and widget.
@@ -223,6 +247,7 @@ type Field struct {
 	// NULL without a default, so the form must include it.
 	canWrite, mustWrite bool
 	listOverride        *bool
+	exportOverride      *bool
 	// CreateOnly: set on create, never changed (a typed-in primary key).
 	CreateOnly bool
 }

@@ -73,6 +73,13 @@ function addChild(): void {
           只生成列表、详情和导出，不生成表单和写接口（流水、订单、日志）
         </span>
       </el-form-item>
+      <el-form-item label="软删除">
+        <el-switch v-model="model.softDelete" />
+        <span class="hint">
+          表有 deleted_at 时：开启则删除只做标记、列表隐藏已删除行；关闭则
+          deleted_at 是普通时间字段（如注销时间），列出全部行，删除即删除行
+        </span>
+      </el-form-item>
       <el-form-item label="手动关联">
         <div class="w-full">
           <div

@@ -14,6 +14,8 @@ export type ChildModel = CodegenChild & { keySource: "dict" | "table" };
 export type AdvancedModel = {
   keyMode: CodegenKeyMode;
   readOnly: boolean;
+  /** 关闭后 deleted_at 作为普通时间字段 */
+  softDelete: boolean;
   refs: DeclaredRef[];
   children: ChildModel[];
 };

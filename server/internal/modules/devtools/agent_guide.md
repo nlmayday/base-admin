@@ -144,15 +144,17 @@
 - `name`：资源中文名，用于菜单标题和提示。
 - `fields`：可选，只写需要改默认值的字段；默认值可用 `GET /fields?table=biz_products` 查看：
   - `label`：中文名（默认取字段注释）
-  - `list`：是否在列表显示；`form`：是否出现在新增/编辑表单
+  - `list`：是否在列表显示；`form`：是否出现在新增/编辑表单；`export`：是否导出（默认导出主键和列表显示的列）
   - `search`：`none` / `like`（包含）/ `eq`（等于）/ `range`（区间，数字和日期）
-  - `dict`：数据字典编码；`"@comment"` 表示用建表时的 `options`；`""` 不用选项
+  - `dict`：数据字典编码；`"@comment"` 表示用字段注释中的选项（`1=通知,2=公告` 或 `1正常 2冻结`）；`""` 不用选项。
+    只读模块的字段也可以用，`status` 用了选项后不再是启用/停用；是/否字段只在不进表单时可用，字典值为 `1`、`0`
   - `upload`：`image` / `files` / `""`
   - `refTable`、`refKey`、`relation`：没有外键时手动声明关联，如
     `{"column": "user_id", "refTable": "lg_user", "relation": "nickname"}`（`refKey` 默认 `id`）
 - `keyMode`：可选，主键来源。`auto` 数据库自增；`generated` 由模块用雪花 ID 生成（bigint 主键不是自增时的默认值）；
   `input` 新增时填写、之后不能改（文本或整数主键的默认值，如 `cfg_key`、`level`）。
 - `readOnly`：可选，`true` 时只生成列表、详情和导出（流水、订单、日志类表）。
+- `softDelete`：可选，`false` 时 `deleted_at` 是普通时间字段（如注销时间）：列出全部行、可搜索，删除即删除行。
 - `children`：可选，随主表一起编辑的子表（多语言表）：
   `[{"table": "lg_item_i18n", "foreignKey": "item_id", "keyColumn": "lang", "keyDict": "lang", "label": "多语言"}]`。
   表单按字典 `keyDict` 的每一项列出一组输入，详情接口返回这些行。键也可以来自一张表（与 `keyDict` 二选一）：
@@ -167,6 +169,9 @@ generate 返回 `files`（写入的文件）、`newModule`、`wired`、`notes`�
 - `server/internal/modules/<module>/`：`module.go`（菜单、权限、路由注册）、`<resource>.go`（接口与查询）、
   `<resource>_integration_test.go`（集成测试）
 - `web/src/api/<module>/<resource>.ts`、`web/src/views/<module>/<resource>/index.vue`（列表、搜索、新增/编辑、导出）
+- 扩展文件 `<resource>_ext.go`、`components/<Resource>Extension.vue`：只在不存在时写入，`force` 也不覆盖，
+  自定义逻辑写在这里：`<resource>Restrict`（所有查询的固定条件）、`<resource>AfterSave` / `<resource>AfterDelete`
+  （写入或删除后在同一事务中执行，返回错误即回滚）；Extension.vue 渲染在列表工具栏和每行「操作」列
 
 生成的接口（以 module=shop、resource=product、表 biz_products 为例，路径是资源名的复数，
 不带模块名，均在 `/api/v1` 下，由后台页面用登录会话调用，不能用本接口的密钥调用）：
@@ -181,8 +186,9 @@ generate 返回 `files`（写入的文件）、`newModule`、`wired`、`notes`�
 | DELETE | `/products/:id` | `shop:product:delete` |
 
 新增时没传的选填字段如果建表时设了 `default`，使用默认值；编辑（PUT）时没传则保持原值。
-具体以 preview 返回的文件和权限为准。生成后要加业务逻辑时，直接修改生成的 Go / Vue 文件，
-保持其中的结构（数据权限、乐观锁、操作日志的 Doc 说明）不变。
+导出超过「基础设置 → 导出行数上限」（默认 10 万）时返回 422「数据量过大…请缩小查询范围」，不截断；时间列为 UTC，表头标注 (UTC)。
+具体以 preview 返回的文件和权限为准。生成后要加业务逻辑时，优先写在扩展文件中（重新生成不会丢）；
+直接改生成的 Go / Vue 文件时保持其中的结构（数据权限、乐观锁、操作日志的 Doc 说明）不变。
 
 ## 3. 其他接口
 

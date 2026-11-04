@@ -44,12 +44,20 @@ import "tippy.js/themes/light.css";
 import VueTippy from "vue-tippy";
 app.use(VueTippy);
 
+/** 挂载前等待「基础设置」的最长时间 */
+const BRANDING_WAIT_MS = 1500;
+
 getPlatformConfig(app).then(async config => {
   setupStore(app);
-  // 不阻塞首屏：站点名称与 Logo 稍后到达也会响应式更新
-  void loadBranding();
+  // 与路由并行加载；挂载前最多等 1.5 秒，让列表一打开就用设置里的每页条数。
+  // 站点名称与 Logo 更晚到达也会响应式更新
+  const branding = loadBranding();
   app.use(router);
   await router.isReady();
+  await Promise.race([
+    branding,
+    new Promise<void>(resolve => setTimeout(resolve, BRANDING_WAIT_MS))
+  ]);
   injectResponsiveStorage(app, config);
   app.use(MotionPlugin).use(useElementPlus);
   app.mount("#app");

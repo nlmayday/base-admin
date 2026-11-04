@@ -40,20 +40,30 @@ import { [[.IndexDictImport]] } from "@/composables/useDict";
 [[- if not .ReadOnly]]
 import [[.TSUpper]]FormDialog from "./components/[[.TSUpper]]FormDialog.vue";
 [[- end]]
+import [[.TSUpper]]Extension, {
+  hasRowActions
+} from "./components/[[.TSUpper]]Extension.vue";
 
 defineOptions({ name: "[[.ViewName]]" });
 [[- if not .ReadOnly]]
 
-/** 没有任何行操作权限时隐藏「操作」列 */
-const showRowActions = computed(() =>
-  ["[[.PermPrefix]]:update", "[[.PermPrefix]]:delete"].some(code =>
-    hasPerm(code)
-  )
+/** 没有任何行操作权限（也没有扩展的行按钮）时隐藏「操作」列 */
+const showRowActions = computed(
+  () =>
+    hasRowActions ||
+    ["[[.PermPrefix]]:update", "[[.PermPrefix]]:delete"].some(code =>
+      hasPerm(code)
+    )
 );
 [[- end]]
 
 [[- range .IndexDicts]]
 const { [[.DictBindings]] } = [[.DictSource]];
+[[- end]]
+[[- if .DictBool]]
+
+/** 是/否字段的选项值为 1 和 0 */
+const dictBool = (v: boolean | null) => (v === null ? null : v ? 1 : 0);
 [[- end]]
 
 const emptyFilter = (): [[.TSUpper]]Filter => ({[[.FilterInit]]});
@@ -300,7 +310,9 @@ onMounted(async () => {
     <el-card shadow="never">
       <div class="mb-3 flex justify-between">
         <span class="font-medium">[[.Name]]列表</span>
-        <div>
+        <div class="flex items-center">
+          <!-- 扩展按钮写在 [[.TSUpper]]Extension.vue（重新生成不会覆盖） -->
+          <[[.TSUpper]]Extension place="toolbar" class="mr-3" @reload="reload" />
 [[- if not .ReadOnly]]
           <el-button
             v-perm="'[[.PermPrefix]]:create'"
@@ -351,11 +363,11 @@ onMounted(async () => {
         <el-table-column label="[[.Label]]" min-width="[[.FixedWidth]]">
           <template #default="{ row }">
             <el-tag
-              v-if="[[.JSONName]]Label(row.[[.JSONName]]) !== '-'"
-              :type="[[.JSONName]]TagType(row.[[.JSONName]])"
+              v-if="[[.JSONName]]Label([[.DictRowTS]]) !== '-'"
+              :type="[[.JSONName]]TagType([[.DictRowTS]])"
               disable-transitions
             >
-              {{ [[.JSONName]]Label(row.[[.JSONName]]) }}
+              {{ [[.JSONName]]Label([[.DictRowTS]]) }}
             </el-tag>
             <span v-else>-</span>
           </template>
@@ -419,6 +431,26 @@ onMounted(async () => {
             >
               删除
             </el-button>
+            <[[.TSUpper]]Extension
+              place="row"
+              :row="row as [[.TSUpper]]"
+              @reload="reload"
+            />
+          </template>
+        </el-table-column>
+[[- else]]
+        <el-table-column
+          v-if="hasRowActions"
+          label="操作"
+          width="150"
+          fixed="right"
+        >
+          <template #default="{ row }">
+            <[[.TSUpper]]Extension
+              place="row"
+              :row="row as [[.TSUpper]]"
+              @reload="reload"
+            />
           </template>
         </el-table-column>
 [[- end]]

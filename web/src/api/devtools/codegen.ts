@@ -23,13 +23,15 @@ export type CodegenFieldInfo = {
   comment: string;
   label: string;
   list: boolean;
+  /** 在 CSV 导出中（默认为主键和列表显示的列） */
+  export: boolean;
   form: boolean;
   /** 表单开关不可改（系统字段、必填无默认值等），formHint 说明原因 */
   formLocked: boolean;
   formHint?: string;
   search: SearchMode;
   searchModes: SearchMode[];
-  /** 可以使用下拉选项（可编辑的文本、整数字段） */
+  /** 可以使用下拉选项（文本、整数、是/否字段；是/否字段须不在表单中） */
   dictAllowed: boolean;
   /** 下拉选项来源：字典编码、OPTIONS_FROM_COMMENT（注释中的选项）或空（不使用） */
   dict: string;
@@ -60,6 +62,8 @@ export type CodegenFieldOption = {
   column: string;
   label?: string;
   list?: boolean;
+  /** 是否导出；不传时跟随列表显示 */
+  export?: boolean;
   form?: boolean;
   search?: SearchMode;
   dict?: string;
@@ -114,6 +118,8 @@ export type CodegenRequest = {
   keyMode?: CodegenKeyMode;
   /** 只读：只生成列表、详情和导出 */
   readOnly?: boolean;
+  /** false：deleted_at 作为普通时间字段（如注销时间），列出全部行，删除即删除行 */
+  softDelete?: boolean;
   children?: CodegenChild[];
 };
 
@@ -136,6 +142,10 @@ export type CodegenFile = {
   content: string;
   /** 文件已存在：CLI 不加 -force 会拒绝覆盖 */
   exists: boolean;
+  /** 扩展文件（自定义代码写在这里）：只在不存在时写入，永不覆盖 */
+  keep: boolean;
+  /** 扩展文件已存在，生成时保留原样 */
+  kept: boolean;
 };
 
 export type CodegenMenu = {

@@ -1,0 +1,29 @@
+<script lang="ts">
+/** 有行内扩展按钮时改为 true，列表的「操作」列才会显示 */
+export const hasRowActions = false;
+</script>
+
+<script setup lang="ts">
+import type { [[.TSUpper]] } from "@/api/[[.Pkg]]/[[.Resource]]";
+
+/**
+ * [[.Name]]列表的扩展：代码生成器只在本文件不存在时写入，重新生成（包括覆盖已有文件）
+ * 都不会改动它，自定义的按钮写在这里。
+ * - place 为 "toolbar"：表格上方的按钮区
+ * - place 为 "row"：每行的「操作」列，row 为当前行（同时把 hasRowActions 改为 true）
+ * 修改了数据时 emit("reload") 刷新列表。
+ */
+defineOptions({ name: "[[.ViewName]]Extension" });
+
+defineProps<{ place: "toolbar" | "row"; row?: [[.TSUpper]] }>();
+defineEmits<{ (e: "reload"): void }>();
+</script>
+
+<template>
+  <!--
+    例：
+    <el-button v-if="place === 'toolbar'" @click="...">批量处理</el-button>
+    <el-button v-else link type="primary" @click="...">详情</el-button>
+  -->
+  <span v-if="false" />
+</template>

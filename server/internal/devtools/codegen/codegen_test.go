@@ -199,11 +199,21 @@ func TestGenerateCustomer(t *testing.T) {
 		"server/internal/modules/example/module.go",
 		"server/internal/modules/example/common.go",
 		"server/internal/modules/example/customer.go",
+		"server/internal/modules/example/customer_ext.go",
 		"server/internal/modules/example/customer_integration_test.go",
 		"web/src/api/example/customer.ts",
 		"web/src/views/example/customer/index.vue",
+		"web/src/views/example/customer/components/CustomerExtension.vue",
 		"web/src/views/example/customer/components/CustomerFormDialog.vue",
 	}, paths)
+	for _, f := range res.Files {
+		assert.Equal(t, strings.HasSuffix(f.Path, "_ext.go") || strings.HasSuffix(f.Path, "Extension.vue"), f.Keep, f.Path)
+	}
+
+	ext := fileByPath(t, res, "/customer_ext.go").Content
+	assert.Contains(t, ext, "func (m *Module) customerRestrict(ctx context.Context, q *gorm.DB) *gorm.DB {")
+	assert.Contains(t, ext, "func (m *Module) customerAfterSave(ctx context.Context, tx *gorm.DB, row customerView, created bool) error {")
+	assert.Contains(t, ext, "func (m *Module) customerAfterDelete(ctx context.Context, tx *gorm.DB, key int64) error {")
 
 	src := fileByPath(t, res, "/customer.go").Content
 	for _, want := range []string{
@@ -262,7 +272,7 @@ func TestGenerateCustomer(t *testing.T) {
 func TestGenerateWithoutOptionalColumns(t *testing.T) {
 	res, err := Generate(minimalTable(), Spec{Module: "notes", Resource: "note", Name: "笔记"})
 	require.NoError(t, err)
-	assert.Len(t, res.Files, 5, "an existing module gets no module.go/common.go")
+	assert.Len(t, res.Files, 7, "an existing module gets no module.go/common.go")
 	src := fileByPath(t, res, "/note.go").Content
 	assert.NotContains(t, src, "datascope")
 	assert.NotContains(t, src, "updateVersioned")
@@ -319,6 +329,30 @@ func TestWriteRefusesToOverwrite(t *testing.T) {
 	assert.Equal(t, []string{"a/b.txt", "c.txt"}, existing)
 
 	assert.Error(t, Write(root, []File{{Path: "../escape.txt"}}, true))
+}
+
+// Extension files are written once and kept, with or without force.
+func TestWriteKeepsExtensionFiles(t *testing.T) {
+	root := t.TempDir()
+	files := []File{{Path: "x.go", Content: "generated"}, {Path: "x_ext.go", Content: "stub", Keep: true}}
+	require.NoError(t, Write(root, files, false))
+	got, err := os.ReadFile(filepath.Join(root, "x_ext.go"))
+	require.NoError(t, err)
+	assert.Equal(t, "stub", string(got), "written when missing")
+
+	require.NoError(t, os.WriteFile(filepath.Join(root, "x_ext.go"), []byte("hand-written"), 0o600))
+	kept, err := Kept(root, files)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"x_ext.go"}, kept)
+	conflicts, err := Conflicts(root, files)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"x.go"}, conflicts, "a kept file is no conflict")
+
+	require.NoError(t, Write(root, files[1:], false), "only the kept file: nothing to refuse")
+	require.NoError(t, Write(root, files, true))
+	got, err = os.ReadFile(filepath.Join(root, "x_ext.go"))
+	require.NoError(t, err)
+	assert.Equal(t, "hand-written", string(got), "never overwritten, even with force")
 }
 
 // TestWriteRollsBack: a failing write undoes the files written before it.

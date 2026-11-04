@@ -41,8 +41,8 @@ const UNSAFE_RE = /["'`\\<>{}]/;
 const CLI_USAGE = `cd server
 go run ./cmd/gen -table biz_orders -module sales -resource order -name '订单' \\
   [-module-title '销售管理'] [-fields '<字段配置 JSON>'] [-key-mode generated] \\
-  [-read-only] [-children '<子表 JSON>'] [-force] [-dry-run]
-# 批量：每项与本页的请求相同（table、module、resource、name、fields、keyMode、readOnly、children）
+  [-read-only] [-no-soft-delete] [-children '<子表 JSON>'] [-force] [-dry-run]
+# 批量：每项与本页的请求相同（table、module、resource、name、fields、keyMode、readOnly、softDelete、children）
 go run ./cmd/gen -spec specs.json [-force]`;
 
 const loadingTables = ref(false);
@@ -63,6 +63,7 @@ const { fieldErrors, clearFieldErrors, applyFieldErrors } = useFieldErrors();
 const emptyAdvanced = (): AdvancedModel => ({
   keyMode: "",
   readOnly: false,
+  softDelete: true,
   refs: [],
   children: []
 });
@@ -147,6 +148,7 @@ async function restoreLast(): Promise<void> {
   advanced.value = {
     keyMode: req.keyMode ?? "",
     readOnly: req.readOnly ?? false,
+    softDelete: req.softDelete ?? true,
     refs: (req.fields ?? [])
       .filter(f => f.refTable)
       .map(f => ({
@@ -205,6 +207,9 @@ function fieldOptions(): CodegenFieldOption[] {
     const o: CodegenFieldOption = { column: f.column };
     if (f.label.trim() !== d.label) o.label = f.label.trim();
     if (f.list !== d.list) o.list = f.list;
+    // The backend exports the key and the list columns by default.
+    const exportDefault = d.export === d.list ? f.list : d.export;
+    if (f.export !== exportDefault) o.export = f.export;
     if (f.form !== d.form) o.form = f.form;
     if (f.search !== d.search) o.search = f.search;
     if ((f.dict ?? "") !== d.dict) o.dict = f.dict ?? "";
@@ -248,6 +253,7 @@ function request(): CodegenRequest {
     fields: allFieldOptions(),
     ...(a.keyMode ? { keyMode: a.keyMode } : {}),
     ...(a.readOnly ? { readOnly: true } : {}),
+    ...(a.softDelete ? {} : { softDelete: false }),
     ...(children.length ? { children } : {})
   };
 }
@@ -266,6 +272,7 @@ const command = computed(() => {
   if (req.fields?.length) parts.push(`-fields '${JSON.stringify(req.fields)}'`);
   if (req.keyMode) parts.push(`-key-mode ${req.keyMode}`);
   if (req.readOnly) parts.push("-read-only");
+  if (req.softDelete === false) parts.push("-no-soft-delete");
   if (req.children?.length) {
     parts.push(`-children '${JSON.stringify(req.children)}'`);
   }

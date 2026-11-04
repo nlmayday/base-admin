@@ -2,6 +2,7 @@ package system
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -19,6 +20,8 @@ type settingsView struct {
 	UploadAllowedExtensions []string `json:"uploadAllowedExtensions"`
 	UploadMaxSizeMB         int      `json:"uploadMaxSizeMB"`
 	AuditRetentionDays      int      `json:"auditRetentionDays"`
+	ExportMaxRows           int      `json:"exportMaxRows"`
+	PageSize                int      `json:"pageSize"`
 	Version                 int      `json:"version"`
 }
 
@@ -28,18 +31,23 @@ type settingsRequest struct {
 	UploadAllowedExtensions []string `json:"uploadAllowedExtensions" binding:"max=200"`
 	UploadMaxSizeMB         int      `json:"uploadMaxSizeMB"`
 	AuditRetentionDays      int      `json:"auditRetentionDays"`
+	ExportMaxRows           int      `json:"exportMaxRows" doc:"导出行数上限"`
+	PageSize                int      `json:"pageSize" doc:"列表默认每页条数"`
 	Version                 *int     `json:"version"`
 }
 
 func (r settingsRequest) settings() Settings {
 	return Settings{SiteName: r.SiteName, LogoURL: r.LogoURL, UploadAllowedExtensions: r.UploadAllowedExtensions,
-		UploadMaxSizeMB: r.UploadMaxSizeMB, AuditRetentionDays: r.AuditRetentionDays}
+		UploadMaxSizeMB: r.UploadMaxSizeMB, AuditRetentionDays: r.AuditRetentionDays,
+		ExportMaxRows: r.ExportMaxRows, PageSize: r.PageSize}
 }
 
 // PublicSettings is the only settings data exposed without a session.
 type PublicSettings struct {
 	SiteName string `json:"siteName"`
 	LogoURL  string `json:"logoUrl"`
+	// PageSize is the default page size of the list pages.
+	PageSize int `json:"pageSize"`
 }
 
 type settingRow struct {
@@ -84,7 +92,8 @@ func buildSettingsView(rows map[string]settingRow) (settingsView, error) {
 		return settingsView{}, err
 	}
 	return settingsView{SiteName: s.SiteName, LogoURL: s.LogoURL, UploadAllowedExtensions: s.UploadAllowedExtensions,
-		UploadMaxSizeMB: s.UploadMaxSizeMB, AuditRetentionDays: s.AuditRetentionDays, Version: version}, nil
+		UploadMaxSizeMB: s.UploadMaxSizeMB, AuditRetentionDays: s.AuditRetentionDays,
+		ExportMaxRows: s.ExportMaxRows, PageSize: s.PageSize, Version: version}, nil
 }
 
 func (m *Module) getSettings(c *gin.Context) (any, error) {
@@ -108,7 +117,11 @@ func (m *Module) publicSettings(c *gin.Context) (any, error) {
 	if validateLogoURL(logo) != "" {
 		logo = ""
 	}
-	return PublicSettings{SiteName: name, LogoURL: logo}, nil
+	pageSize, err := m.GetInt(ctx, KeyPageSize)
+	if err != nil || !slices.Contains(pageSizes, pageSize) {
+		pageSize = 20
+	}
+	return PublicSettings{SiteName: name, LogoURL: logo, PageSize: pageSize}, nil
 }
 
 func (m *Module) updateSettings(c *gin.Context) (any, error) {

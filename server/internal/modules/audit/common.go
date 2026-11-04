@@ -14,9 +14,6 @@ import (
 	"base-admin/server/internal/platform/ids"
 )
 
-// maxExportRows bounds one export; larger exports belong to a report job.
-const maxExportRows = 10000
-
 // handle adapts a function returning (data, error) to a Gin handler.
 func handle(fn func(c *gin.Context) (any, error)) gin.HandlerFunc {
 	return func(c *gin.Context) {

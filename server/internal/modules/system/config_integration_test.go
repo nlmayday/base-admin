@@ -106,7 +106,7 @@ func TestConfigValidationAndUniqueness(t *testing.T) {
 	h.ok(h.do(http.MethodGet, "/configs/groups", nil), &groups)
 	assert.Equal(t, []string{"default", "功能"}, groups, "groups of built-in settings are hidden too")
 	h.ok(h.do(http.MethodGet, "/configs/groups?includeBuiltin=true", nil), &groups)
-	assert.Equal(t, []string{"default", "上传设置", "功能", "日志设置", "站点设置"}, groups)
+	assert.Equal(t, []string{"default", "上传设置", "功能", "导出设置", "日志设置", "界面设置", "站点设置"}, groups)
 }
 
 func TestProtectedConfigs(t *testing.T) {

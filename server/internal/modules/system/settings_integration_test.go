@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"base-admin/server/internal/core/export"
 	"base-admin/server/internal/core/module"
 	"base-admin/server/internal/platform/httpx"
 )
@@ -29,7 +30,8 @@ func (h *harness) settings() settingsView {
 
 func settingsBody(v settingsView) gin.H {
 	return gin.H{"siteName": v.SiteName, "logoUrl": v.LogoURL, "uploadAllowedExtensions": v.UploadAllowedExtensions,
-		"uploadMaxSizeMB": v.UploadMaxSizeMB, "auditRetentionDays": v.AuditRetentionDays, "version": v.Version}
+		"uploadMaxSizeMB": v.UploadMaxSizeMB, "auditRetentionDays": v.AuditRetentionDays,
+		"exportMaxRows": v.ExportMaxRows, "pageSize": v.PageSize, "version": v.Version}
 }
 
 func TestSettingsDefaultsAndUpdate(t *testing.T) {
@@ -41,6 +43,9 @@ func TestSettingsDefaultsAndUpdate(t *testing.T) {
 	assert.Equal(t, 20, cur.UploadMaxSizeMB)
 	assert.Equal(t, 180, cur.AuditRetentionDays)
 	assert.Equal(t, 0, cur.Version)
+
+	assert.Equal(t, 100000, cur.ExportMaxRows)
+	assert.Equal(t, 20, cur.PageSize)
 
 	body := settingsBody(cur)
 	body["siteName"] = "  运营后台 "
@@ -69,6 +74,14 @@ func TestSettingsDefaultsAndUpdate(t *testing.T) {
 	assert.Equal(t, 3, next.Version)
 	assert.Equal(t, int64(3), h.count("SELECT count(*) FROM sys_config_changes"))
 
+	// Export limit and page size.
+	body = settingsBody(next)
+	body["exportMaxRows"], body["pageSize"] = 5000, 50
+	h.ok(h.do(http.MethodPut, "/settings", body), &next)
+	assert.Equal(t, 5000, next.ExportMaxRows)
+	assert.Equal(t, 50, next.PageSize)
+	assert.Equal(t, 5000, export.MaxRows(context.Background(), h.db))
+
 	// Go API sees local writes immediately.
 	name, err := h.mod.GetString(context.Background(), KeySiteName)
 	require.NoError(t, err)
@@ -94,6 +107,9 @@ func TestSettingsValidation(t *testing.T) {
 		{"uploadMaxSizeMB", 0},
 		{"uploadMaxSizeMB", 1025},
 		{"auditRetentionDays", 0},
+		{"exportMaxRows", 999},
+		{"exportMaxRows", 1000001},
+		{"pageSize", 30},
 	}
 	for _, tc := range cases {
 		body := settingsBody(cur)
@@ -124,8 +140,8 @@ func TestPublicSettingsExposeOnlySiteInfo(t *testing.T) {
 	h.ok(resp, nil)
 	var raw map[string]json.RawMessage
 	require.NoError(t, json.Unmarshal(resp.Data, &raw))
-	assert.Len(t, raw, 2)
-	assert.JSONEq(t, `{"siteName":"Base Admin","logoUrl":"/logo.png"}`, string(resp.Data))
+	assert.Len(t, raw, 3)
+	assert.JSONEq(t, `{"siteName":"Base Admin","logoUrl":"/logo.png","pageSize":20}`, string(resp.Data))
 
 	h.fail(h.do(http.MethodGet, "/settings", nil), http.StatusUnauthorized, 20001)
 	h.fail(h.do(http.MethodPut, "/settings", body), http.StatusUnauthorized, 20001)

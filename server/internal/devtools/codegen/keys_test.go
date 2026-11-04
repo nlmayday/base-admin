@@ -68,7 +68,7 @@ func TestKeyModes(t *testing.T) {
 	assert.NotContains(t, src, `map[int]string{1: "启用", 2: "停用"}`, "a status with comment options keeps its own meaning")
 	assert.Contains(t, src, "var orderLogStatusLabels = map[string]string{")
 	assert.Contains(t, src, `"2": "已支付"`)
-	assert.Contains(t, src, "orderLogLabel(orderLogStatusLabels, csvValue(r.Status))")
+	assert.Contains(t, src, "orderLogLabel(orderLogStatusLabels, optionKey(r.Status))")
 	assert.Contains(t, ro["index.vue"], `staticDict([{ value: "1", label: "待支付" }, { value: "2", label: "已支付" }])`)
 
 	// Requested modes are checked against the column.

@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"base-admin/server/internal/core/export"
 	"base-admin/server/internal/platform/httpx"
 	"base-admin/server/internal/platform/ids"
 )
@@ -181,18 +182,23 @@ func (m *Module) exportOperationLogs(c *gin.Context) {
 		httpx.Fail(c, err)
 		return
 	}
-	var rows []opLogRow
-	if err := q.Select(opLogColumns).Order("o.created_at DESC, o.id DESC").
-		Limit(maxExportRows).Scan(&rows).Error; err != nil {
+	maxRows, err := export.Check(c.Request.Context(), m.db, q)
+	if err != nil {
 		httpx.Fail(c, err)
 		return
 	}
-	header := []string{"ID", "时间", "用户名", "昵称", "模块", "操作", "操作对象", "方法", "路径", "HTTP 状态",
+	var rows []opLogRow
+	if err := q.Select(opLogColumns).Order("o.created_at DESC, o.id DESC").
+		Limit(maxRows).Scan(&rows).Error; err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	header := []string{"ID", export.TimeHeader("时间"), "用户名", "昵称", "模块", "操作", "操作对象", "方法", "路径", "HTTP 状态",
 		"业务码", "结果", "耗时(ms)", "IP", "请求ID", "错误信息"}
 	writeCSV(c, "operation-logs", header, len(rows), func(i int) []string {
 		r := rows[i]
 		return []string{
-			itoa(r.ID), r.CreatedAt.Format(time.RFC3339), csvCell(r.Username), csvCell(r.Nickname),
+			itoa(r.ID), export.Time(r.CreatedAt), csvCell(r.Username), csvCell(r.Nickname),
 			csvCell(r.Module), csvCell(r.Summary), csvCell(r.Target), r.Method, csvCell(r.Path), strconv.Itoa(r.Status),
 			strconv.Itoa(r.Code), boolLabel(r.Success), strconv.Itoa(r.DurationMs), csvCell(r.IP),
 			csvCell(r.RequestID), csvCell(r.ErrorMessage),

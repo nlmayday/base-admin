@@ -28,7 +28,7 @@ const usage = `usage: go run ./cmd/gen -table <table> -module <module> -resource
 
 -spec reads one spec or a list of them, each with the fields of the codegen
 page ("table", "module", "resource", "name", "moduleTitle", "parentMenu",
-"fields", "keyMode", "readOnly", "children"), and generates them in order:
+"fields", "keyMode", "readOnly", "softDelete", "children"), and generates them in order:
 the way to generate many tables, and to generate them again with -force.
 
 Generates server/internal/modules/<module>/<resource>.go (plus module.go and
@@ -65,13 +65,14 @@ type specEntry struct {
 	Fields      []codegen.FieldOption `json:"fields,omitempty"`
 	KeyMode     string                `json:"keyMode,omitempty"`
 	ReadOnly    bool                  `json:"readOnly,omitempty"`
+	SoftDelete  *bool                 `json:"softDelete,omitempty"`
 	Children    []codegen.ChildSpec   `json:"children,omitempty"`
 }
 
 func (e specEntry) job() job {
 	return job{table: e.Table, spec: codegen.Spec{Module: e.Module, Resource: e.Resource, Name: e.Name,
 		ModuleTitle: e.ModuleTitle, ParentMenu: e.ParentMenu, Fields: e.Fields, KeyMode: e.KeyMode,
-		ReadOnly: e.ReadOnly, Children: e.Children}}
+		ReadOnly: e.ReadOnly, SoftDelete: e.SoftDelete, Children: e.Children}}
 }
 
 // loader reads a table definition with the tables the spec refers to.
@@ -98,6 +99,11 @@ func parseFlags(args []string, stderr io.Writer) (options, error) {
 	fs.StringVar(&one.ParentMenu, "parent-menu", "", "parent menu code (default: <module>.root)")
 	fs.StringVar(&one.KeyMode, "key-mode", "", "how rows get their primary key: auto, generated (snowflake, Deps.NewID) or input (default: from the column)")
 	fs.BoolVar(&one.ReadOnly, "read-only", false, "generate the list, detail and export only")
+	fs.BoolFunc("no-soft-delete", "treat deleted_at as a plain time column: list every row, delete removes the row", func(string) error {
+		off := false
+		one.SoftDelete = &off
+		return nil
+	})
 	specFile := fs.String("spec", "", "JSON file with one spec or a list of specs (see above)")
 	children := fs.String("children", "", `child tables as JSON, e.g. '[{"table":"lg_item_i18n","foreignKey":"item_id","keyColumn":"lang","keyDict":"lang"}]'`)
 	fs.StringVar(&o.root, "root", "", "repository root (default: found from the working directory)")
@@ -241,14 +247,24 @@ func generateOne(ctx context.Context, o options, j job, root string, stdout io.W
 		printSummary(stdout, res, j.spec, false)
 		return nil
 	}
+	kept, err := codegen.Kept(root, res.Files)
+	if err != nil {
+		return err
+	}
 	if err := codegen.Write(root, res.Files, o.force); err != nil {
 		return err
 	}
+	written := make([]codegen.File, 0, len(res.Files))
 	for _, f := range res.Files {
+		if slices.Contains(kept, f.Path) {
+			_, _ = fmt.Fprintln(stdout, "kept", f.Path, "(extension points, never overwritten)")
+			continue
+		}
+		written = append(written, f)
 		_, _ = fmt.Fprintln(stdout, "wrote", f.Path)
 	}
 	if !o.noFormat {
-		if note := codegen.FormatWeb(ctx, root, res.Files); note != "" {
+		if note := codegen.FormatWeb(ctx, root, written); note != "" {
 			_, _ = fmt.Fprintln(stdout, "note:", note)
 		}
 	}

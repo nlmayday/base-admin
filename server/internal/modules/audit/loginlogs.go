@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"base-admin/server/internal/core/export"
 	"base-admin/server/internal/platform/httpx"
 	"base-admin/server/internal/platform/ids"
 )
@@ -119,17 +120,22 @@ func (m *Module) exportLoginLogs(c *gin.Context) {
 		httpx.Fail(c, err)
 		return
 	}
-	var rows []loginLogRow
-	if err := q.Select(loginLogColumns).Order("l.created_at DESC, l.id DESC").
-		Limit(maxExportRows).Scan(&rows).Error; err != nil {
+	maxRows, err := export.Check(c.Request.Context(), m.db, q)
+	if err != nil {
 		httpx.Fail(c, err)
 		return
 	}
-	header := []string{"ID", "时间", "类型", "用户名", "结果", "原因", "IP", "浏览器", "请求ID"}
+	var rows []loginLogRow
+	if err := q.Select(loginLogColumns).Order("l.created_at DESC, l.id DESC").
+		Limit(maxRows).Scan(&rows).Error; err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	header := []string{"ID", export.TimeHeader("时间"), "类型", "用户名", "结果", "原因", "IP", "浏览器", "请求ID"}
 	writeCSV(c, "login-logs", header, len(rows), func(i int) []string {
 		r := rows[i]
 		return []string{
-			itoa(r.ID), r.CreatedAt.Format(time.RFC3339), kindLabels[r.Kind], csvCell(r.Username),
+			itoa(r.ID), export.Time(r.CreatedAt), kindLabels[r.Kind], csvCell(r.Username),
 			boolLabel(r.Success), csvCell(reasonLabel(r.Reason)), csvCell(r.IP), csvCell(r.UserAgent),
 			csvCell(r.RequestID),
 		}

@@ -29,6 +29,9 @@ type File struct {
 	Path     string `json:"path"`
 	Language string `json:"language"`
 	Content  string `json:"content"`
+	// Keep marks a file written once for hand-written code (the extension
+	// points of a resource): it is never overwritten, not even with force.
+	Keep bool `json:"keep,omitempty"`
 }
 
 // Result is the output of Generate.
@@ -73,19 +76,25 @@ func Generate(t Table, spec Spec) (Result, error) {
 		return Result{}, errors.New("children: 子表未加载（用 codegen.Load 读取表结构）")
 	}
 	var res Result
-	jobs := []struct{ tmpl, path, lang string }{
-		{"resource.go.tmpl", d.serverDir + "/" + d.FileBase + ".go", "go"},
-		{"resource_integration_test.go.tmpl", d.serverDir + "/" + d.FileBase + "_integration_test.go", "go"},
-		{"api.ts.tmpl", "web/src/api/" + d.Pkg + "/" + d.Resource + ".ts", "typescript"},
-		{"index.vue.tmpl", d.viewDir + "/index.vue", "vue"},
+	type job struct {
+		tmpl, path, lang string
+		keep             bool // extension points: written once (File.Keep)
+	}
+	jobs := []job{
+		{"resource.go.tmpl", d.serverDir + "/" + d.FileBase + ".go", "go", false},
+		{"resource_ext.go.tmpl", d.serverDir + "/" + d.FileBase + "_ext.go", "go", true},
+		{"resource_integration_test.go.tmpl", d.serverDir + "/" + d.FileBase + "_integration_test.go", "go", false},
+		{"api.ts.tmpl", "web/src/api/" + d.Pkg + "/" + d.Resource + ".ts", "typescript", false},
+		{"index.vue.tmpl", d.viewDir + "/index.vue", "vue", false},
+		{"extension.vue.tmpl", d.viewDir + "/components/" + d.TSUpper + "Extension.vue", "vue", true},
 	}
 	if !spec.ReadOnly {
-		jobs = append(jobs, struct{ tmpl, path, lang string }{"form.vue.tmpl", d.viewDir + "/components/" + d.TSUpper + "FormDialog.vue", "vue"})
+		jobs = append(jobs, job{"form.vue.tmpl", d.viewDir + "/components/" + d.TSUpper + "FormDialog.vue", "vue", false})
 	}
 	if spec.NewModule {
-		jobs = append([]struct{ tmpl, path, lang string }{
-			{"module.go.tmpl", d.serverDir + "/module.go", "go"},
-			{"common.go.tmpl", d.serverDir + "/common.go", "go"},
+		jobs = append([]job{
+			{"module.go.tmpl", d.serverDir + "/module.go", "go", false},
+			{"common.go.tmpl", d.serverDir + "/common.go", "go", false},
 		}, jobs...)
 	}
 	for _, j := range jobs {
@@ -93,7 +102,7 @@ func Generate(t Table, spec Spec) (Result, error) {
 		if err != nil {
 			return Result{}, err
 		}
-		res.Files = append(res.Files, File{Path: j.path, Language: j.lang, Content: content})
+		res.Files = append(res.Files, File{Path: j.path, Language: j.lang, Content: content, Keep: j.keep})
 	}
 	res.Permissions, res.Menus = d.permissions(), d.menus()
 	res.Wiring = d.wiring()
@@ -185,6 +194,11 @@ type tmplData struct {
 	// EnumExports are exported columns with comment options, exported as
 	// their labels.
 	EnumExports []*Field
+	// ExportDicts are exported dictionary-backed columns, exported as the
+	// labels of the dictionary.
+	ExportDicts []*Field
+	// DictBool: a yes/no column shows options (the list's dictBool helper).
+	DictBool bool
 	// ChildDictKeys: a child's keys come from a dictionary (form import).
 	ChildDictKeys bool
 	// OmittableDefaults: a NOT NULL column with a default may be omitted
@@ -244,7 +258,9 @@ func buildData(t Table, spec Spec) *tmplData {
 }
 
 func (d *tmplData) collectFields(t Table) {
+	plain := d.plainColumns()
 	for _, c := range t.Columns {
+		c.plain = plain[c.Name]
 		ti, ok := mapType(c)
 		switch {
 		case c.Primary:
@@ -360,8 +376,13 @@ func (d *tmplData) derive() {
 	}
 	d.NeedsDatabase = !d.ReadOnly || strings.Contains(d.Columns, "database.")
 	for _, f := range d.ExportFields {
-		if f.Enum != nil && f.Role != roleStatus && f.Relation == "" && (f.Role != roleDept || !d.DeptJoin) {
+		if f.Dict == "" || f.Role == roleStatus || f.Relation != "" || (f.Role == roleDept && d.DeptJoin) {
+			continue
+		}
+		if f.Enum != nil {
 			d.EnumExports = append(d.EnumExports, f)
+		} else {
+			d.ExportDicts = append(d.ExportDicts, f)
 		}
 	}
 	d.deriveDisplay()
@@ -370,6 +391,12 @@ func (d *tmplData) derive() {
 			continue
 		}
 		f.DictSource = dictSource(f)
+		f.DictRowTS = "row." + f.JSONName
+		if f.Kind == kindBool {
+			// Options of a yes/no column have the values 1 and 0.
+			f.DictRowTS = "dictBool(row." + f.JSONName + ")"
+			d.DictBool = true
+		}
 		if f.Writable {
 			d.DictFields = append(d.DictFields, f)
 			if f.Enum == nil {
@@ -605,11 +632,6 @@ func (d *tmplData) deriveInsert() {
 func (d *tmplData) deriveLists() {
 	shown := 0
 	for _, f := range d.Fields {
-		switch f.Role {
-		case roleVersion, roleDeletedAt:
-		default:
-			d.ExportFields = append(d.ExportFields, f)
-		}
 		if f.Writable && f.Required {
 			d.RequiredFields = append(d.RequiredFields, f)
 			d.HasRequired = true
@@ -643,9 +665,26 @@ func (d *tmplData) deriveLists() {
 		}
 	}
 	d.StatusInTable = d.Status != nil && d.Status.InTable
+	for _, f := range d.Fields {
+		if exported(f, f == d.PK) {
+			d.ExportFields = append(d.ExportFields, f)
+		}
+	}
 	for _, f := range d.TableFields {
 		d.TableHasTime = d.TableHasTime || f.Kind == kindTime
 	}
+}
+
+// exported reports whether the export has f: by default the key and the
+// list columns; FieldOption.Export overrides it.
+func exported(f *Field, key bool) bool {
+	switch {
+	case f.Role == roleVersion || f.Role == roleDeletedAt:
+		return false
+	case f.exportOverride != nil:
+		return *f.exportOverride
+	}
+	return key || f.InTable
 }
 
 func tableColumn(f *Field) bool {

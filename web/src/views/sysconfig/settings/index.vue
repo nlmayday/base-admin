@@ -6,6 +6,7 @@ import { needsReload } from "@/utils/http/errors";
 import { useFieldErrors } from "@/composables/useFieldErrors";
 import { hasPerm } from "@/utils/permission";
 import { useSettingStoreHook } from "@/store/modules/settings";
+import { PAGE_SIZES, setDefaultPageSize } from "@/utils/pageSize";
 import {
   getSettings,
   updateSettings,
@@ -53,6 +54,9 @@ const SIZE_MIN = 1;
 const SIZE_MAX = 1024;
 const RETENTION_MIN = 7;
 const RETENTION_MAX = 3650;
+/** 与后端 core/export 一致 */
+const EXPORT_MIN = 1000;
+const EXPORT_MAX = 1000000;
 
 const canUpdate = computed(() => hasPerm("system:settings:update"));
 
@@ -65,7 +69,9 @@ const form = reactive<Settings>({
   logoUrl: "",
   uploadAllowedExtensions: [],
   uploadMaxSizeMB: 20,
-  auditRetentionDays: 180
+  auditRetentionDays: 180,
+  exportMaxRows: 100000,
+  pageSize: 20
 });
 const { fieldErrors, clearFieldErrors, applyFieldErrors } = useFieldErrors();
 const logoBroken = ref(false);
@@ -135,7 +141,9 @@ function fill(view: SettingsView): void {
     logoUrl: view.logoUrl,
     uploadAllowedExtensions: [...view.uploadAllowedExtensions],
     uploadMaxSizeMB: view.uploadMaxSizeMB,
-    auditRetentionDays: view.auditRetentionDays
+    auditRetentionDays: view.auditRetentionDays,
+    exportMaxRows: view.exportMaxRows,
+    pageSize: view.pageSize
   });
   logoBroken.value = false;
   clearFieldErrors();
@@ -176,11 +184,14 @@ async function submit(): Promise<void> {
       uploadAllowedExtensions: form.uploadAllowedExtensions,
       uploadMaxSizeMB: form.uploadMaxSizeMB,
       auditRetentionDays: form.auditRetentionDays,
+      exportMaxRows: form.exportMaxRows,
+      pageSize: form.pageSize,
       version: loaded.value.version
     });
     if (view) {
       fill(view);
       useSettingStoreHook().applyBranding(view);
+      setDefaultPageSize(view.pageSize);
     }
     message("设置已保存", { type: "success" });
   } catch (err) {
@@ -314,6 +325,45 @@ onMounted(load);
             controls-position="right"
           />
           <span class="ml-2 text-[var(--el-text-color-secondary)]">天</span>
+        </el-form-item>
+      </el-card>
+
+      <el-card shadow="never" class="mb-3">
+        <template #header>
+          <div class="font-medium">导出与列表</div>
+          <div class="settings-hint">
+            导出超过上限时直接拒绝并提示缩小查询范围，不会截断；导出中的时间为
+            UTC，表头标注 (UTC)。每页条数对之后打开的列表生效
+          </div>
+        </template>
+        <el-form-item
+          label="导出行数上限"
+          prop="exportMaxRows"
+          :error="fieldErrors.exportMaxRows"
+        >
+          <el-input-number
+            v-model="form.exportMaxRows"
+            :min="EXPORT_MIN"
+            :max="EXPORT_MAX"
+            :step="1000"
+            controls-position="right"
+            class="w-[200px]!"
+          />
+          <span class="ml-2 text-[var(--el-text-color-secondary)]">行</span>
+        </el-form-item>
+        <el-form-item
+          label="列表默认每页条数"
+          prop="pageSize"
+          :error="fieldErrors.pageSize"
+        >
+          <el-select v-model="form.pageSize" class="w-[200px]!">
+            <el-option
+              v-for="n in PAGE_SIZES"
+              :key="n"
+              :label="`${n} 条/页`"
+              :value="n"
+            />
+          </el-select>
         </el-form-item>
       </el-card>
     </el-form>

@@ -30,6 +30,9 @@ type FieldOption struct {
 	Label string `json:"label,omitempty"`
 	// List shows the column in the list page.
 	List *bool `json:"list,omitempty"`
+	// Export puts the column in the CSV export; nil keeps the default (the
+	// key and the list columns).
+	Export *bool `json:"export,omitempty"`
 	// Form lets users set the column in the create/edit form.
 	Form *bool `json:"form,omitempty"`
 	// Search is SearchNone, SearchLike, SearchEq or SearchRange.
@@ -69,7 +72,9 @@ type FieldInfo struct {
 	Comment string `json:"comment"`
 	Label   string `json:"label"`
 	List    bool   `json:"list"`
-	Form    bool   `json:"form"`
+	// Export: in the CSV export by default (the key and list columns).
+	Export bool `json:"export"`
+	Form   bool `json:"form"`
 	// FormLocked means the form flag cannot be changed; FormHint says why.
 	FormLocked  bool     `json:"formLocked"`
 	FormHint    string   `json:"formHint,omitempty"`
@@ -104,6 +109,10 @@ func Describe(t Table) ([]FieldInfo, error) {
 		return nil, err
 	}
 	d := buildData(t, Spec{Module: "x", Resource: "x", Name: "x"})
+	inExport := map[*Field]bool{}
+	for _, f := range d.ExportFields {
+		inExport[f] = true
+	}
 	out := make([]FieldInfo, 0, len(d.Fields))
 	for _, f := range d.Fields {
 		if f.Role == roleID && !f.CreateOnly {
@@ -112,7 +121,7 @@ func Describe(t Table) ([]FieldInfo, error) {
 		locked, hint := formLock(f)
 		out = append(out, FieldInfo{
 			Column: f.Column, Type: kindNames[f.Kind], Comment: f.comment, Label: f.Label,
-			List: f.InTable, Form: f.Writable, FormLocked: locked, FormHint: hint,
+			List: f.InTable, Export: inExport[f], Form: f.Writable, FormLocked: locked, FormHint: hint,
 			Search: f.Search, SearchModes: searchModes(f), DictAllowed: dictAllowed(f),
 			Dict: f.Dict, CommentOptions: append([]EnumOption{}, f.commentEnum...), // never null in JSON
 			Upload: f.Upload, UploadModes: uploadModes(f),
@@ -135,10 +144,16 @@ func formLock(f *Field) (bool, string) {
 	return false, ""
 }
 
-// dictAllowed reports whether f may be backed by a data dictionary: plain
-// text or integer columns that users set.
+// dictAllowed reports whether f may show options (a data dictionary or
+// the comment options): text, integer and yes/no columns without a
+// standard role; options on status replace its 1 启用 / 2 停用. Yes/no
+// columns take options only outside the form (FieldProblems).
 func dictAllowed(f *Field) bool {
-	return f.Role == "" && f.canWrite && (f.Kind == kindString || f.Kind == kindInt16 || f.Kind == kindInt || f.Kind == kindInt64)
+	switch f.Kind {
+	case kindString, kindInt16, kindInt, kindInt64, kindBool:
+		return f.Role == "" || f.Role == roleStatus
+	}
+	return false
 }
 
 // searchModes lists the search modes that suit f.
@@ -204,7 +219,7 @@ func longText(column string) bool {
 func (s Spec) FieldProblems(t Table) []Problem {
 	var out []Problem
 	add := func(msg string) { out = append(out, Problem{Field: "fields", Message: msg}) }
-	d := buildData(t, Spec{Module: "x", Resource: "x", Name: "x"})
+	d := buildData(t, s.probe())
 	byColumn := map[string]*Field{}
 	for _, f := range d.Fields {
 		byColumn[f.Column] = f
@@ -234,7 +249,9 @@ func (s Spec) FieldProblems(t Table) []Problem {
 		if o.Dict != nil && *o.Dict != "" {
 			switch {
 			case !dictAllowed(f):
-				add("字段 " + o.Column + " 不能使用下拉选项（只支持可编辑的文本或整数字段）")
+				add("字段 " + o.Column + " 不能使用下拉选项（只支持文本、整数或是/否字段）")
+			case f.Kind == kindBool && !s.ReadOnly && formOn(f, o):
+				add("字段 " + o.Column + " 是是/否字段，只有不在表单中（只读模块或关闭「表单」）时才能使用下拉选项")
 			case *o.Dict == OptionsFromComment && len(f.commentEnum) == 0:
 				add("字段 " + o.Column + " 的注释中没有选项（格式如 类型：1=通知,2=公告）")
 			case *o.Dict != OptionsFromComment && !dictCodePattern.MatchString(*o.Dict):
@@ -260,6 +277,26 @@ func (s Spec) FieldProblems(t Table) []Problem {
 	return out
 }
 
+// formOn reports whether f ends up in the form under option o.
+func formOn(f *Field, o FieldOption) bool {
+	if locked, _ := formLock(f); o.Form == nil || locked {
+		return f.Writable
+	}
+	return *o.Form
+}
+
+// probe is a valid spec that gives t's columns the roles s gives them, to
+// check s.Fields against.
+func (s Spec) probe() Spec {
+	p := Spec{Module: "x", Resource: "x", Name: "x", SoftDelete: s.SoftDelete, ReadOnly: s.ReadOnly}
+	for _, o := range s.Fields {
+		if o.Column == "status" && o.Dict != nil && *o.Dict != "" {
+			p.Fields = append(p.Fields, FieldOption{Column: o.Column, Dict: o.Dict})
+		}
+	}
+	return p
+}
+
 // applyOptions overrides the defaults with spec.Fields (already validated).
 func (d *tmplData) applyOptions() {
 	byColumn := map[string]FieldOption{}
@@ -279,6 +316,9 @@ func (d *tmplData) applyOptions() {
 		}
 		if o.List != nil {
 			f.listOverride = o.List
+		}
+		if o.Export != nil {
+			f.exportOverride = o.Export
 		}
 		if o.Search != "" {
 			f.Search = o.Search
@@ -484,46 +524,100 @@ func searchDoc(mode string) string {
 // commentOptionsPattern matches one "value=label" item of a comment.
 var commentOptionsPattern = regexp.MustCompile(`^([A-Za-z0-9_-]{1,32})=([^=]{1,20})$`)
 
+// numberedOptionsPattern matches one "1正常" item: a number followed by a
+// label that starts with a letter (Chinese included).
+var numberedOptionsPattern = regexp.MustCompile(`(\d{1,9})\s*(\pL[^\d\s,，;；、=:：()（）]{0,19})`)
+
+// commentSeparators are the characters between options.
+const commentSeparators = ",，;；、 \t"
+
 // parseCommentOptions reads options from a column comment written as
 // "类型：1=通知,2=公告" (also with （…） instead of the colon, and with
-// ，；、 or spaces between items). It needs two or more well-formed items.
+// ，；、 or spaces between items) or as "1正常 2冻结 3注销" (with or
+// without a "状态：" in front). It needs two or more well-formed items.
 func parseCommentOptions(comment string) []EnumOption {
-	body := comment
+	body, prefixed := comment, false
 	if i := strings.IndexAny(body, ":：（("); i >= 0 {
 		body = body[i:]
 		_, size := utf8.DecodeRuneInString(body)
-		body = strings.TrimRight(body[size:], ")） ")
-	} else {
-		return nil
+		body, prefixed = strings.TrimRight(body[size:], ")） "), true
 	}
-	items := strings.FieldsFunc(body, func(r rune) bool {
-		return strings.ContainsRune(",，;；、 \t", r)
-	})
+	if strings.Contains(body, "=") {
+		if !prefixed {
+			return nil
+		}
+		return assignedOptions(body)
+	}
+	return numberedOptions(body)
+}
+
+// assignedOptions reads "1=通知,2=公告".
+func assignedOptions(body string) []EnumOption {
+	items := strings.FieldsFunc(body, func(r rune) bool { return strings.ContainsRune(commentSeparators, r) })
 	if len(items) < 2 {
 		return nil
 	}
 	out := make([]EnumOption, 0, len(items))
-	seen := map[string]bool{}
 	for _, item := range items {
 		m := commentOptionsPattern.FindStringSubmatch(item)
-		if m == nil || seen[m[1]] {
+		if m == nil {
 			return nil
 		}
-		label := strings.TrimSpace(labelUnsafe.Replace(m[2]))
-		if label == "" {
+		if out = appendOption(out, m[1], m[2]); out == nil {
 			return nil
 		}
-		seen[m[1]] = true
-		out = append(out, EnumOption{Value: m[1], Label: label})
 	}
 	return out
+}
+
+// numberedOptions reads "1正常 2冻结 3注销"; anything else in body (other
+// than separators) means it is not a list of options. Leading text such
+// as "状态 " is allowed.
+func numberedOptions(body string) []EnumOption {
+	first := strings.IndexFunc(body, func(r rune) bool { return r >= '0' && r <= '9' })
+	if first < 0 {
+		return nil
+	}
+	if lead := strings.TrimSpace(body[:first]); lead != "" && strings.ContainsAny(lead, commentSeparators) {
+		return nil // digits further into a sentence
+	}
+	rest := body[first:]
+	matches := numberedOptionsPattern.FindAllStringSubmatchIndex(rest, -1)
+	if len(matches) < 2 {
+		return nil
+	}
+	out := make([]EnumOption, 0, len(matches))
+	pos := 0
+	for _, m := range matches {
+		if strings.Trim(rest[pos:m[0]], commentSeparators) != "" {
+			return nil
+		}
+		if out = appendOption(out, rest[m[2]:m[3]], rest[m[4]:m[5]]); out == nil {
+			return nil
+		}
+		pos = m[1]
+	}
+	if strings.Trim(rest[pos:], commentSeparators) != "" {
+		return nil
+	}
+	return out
+}
+
+// appendOption adds one option, or returns nil for a repeated value or an
+// empty label.
+func appendOption(out []EnumOption, value, label string) []EnumOption {
+	label = strings.TrimSpace(labelUnsafe.Replace(label))
+	if label == "" || slices.ContainsFunc(out, func(o EnumOption) bool { return o.Value == value }) {
+		return nil
+	}
+	return append(out, EnumOption{Value: value, Label: label})
 }
 
 // defaultChoices gives columns whose comment lists options a select of
 // those options, searched by default: such columns are what lists filter by.
 func (d *tmplData) defaultChoices() {
 	for _, f := range d.Fields {
-		if len(f.commentEnum) > 0 && dictAllowed(f) {
+		if len(f.commentEnum) > 0 && f.Role == "" && dictAllowed(f) && (f.Kind != kindBool || d.ReadOnly || !f.Writable) {
 			f.setChoices(OptionsFromComment)
 			f.Search = SearchEq
 		}

@@ -225,3 +225,19 @@ func TestDictRefillCannotOverwriteInvalidation(t *testing.T) {
 	require.NoError(t, err, "a missing dictionary is not an error for validation")
 	assert.False(t, ok)
 }
+
+func TestDictLabels(t *testing.T) {
+	h := newHarness(t)
+	typ := h.createType("user_state", "玩家状态").ID.String()
+	h.createItem(typ, "正常", "1", 1, nil)
+	h.createItem(typ, "冻结", "2", 2, nil)
+	ctx := context.Background()
+
+	labels, err := h.mod.DictLabels(ctx, "user_state")
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"1": "正常", "2": "冻结"}, labels)
+
+	labels, err = h.mod.DictLabels(ctx, "no_such_dict")
+	require.NoError(t, err, "a missing dictionary exports the raw values")
+	assert.Empty(t, labels)
+}

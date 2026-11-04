@@ -120,18 +120,24 @@ func TestSpecFile(t *testing.T) {
 	specs := filepath.Join(t.TempDir(), "specs.json")
 	require.NoError(t, os.WriteFile(specs, []byte(`[
 		{"table": "biz_widgets", "module": "demo", "resource": "widget", "name": "部件", "moduleTitle": "演示"},
-		{"table": "biz_widgets", "module": "demo", "resource": "widget-log", "name": "部件日志", "readOnly": true,
+		{"table": "biz_widgets", "module": "demo", "resource": "widget-log", "name": "部件日志", "readOnly": true, "softDelete": false,
 		 "fields": [{"column": "name", "search": "eq"}]}
 	]`), 0o600))
 	var tables []string
+	var softDelete []*bool
 	load := func(_ context.Context, _, table string, spec codegen.Spec) (codegen.Table, error) {
 		tables = append(tables, table+":"+spec.Resource)
+		softDelete = append(softDelete, spec.SoftDelete)
 		return widgetTable(), nil
 	}
 	args := []string{"-spec", specs, "-root", root, "-dsn", "postgres://unused", "-no-format"}
 	code, stdout, stderr := runGen(t, args, load)
 	require.Equal(t, 0, code, stderr)
 	assert.Equal(t, []string{"biz_widgets:widget", "biz_widgets:widget-log"}, tables, "in order")
+	require.Len(t, softDelete, 2)
+	assert.Nil(t, softDelete[0])
+	require.NotNil(t, softDelete[1])
+	assert.False(t, *softDelete[1], "softDelete is read from the file")
 	assert.Contains(t, stdout, "== 2/2 biz_widgets → demo/widget-log")
 	assert.FileExists(t, filepath.Join(root, "server", "internal", "modules", "demo", "widget.go"))
 	log, err := os.ReadFile(filepath.Join(root, "server", "internal", "modules", "demo", "widget_log.go"))

@@ -91,6 +91,24 @@ func (m *Module) HasDictValue(ctx context.Context, code, value string) (bool, er
 	return slices.ContainsFunc(opts, func(o DictOption) bool { return o.Value == value }), nil
 }
 
+// DictLabels maps the values of the enabled items of dictionary code to
+// their labels (empty for a missing dictionary); exports use it to write
+// labels instead of values.
+func (m *Module) DictLabels(ctx context.Context, code string) (map[string]string, error) {
+	opts, err := m.DictOptions(ctx, code)
+	if errors.Is(err, ErrDictNotFound) {
+		return map[string]string{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	labels := make(map[string]string, len(opts))
+	for _, o := range opts {
+		labels[o.Value] = o.Label
+	}
+	return labels, nil
+}
+
 func (m *Module) loadDictOptions(ctx context.Context, code string) ([]DictOption, error) {
 	db := m.db.WithContext(ctx)
 	var types []struct {

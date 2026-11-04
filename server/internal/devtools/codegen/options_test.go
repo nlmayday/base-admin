@@ -133,8 +133,8 @@ func TestDictBinding(t *testing.T) {
 	}
 	assert.True(t, allowed["title"], "text")
 	assert.True(t, allowed["order"], "integer")
-	assert.False(t, allowed["status"], "system column")
-	assert.False(t, allowed["paid"], "boolean")
+	assert.True(t, allowed["status"], "options replace 1 启用 / 2 停用")
+	assert.True(t, allowed["paid"], "yes/no, outside the form only (FieldProblems)")
 
 	spec := Spec{Module: "crm", Resource: "customer", Name: "客户", NewModule: true, Fields: []FieldOption{
 		{Column: "level", Dict: ptr("customer_level")}, // default search like becomes eq
@@ -148,7 +148,7 @@ func TestDictBinding(t *testing.T) {
 		msgs = append(msgs, p.Message)
 	}
 	assert.Equal(t, []string{
-		"字段 sort 不能使用下拉选项（只支持可编辑的文本或整数字段）",
+		"字段 sort 不能使用下拉选项（只支持文本、整数或是/否字段）",
 		"字段 contact 的字典编码无效",
 		"字段 phone 使用下拉选项后只能「精确」搜索",
 		"字段 name 的注释中没有选项（格式如 类型：1=通知,2=公告）",
@@ -195,6 +195,16 @@ func TestParseCommentOptions(t *testing.T) {
 		"备注，可以写 a=b 这样的内容":        nil, // no colon or bracket
 		"类型：1=通知,随便写":             nil, // a malformed item disables it
 		"类型：1=通知,1=公告":            nil, // duplicate values
+		"1正常 2冻结 3注销":             {{"1", "正常"}, {"2", "冻结"}, {"3", "注销"}},
+		"状态：1正常，2冻结，3注销":          {{"1", "正常"}, {"2", "冻结"}, {"3", "注销"}},
+		"状态 0 否 1 是":              {{"0", "否"}, {"1", "是"}},
+		"状态(1启用 2停用)":             {{"1", "启用"}, {"2", "停用"}},
+		"金额(分)":                   nil,
+		"创建时间(UTC+8)":             nil,
+		"最多重试 3 次 到 5 次":          nil, // words between the items
+		"1正常":                     nil,
+		"1正常 1冻结":                 nil,
+		"版本 2026 起":               nil,
 	} {
 		assert.Equal(t, want, parseCommentOptions(comment), comment)
 	}
@@ -255,4 +265,82 @@ func TestMissingStandardColumnsNoted(t *testing.T) {
 	res, err = Generate(customerTable(), customerSpec())
 	require.NoError(t, err)
 	assert.NotContains(t, strings.Join(res.Notes, "\n"), "表缺少标准字段", "the customer fixture is complete")
+}
+
+// A read-only player list: dictionaries on the status and a yes/no flag,
+// deleted_at as a plain time (soft delete off), export like the list.
+func TestReadOnlyDictsAndPlainDeletedAt(t *testing.T) {
+	spec := accountSpec("game")
+	require.Empty(t, spec.FieldProblems(accountTable()))
+	res, err := Generate(accountTable(), spec)
+	require.NoError(t, err)
+	src := fileByPath(t, res, "/account.go").Content
+	index := fileByPath(t, res, "/index.vue").Content
+
+	// status: the dictionary instead of 1 启用 / 2 停用.
+	assert.NotContains(t, src, `map[int]string{1: "启用", 2: "停用"}`)
+	assert.Regexp(t, `Status\s+\*int64`, src, "filter by any value")
+	assert.Contains(t, src, `"ID", "昵称", "状态", "测试号"`, "the name of the status column is not its options")
+	assert.Contains(t, index, `useDict("user_status")`)
+	// is_test: yes/no shown with the dictionary values 1 and 0.
+	assert.Contains(t, index, `isTestLabel(dictBool(row.isTest))`)
+	assert.Contains(t, index, "const dictBool = ")
+	assert.Regexp(t, `IsTest\s+\*bool`, src)
+	// deleted_at: listed, searched, never hides rows.
+	assert.NotContains(t, src, "deleted_at IS NULL")
+	assert.Regexp(t, `DeletedAt\s+\*time.Time`, src)
+	assert.Contains(t, src, `"t.deleted_at >= ?"`)
+	// Export: the list columns with labels; the note is not listed, so not exported.
+	assert.Contains(t, src, `statusLabels, err := dictLabels(ctx, m.dict, "user_status")`)
+	assert.Contains(t, src, `accountLabel(isTestLabels, optionKey(r.IsTest))`)
+	assert.Contains(t, src, `export.TimeHeader("注销时间")`)
+	assert.Contains(t, src, "export.Check(ctx, m.db, q)")
+	assert.NotContains(t, src, "csvValue(r.InternalNote)")
+	assert.NotContains(t, src, "ExportRows")
+
+	// The export switch overrides the default.
+	on, off := true, false
+	spec.Fields = append(spec.Fields, FieldOption{Column: "nickname", Export: &off})
+	spec.Fields[2].Export = &on
+	res, err = Generate(accountTable(), spec)
+	require.NoError(t, err)
+	src = fileByPath(t, res, "/account.go").Content
+	assert.Contains(t, src, "csvValue(r.InternalNote)")
+	assert.NotContains(t, src, "csvValue(r.Nickname)")
+}
+
+func TestStatusWithOwnValues(t *testing.T) {
+	no := false
+	res, err := Generate(accountTable(), Spec{Module: "game", Resource: "account", Name: "账号", NewModule: true, SoftDelete: &no})
+	require.NoError(t, err)
+	src := fileByPath(t, res, "/account.go").Content
+	assert.NotContains(t, src, `oneof=1 2"`, "1正常 2冻结 3注销 is not 启用/停用")
+	assert.Contains(t, src, `oneof=1 2 3`)
+	assert.Contains(t, src, `var accountStatusLabels = map[string]string{"1": "正常", "2": "冻结", "3": "注销"}`)
+	assert.Contains(t, src, "DELETE FROM lg_account WHERE", "soft delete off: rows are removed")
+	assert.NotContains(t, src, "deleted_at IS NULL")
+
+	// A status comment with numbers that are not options: a plain integer.
+	tbl := accountTable()
+	tbl.Columns[2].Comment = "状态 见文档 v2"
+	res, err = Generate(tbl, Spec{Module: "game", Resource: "account", Name: "账号", NewModule: true})
+	require.NoError(t, err)
+	src = fileByPath(t, res, "/account.go").Content
+	assert.NotContains(t, src, "启用")
+	assert.Contains(t, src, "deleted_at IS NULL", "soft delete stays on by default")
+}
+
+func TestYesNoDictOnlyOutsideTheForm(t *testing.T) {
+	spec := Spec{Module: "game", Resource: "account", Name: "账号", Fields: []FieldOption{{Column: "is_test", Dict: ptr("yes_no")}}}
+	var msgs []string
+	for _, p := range spec.FieldProblems(accountTable()) {
+		msgs = append(msgs, p.Message)
+	}
+	assert.Equal(t, []string{"字段 is_test 是是/否字段，只有不在表单中（只读模块或关闭「表单」）时才能使用下拉选项"}, msgs)
+	off := false
+	spec.Fields[0].Form = &off
+	assert.Empty(t, spec.FieldProblems(accountTable()))
+	spec.Fields[0].Form = nil
+	spec.ReadOnly = true
+	assert.Empty(t, spec.FieldProblems(accountTable()))
 }

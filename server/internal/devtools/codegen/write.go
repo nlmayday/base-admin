@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -57,12 +58,25 @@ func Existing(root string, files []File) ([]string, error) {
 	return out, nil
 }
 
+// Conflicts returns the existing paths that Write refuses to overwrite
+// without force: the existing files other than Keep ones.
+func Conflicts(root string, files []File) ([]string, error) {
+	return Existing(root, slices.DeleteFunc(slices.Clone(files), func(f File) bool { return f.Keep }))
+}
+
+// Kept returns the Keep files that already exist, which Write leaves as
+// they are; call it before Write.
+func Kept(root string, files []File) ([]string, error) {
+	return Existing(root, slices.DeleteFunc(slices.Clone(files), func(f File) bool { return !f.Keep }))
+}
+
 // Write writes files under root. Without force it refuses, before writing
-// anything, when any target exists. When a write fails, the files already
-// written are restored (or removed when they were new).
+// anything, when any target exists; existing Keep files are left alone
+// either way. When a write fails, the files already written are restored
+// (or removed when they were new).
 func Write(root string, files []File, force bool) (err error) {
 	if !force {
-		existing, err := Existing(root, files)
+		existing, err := Conflicts(root, files)
 		if err != nil {
 			return err
 		}
@@ -88,6 +102,8 @@ func Write(root string, files []File, force bool) (err error) {
 		}
 		old, readErr := os.ReadFile(target) //nolint:gosec // G304: target is checked to be inside root
 		switch {
+		case readErr == nil && f.Keep:
+			continue // hand-written code
 		case readErr == nil:
 			undo = append(undo, func() { _ = os.WriteFile(target, old, 0o644) }) //nolint:gosec // G306: source files
 		case errors.Is(readErr, fs.ErrNotExist):

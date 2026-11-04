@@ -10,6 +10,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"base-admin/server/internal/core/export"
 	"base-admin/server/internal/platform/httpx"
 )
 
@@ -20,7 +21,14 @@ const (
 	KeyUploadAllowedExtensions = "upload.allowed_extensions"
 	KeyUploadMaxSizeMB         = "upload.max_size_mb"
 	KeyAuditRetentionDays      = "audit.retention_days"
+	// KeyExportMaxRows bounds one CSV export (core/export).
+	KeyExportMaxRows = export.SettingKey
+	// KeyPageSize is the default page size of the list pages.
+	KeyPageSize = "ui.page_size"
 )
+
+// pageSizes are the page sizes the list pages offer.
+var pageSizes = []int{10, 20, 50, 100}
 
 // Setting limits.
 const (
@@ -47,6 +55,9 @@ var builtinSettings = []builtinSetting{
 	{KeyUploadAllowedExtensions, defaultExtensionCSV, TypeString, "上传设置", "允许的文件扩展名", "逗号分隔的小写扩展名"},
 	{KeyUploadMaxSizeMB, "20", TypeNumber, "上传设置", "单文件大小上限（MB）", "1–1024"},
 	{KeyAuditRetentionDays, "180", TypeNumber, "日志设置", "日志保留天数", "超过天数的登录日志与操作日志会被清理"},
+	{KeyExportMaxRows, strconv.Itoa(export.DefaultMaxRows), TypeNumber, "导出设置", "导出行数上限",
+		"一次导出最多的行数（1000–1000000）；超过时拒绝导出，提示缩小查询范围"},
+	{KeyPageSize, "20", TypeNumber, "界面设置", "列表默认每页条数", "10、20、50 或 100"},
 }
 
 func settingKeys() []string {
@@ -75,6 +86,8 @@ type Settings struct {
 	UploadAllowedExtensions []string `json:"uploadAllowedExtensions"`
 	UploadMaxSizeMB         int      `json:"uploadMaxSizeMB"`
 	AuditRetentionDays      int      `json:"auditRetentionDays"`
+	ExportMaxRows           int      `json:"exportMaxRows"`
+	PageSize                int      `json:"pageSize"`
 }
 
 // normalized returns a cleaned copy of s, or the invalid fields.
@@ -86,6 +99,8 @@ func (s Settings) normalized() (Settings, []httpx.FieldError) {
 		LogoURL:            strings.TrimSpace(s.LogoURL),
 		UploadMaxSizeMB:    s.UploadMaxSizeMB,
 		AuditRetentionDays: s.AuditRetentionDays,
+		ExportMaxRows:      s.ExportMaxRows,
+		PageSize:           s.PageSize,
 	}
 	if n := utf8.RuneCountInString(out.SiteName); n == 0 || n > maxSiteNameLen {
 		add("siteName", fmt.Sprintf("长度须为 1–%d 个字符", maxSiteNameLen))
@@ -103,6 +118,12 @@ func (s Settings) normalized() (Settings, []httpx.FieldError) {
 	}
 	if out.AuditRetentionDays < minRetentionDays || out.AuditRetentionDays > maxRetentionDays {
 		add("auditRetentionDays", fmt.Sprintf("须在 %d 到 %d 之间", minRetentionDays, maxRetentionDays))
+	}
+	if out.ExportMaxRows < export.MinMaxRows || out.ExportMaxRows > export.MaxMaxRows {
+		add("exportMaxRows", fmt.Sprintf("须在 %d 到 %d 之间", export.MinMaxRows, export.MaxMaxRows))
+	}
+	if !slices.Contains(pageSizes, out.PageSize) {
+		add("pageSize", "须为 10、20、50 或 100")
 	}
 	return out, fields
 }
@@ -166,6 +187,8 @@ func (s Settings) storedValues() map[string]string {
 		KeyUploadAllowedExtensions: strings.Join(s.UploadAllowedExtensions, extensionListSep),
 		KeyUploadMaxSizeMB:         strconv.Itoa(s.UploadMaxSizeMB),
 		KeyAuditRetentionDays:      strconv.Itoa(s.AuditRetentionDays),
+		KeyExportMaxRows:           strconv.Itoa(s.ExportMaxRows),
+		KeyPageSize:                strconv.Itoa(s.PageSize),
 	}
 }
 
@@ -181,12 +204,22 @@ func settingsFromValues(values map[string]string) (Settings, error) {
 	if err != nil {
 		return Settings{}, err
 	}
+	exportRows, err := parseInt(values, KeyExportMaxRows)
+	if err != nil {
+		return Settings{}, err
+	}
+	pageSize, err := parseInt(values, KeyPageSize)
+	if err != nil {
+		return Settings{}, err
+	}
 	return Settings{
 		SiteName:                values[KeySiteName],
 		LogoURL:                 values[KeySiteLogoURL],
 		UploadAllowedExtensions: safeExtensions(values[KeyUploadAllowedExtensions]),
 		UploadMaxSizeMB:         maxMB,
 		AuditRetentionDays:      days,
+		ExportMaxRows:           exportRows,
+		PageSize:                pageSize,
 	}, nil
 }
 

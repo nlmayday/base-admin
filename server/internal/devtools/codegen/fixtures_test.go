@@ -141,6 +141,34 @@ func orderLogTable() Table {
 	}}
 }
 
+// accountTable is a player account: a status with its own values, a
+// yes/no flag shown through a dictionary, and deleted_at meaning the time
+// the account was closed (soft delete off).
+func accountTable() Table {
+	return Table{Name: "lg_account", Comment: "账号", Columns: []Column{
+		{Name: "id", UDT: "int8", Primary: true},
+		{Name: "nickname", UDT: "varchar", MaxLength: 32, Comment: "昵称"},
+		{Name: "status", UDT: "int2", Default: "1", Comment: "1正常 2冻结 3注销"},
+		{Name: "is_test", UDT: "bool", Default: "false", Comment: "测试号"},
+		{Name: "internal_note", UDT: "varchar", MaxLength: 255, Nullable: true, Comment: "内部备注"},
+		{Name: "created_at", UDT: "timestamptz", Default: "now()"},
+		{Name: "deleted_at", UDT: "timestamptz", Nullable: true, Comment: "注销时间"},
+	}}
+}
+
+// accountSpec generates accountTable read-only with dictionaries on the
+// status and the flag, soft delete off and the note left out of the list.
+func accountSpec(module string) Spec {
+	off := false
+	return Spec{Module: module, Resource: "account", Name: "账号", NewModule: true, ReadOnly: true, SoftDelete: &off,
+		Fields: []FieldOption{
+			{Column: "status", Dict: ptr("user_status")},
+			{Column: "is_test", Dict: ptr("yes_no"), Search: SearchEq},
+			{Column: "internal_note", List: &off},
+			{Column: "deleted_at", Search: SearchRange},
+		}}
+}
+
 // keyShapes are the key and read-only cases of the compile and web checks.
 func keyShapes(prefix string) []struct {
 	table Table
@@ -160,6 +188,9 @@ func keyShapes(prefix string) []struct {
 		{playerTable(), Spec{Module: prefix + "players", Resource: "player", Name: "玩家", NewModule: true, ReadOnly: true}},
 		{orderLogTable(), Spec{Module: prefix + "ledger", Resource: "order-log", Name: "订单流水", NewModule: true, ReadOnly: true,
 			Fields: []FieldOption{{Column: "order_no", Search: SearchEq}, {Column: "paid_at", Search: SearchRange}}}},
+		{accountTable(), accountSpec(prefix + "account")},
+		{accountTable(), Spec{Module: prefix + "accounts", Resource: "account", Name: "账号", NewModule: true,
+			SoftDelete: new(bool)}}, // editable, comment options on status, hard delete
 	}
 }
 

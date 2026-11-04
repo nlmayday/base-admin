@@ -150,6 +150,12 @@ func label(c Column) string {
 		if i := strings.IndexAny(short, "，,。.;；:：（(\n"); i > 0 {
 			short = short[:i]
 		}
+		if len(parseCommentOptions(c.Comment)) > 0 {
+			// "状态 1正常 2冻结": the name is what comes before the options.
+			if i := strings.IndexAny(short, "0123456789"); i >= 0 {
+				short = short[:i]
+			}
+		}
 		if short = strings.TrimSpace(labelUnsafe.Replace(short)); short != "" {
 			return short
 		}
