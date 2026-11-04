@@ -55,7 +55,7 @@ func (a *application) close() error {
 // of downstream projects are appended to the module list here.
 func buildApplication(ctx context.Context, cfg config.Config, logger *zap.Logger, d *deps,
 	metrics *observability.Metrics, health *observability.Health, pw password.Params) (*application, error) {
-	if err := dbmigrate.RequireCurrent(ctx, d.sqlDB); err != nil {
+	if err := dbmigrate.RequireCurrent(ctx, d.sqlDB, dbmigrate.TracksFor(cfg.Database)); err != nil {
 		return nil, err
 	}
 	systemModule := system.New(system.Deps{DB: d.db, Redis: d.redis, Logger: logger})

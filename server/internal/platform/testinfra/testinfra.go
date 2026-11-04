@@ -63,6 +63,10 @@ func Database(t *testing.T) config.DatabaseConfig {
 
 	u.Path = "/" + name
 	return config.DatabaseConfig{
+		// The version tables follow the application settings when given,
+		// so tests run with the names a project configures.
+		MigrationsTable:    envOr("ADMIN_DATABASE_MIGRATIONS_TABLE", config.DefaultMigrationsTable),
+		AppMigrationsTable: envOr("ADMIN_DATABASE_APP_MIGRATIONS_TABLE", config.DefaultAppMigrationsTable),
 		URL:                u.String(),
 		MaxOpenConns:       5,
 		MaxIdleConns:       2,
@@ -151,4 +155,11 @@ func Redis(t *testing.T) config.RedisConfig {
 		WriteTimeout:              2 * time.Second,
 		RequireSafeEvictionPolicy: true,
 	}
+}
+
+func envOr(name, fallback string) string {
+	if v := os.Getenv(name); v != "" {
+		return v
+	}
+	return fallback
 }

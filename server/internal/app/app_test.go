@@ -16,6 +16,7 @@ import (
 	"go.uber.org/zap"
 
 	"base-admin/server/internal/platform/config"
+	"base-admin/server/internal/platform/dbmigrate"
 	"base-admin/server/internal/platform/observability"
 	"base-admin/server/internal/platform/requestid"
 )
@@ -139,7 +140,7 @@ func TestParseMigrateArgs(t *testing.T) {
 		{[]string{"app", "force", "3"}, []string{"app"}, "force", 3},
 	}
 	for _, tc := range valid {
-		cmd, err := parseMigrateArgs(tc.args)
+		cmd, err := parseMigrateArgs(dbmigrate.TracksFor(config.DatabaseConfig{}), tc.args)
 		require.NoError(t, err, tc.args)
 		var names []string
 		for _, tr := range cmd.tracks {
@@ -157,7 +158,7 @@ func TestParseMigrateArgs(t *testing.T) {
 		{"base", "force", "-2"}, {"base", "force"},
 	}
 	for _, args := range invalid {
-		_, err := parseMigrateArgs(args)
+		_, err := parseMigrateArgs(dbmigrate.TracksFor(config.DatabaseConfig{}), args)
 		assert.True(t, errors.Is(err, ErrUsage), "args %v: %v", args, err)
 	}
 }

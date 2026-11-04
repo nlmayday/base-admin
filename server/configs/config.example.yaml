@@ -36,6 +36,10 @@ database:
   connect_timeout: 5s
   statement_timeout: 15s    # 0 disables; migrations always run without it
   slow_query_threshold: 200ms
+  # Version tables of the migrations; change them when another service keeps
+  # its golang-migrate versions (schema_migrations) in the same database.
+  migrations_table: schema_migrations
+  app_migrations_table: app_schema_migrations
   # Extra databases of business modules (docs/module-guide.md): the URL comes
   # from ADMIN_DATABASE_EXTRA_<NAME>_URL; optional pool settings here, e.g.
   # extra:

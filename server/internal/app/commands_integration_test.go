@@ -125,7 +125,7 @@ func TestMigrateVersionFailsOnDirtySchema(t *testing.T) {
 	probe, err := database.OpenSQL(ctx, cfg.Database, "probe")
 	require.NoError(t, err)
 	defer func() { _ = probe.Close() }()
-	_, err = probe.Exec("UPDATE schema_migrations SET dirty = true")
+	_, err = probe.Exec("UPDATE " + dbmigrate.TracksFor(cfg.Database)[0].Table + " SET dirty = true")
 	require.NoError(t, err)
 
 	var out bytes.Buffer
@@ -217,7 +217,7 @@ func trackStatus(t *testing.T, track dbmigrate.Track) string {
 // latest version.
 func latestStatus(t *testing.T) string {
 	var out strings.Builder
-	for _, track := range dbmigrate.Tracks() {
+	for _, track := range dbmigrate.TracksFor(config.DatabaseConfig{}) {
 		out.WriteString(trackStatus(t, track))
 	}
 	return out.String()

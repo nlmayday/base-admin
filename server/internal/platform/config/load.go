@@ -129,6 +129,8 @@ func defaultValues() map[string]any {
 		"database.connect_timeout":      5 * time.Second,
 		"database.statement_timeout":    15 * time.Second,
 		"database.slow_query_threshold": 200 * time.Millisecond,
+		"database.migrations_table":     DefaultMigrationsTable,
+		"database.app_migrations_table": DefaultAppMigrationsTable,
 
 		"redis.addr":                         "127.0.0.1:6379",
 		"redis.password":                     "",

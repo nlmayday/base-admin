@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"base-admin/server/internal/platform/config"
 	"base-admin/server/internal/platform/database"
 	"base-admin/server/internal/platform/testinfra"
 )
@@ -239,4 +240,46 @@ func TestEmptyTrack(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, Status{}, st)
 	assert.NoError(t, empty.RequireCurrent(ctx, db))
+}
+
+// TestConfiguredVersionTables runs both tracks with configured version
+// tables in a database where another service (golang-migrate as well)
+// already keeps its versions in schema_migrations: neither touches the
+// other's table.
+func TestConfiguredVersionTables(t *testing.T) {
+	cfg := testinfra.Database(t)
+	cfg.MigrationsTable, cfg.AppMigrationsTable = "admin_schema_migrations", "admin_app_schema_migrations"
+	ctx := context.Background()
+	probe, err := database.OpenSQL(ctx, cfg, "migrate-probe")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = probe.Close() })
+	_, err = probe.ExecContext(ctx, "CREATE TABLE schema_migrations (version bigint NOT NULL PRIMARY KEY, dirty boolean NOT NULL)")
+	require.NoError(t, err)
+	_, err = probe.ExecContext(ctx, "INSERT INTO schema_migrations (version, dirty) VALUES (42, false)")
+	require.NoError(t, err)
+
+	tracks := TracksFor(cfg)
+	require.Equal(t, "admin_schema_migrations", tracks[0].Table)
+	require.Equal(t, "admin_app_schema_migrations", tracks[1].Table)
+	for _, track := range tracks {
+		db, err := database.OpenSQL(ctx, cfg, "migrate-test", database.ForMigrations())
+		require.NoError(t, err)
+		runner, err := New(db, track)
+		require.NoError(t, err)
+		require.NoError(t, runner.Up(), track.Name)
+		require.NoError(t, runner.Close())
+	}
+	require.NoError(t, RequireCurrent(ctx, probe, tracks))
+	assert.Error(t, RequireCurrent(ctx, probe, TracksFor(config.DatabaseConfig{})),
+		"the default tables belong to the other service here")
+
+	var version int64
+	var dirty bool
+	require.NoError(t, probe.QueryRowContext(ctx, "SELECT version, dirty FROM schema_migrations").Scan(&version, &dirty))
+	assert.Equal(t, int64(42), version, "the other service's version is untouched")
+	latest, err := BaseTrack.Latest(database.SQLDialect(probe))
+	require.NoError(t, err)
+	got, _, err := tracks[0].State(ctx, probe)
+	require.NoError(t, err)
+	assert.Equal(t, uint64(latest), got)
 }
