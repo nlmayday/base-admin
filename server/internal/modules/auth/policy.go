@@ -22,9 +22,11 @@ const (
 // Policy is the administrator-editable security policy (one row in
 // sys_security_policy).
 type Policy struct {
-	PasswordMinLength     int    `json:"passwordMinLength" binding:"min=8,max=72"`
-	PasswordRequireUpper  bool   `json:"passwordRequireUpper"`
-	PasswordRequireLower  bool   `json:"passwordRequireLower"`
+	PasswordMinLength    int  `json:"passwordMinLength" binding:"min=8,max=72"`
+	PasswordRequireUpper bool `json:"passwordRequireUpper"`
+	PasswordRequireLower bool `json:"passwordRequireLower"`
+	// PasswordRequireLetter: at least one letter, either case.
+	PasswordRequireLetter bool   `json:"passwordRequireLetter"`
 	PasswordRequireDigit  bool   `json:"passwordRequireDigit"`
 	PasswordRequireSymbol bool   `json:"passwordRequireSymbol"`
 	CaptchaMode           string `json:"captchaMode" binding:"oneof=off after_failures always"`
@@ -72,6 +74,9 @@ func (p Policy) CheckPassword(pw string) string {
 	if p.PasswordRequireLower && !lower {
 		missing = append(missing, "小写字母")
 	}
+	if p.PasswordRequireLetter && !upper && !lower && !p.PasswordRequireUpper && !p.PasswordRequireLower {
+		missing = append(missing, "字母")
+	}
 	if p.PasswordRequireDigit && !digit {
 		missing = append(missing, "数字")
 	}
@@ -107,7 +112,7 @@ type policyStore struct {
 }
 
 const policyColumns = `password_min_length, password_require_upper, password_require_lower,
-	password_require_digit, password_require_symbol, captcha_mode, captcha_after_failures,
+	password_require_letter, password_require_digit, password_require_symbol, captcha_mode, captcha_after_failures,
 	lockout_threshold, lockout_minutes, ip_allowlist AS ip_allowlist_json,
 	login_exempt_roles AS login_exempt_roles_json, login_time_start, login_time_end, login_time_zone, version`
 

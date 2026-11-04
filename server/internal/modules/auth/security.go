@@ -263,12 +263,12 @@ func (m *Module) updatePolicy(c *gin.Context) (any, error) {
 	}
 	res := m.core.db.WithContext(ctx).Exec(`UPDATE sys_security_policy SET
 			password_min_length = ?, password_require_upper = ?, password_require_lower = ?,
-			password_require_digit = ?, password_require_symbol = ?, captcha_mode = ?,
+			password_require_letter = ?, password_require_digit = ?, password_require_symbol = ?, captcha_mode = ?,
 			captcha_after_failures = ?, lockout_threshold = ?, lockout_minutes = ?,
 			ip_allowlist = ?, login_exempt_roles = ?, login_time_start = ?, login_time_end = ?,
 			login_time_zone = ?, version = version + 1, updated_at = CURRENT_TIMESTAMP(6), updated_by = ?
 		WHERE id = 1 AND version = ?`,
-		req.PasswordMinLength, req.PasswordRequireUpper, req.PasswordRequireLower, req.PasswordRequireDigit,
+		req.PasswordMinLength, req.PasswordRequireUpper, req.PasswordRequireLower, req.PasswordRequireLetter, req.PasswordRequireDigit,
 		req.PasswordRequireSymbol, req.CaptchaMode, req.CaptchaAfterFailures, req.LockoutThreshold,
 		req.LockoutMinutes, string(ips), string(roles), req.LoginTimeStart, req.LoginTimeEnd,
 		req.LoginTimeZone, actor.From(ctx).UserID(), req.Version)

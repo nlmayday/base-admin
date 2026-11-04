@@ -1,0 +1,1 @@
+ALTER TABLE sys_security_policy DROP COLUMN password_require_letter;
