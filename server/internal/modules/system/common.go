@@ -44,7 +44,7 @@ func handle(fn func(c *gin.Context) (any, error)) gin.HandlerFunc {
 // always a package constant.
 func updateVersioned(tx *gorm.DB, table string, id int64, version int, sets map[string]any, uniqueErr error) error {
 	sets["version"] = gorm.Expr("version + 1")
-	sets["updated_at"] = gorm.Expr("now()")
+	sets["updated_at"] = gorm.Expr("CURRENT_TIMESTAMP(6)")
 	res := tx.Table(table).Where("id = ? AND version = ?", id, version).Updates(sets)
 	if res.Error != nil {
 		if uniqueErr != nil && database.IsUniqueViolation(res.Error) {

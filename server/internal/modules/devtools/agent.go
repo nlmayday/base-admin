@@ -71,7 +71,7 @@ func (m *Module) agentAuth(c *gin.Context) {
 		LastUsedAt *time.Time
 	}
 	err := m.deps.DB.WithContext(ctx).Raw(`SELECT id, user_id, last_used_at FROM sys_agent_keys
-		WHERE key_hash = ? AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())`,
+		WHERE key_hash = ? AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP(6))`,
 		hashAgentKey(token)).Scan(&keys).Error
 	if err != nil {
 		httpx.Fail(c, err)
@@ -95,7 +95,7 @@ func (m *Module) agentAuth(c *gin.Context) {
 		return
 	}
 	if key.LastUsedAt == nil || time.Since(*key.LastUsedAt) > keyTouchInterval {
-		if err := m.deps.DB.WithContext(ctx).Exec(`UPDATE sys_agent_keys SET last_used_at = now() WHERE id = ?`, key.ID).Error; err != nil {
+		if err := m.deps.DB.WithContext(ctx).Exec(`UPDATE sys_agent_keys SET last_used_at = CURRENT_TIMESTAMP(6) WHERE id = ?`, key.ID).Error; err != nil {
 			m.deps.Logger.Warn("agent key touch failed", zap.Error(err))
 		}
 	}
@@ -135,6 +135,10 @@ type createTableView struct {
 func (m *Module) createTable(c *gin.Context) (any, error) {
 	if err := m.requireDev(); err != nil {
 		return nil, err
+	}
+	if database.IsMySQL(m.deps.DB) {
+		return nil, httpx.NewError(http.StatusConflict, CodeDialectUnsupported,
+			"AI 接口建表暂只支持 PostgreSQL；MySQL 请手写 server/migrations/app/mysql 下的迁移")
 	}
 	var req createTableRequest
 	if err := httpx.BindJSON(c, &req); err != nil {
@@ -351,12 +355,12 @@ func writeMigration(dir, stem, up, down string) (err error) {
 func (m *Module) applyMigrations(ctx context.Context, dir string, want uint) error {
 	cfg := m.deps.Database
 	cfg.StatementTimeout = 0
-	sqlDB, err := database.OpenSQL(ctx, cfg, "agent-migrate")
+	sqlDB, err := database.OpenSQL(ctx, cfg, "agent-migrate", database.ForMigrations())
 	if err != nil {
 		return err
 	}
 	track := dbmigrate.AppTrack
-	track.Files = os.DirFS(dir)
+	track.Files = map[database.Dialect]fs.FS{database.SQLDialect(sqlDB): os.DirFS(dir)}
 	runner, err := dbmigrate.New(sqlDB, track)
 	if err != nil {
 		_ = sqlDB.Close()

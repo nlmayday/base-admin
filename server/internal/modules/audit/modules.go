@@ -13,10 +13,12 @@ type moduleName struct {
 // are named without a code change and renamed menus follow.
 func (m *Module) listModules(c *gin.Context) (any, error) {
 	rows := []moduleName{}
+	// The first top-level directory of each module, by sort then id.
 	err := m.db.WithContext(c.Request.Context()).Raw(`SELECT name, title FROM (
-			SELECT DISTINCT ON (module) module AS name, title, sort, id FROM sys_menus
+			SELECT module AS name, title, sort, id,
+				ROW_NUMBER() OVER (PARTITION BY module ORDER BY sort, id) AS rn
+			FROM sys_menus
 			WHERE source = 'module' AND type = 'dir' AND parent_id IS NULL AND module <> ''
-			ORDER BY module, sort, id
-		) d ORDER BY sort, id`).Scan(&rows).Error
+		) d WHERE rn = 1 ORDER BY sort, id`).Scan(&rows).Error
 	return rows, err
 }

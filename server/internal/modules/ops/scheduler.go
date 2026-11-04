@@ -2,7 +2,11 @@ package ops
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -245,13 +249,19 @@ func (s *scheduler) reload(ctx context.Context) error {
 // loadFingerprint summarizes the scheduling-relevant state: every change
 // through the API bumps a job's version, deletes remove ids.
 func (s *scheduler) loadFingerprint(ctx context.Context) (string, error) {
-	var fp string
-	err := s.db.WithContext(ctx).Raw(`SELECT coalesce(md5(string_agg(id::text || ':' || version::text, ',' ORDER BY id)), '')
-		FROM sys_jobs`).Scan(&fp).Error
-	if err != nil {
+	var rows []struct{ ID, Version int64 }
+	if err := s.db.WithContext(ctx).Raw(`SELECT id, version FROM sys_jobs ORDER BY id`).Scan(&rows).Error; err != nil {
 		return "", fmt.Errorf("load job fingerprint: %w", err)
 	}
-	return fp, nil
+	if len(rows) == 0 {
+		return "", nil
+	}
+	parts := make([]string, len(rows))
+	for i, r := range rows {
+		parts[i] = strconv.FormatInt(r.ID, 10) + ":" + strconv.FormatInt(r.Version, 10)
+	}
+	sum := sha256.Sum256([]byte(strings.Join(parts, ",")))
+	return hex.EncodeToString(sum[:]), nil
 }
 
 // resync reloads when PostgreSQL changed without a notification reaching

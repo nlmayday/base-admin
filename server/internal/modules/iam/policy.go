@@ -10,6 +10,7 @@ import (
 	"base-admin/server/internal/core/actor"
 	"base-admin/server/internal/core/datascope"
 	"base-admin/server/internal/modules/auth"
+	"base-admin/server/internal/platform/database"
 	"base-admin/server/internal/platform/httpx"
 )
 
@@ -187,7 +188,7 @@ func guardSuperTarget(ctx context.Context, tx *gorm.DB, uid int64, losesSuper bo
 	if !losesSuper {
 		return nil
 	}
-	if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtext(?))", superGuardLock).Error; err != nil {
+	if err := database.LockTx(tx, superGuardLock); err != nil {
 		return err
 	}
 	others, err := exists(tx, `SELECT 1 FROM sys_users u
@@ -234,7 +235,7 @@ func guardDeptInScope(ctx context.Context, tx *gorm.DB, deptID *int64, field str
 // lockDeptTree serializes structural department changes so concurrent moves
 // cannot create cycles or stale materialized paths.
 func lockDeptTree(tx *gorm.DB) error {
-	return tx.Exec("SELECT pg_advisory_xact_lock(hashtext(?))", deptTreeLock).Error
+	return database.LockTx(tx, deptTreeLock)
 }
 
 // lockUserRow locks a visible user before any advisory lock is taken.

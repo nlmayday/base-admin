@@ -59,10 +59,13 @@ func (m *Module) cleanupRuns(ctx context.Context, params json.RawMessage) error 
 	if err != nil {
 		return err
 	}
+	cutoff := time.Now().AddDate(0, 0, -days)
 	for {
+		// The derived table lets MySQL limit a subquery of the table it
+		// deletes from; PostgreSQL accepts the same statement.
 		res := m.db.WithContext(ctx).Exec(`DELETE FROM sys_job_runs WHERE id IN (
-			SELECT id FROM sys_job_runs WHERE status <> 'running' AND started_at < now() - make_interval(days => ?::int)
-			ORDER BY id LIMIT ?)`, days, cleanupBatchSize)
+			SELECT id FROM (SELECT id FROM sys_job_runs WHERE status <> 'running' AND started_at < ?
+			ORDER BY id LIMIT ?) AS batch)`, cutoff, cleanupBatchSize)
 		if res.Error != nil {
 			return fmt.Errorf("delete old job runs: %w", res.Error)
 		}

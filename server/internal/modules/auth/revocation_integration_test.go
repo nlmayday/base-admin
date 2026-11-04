@@ -184,6 +184,9 @@ func TestB2B3_FailedCommitThenRetry(t *testing.T) {
 }
 
 func TestB4_CommitFailureIsReportedAsOutcomeUnknown(t *testing.T) {
+	// RunTx's COMMIT handling is the same on both databases; only
+	// PostgreSQL has deferred constraints to make a COMMIT fail on demand.
+	testinfra.SkipOnMySQL(t, "needs a deferred constraint")
 	h := newHarness(t)
 	uid := h.createUser("grace")
 	c := h.newClient()

@@ -368,9 +368,13 @@ func (f *Field) eqCode(col, param string) {
 		f.FilterTS = []string{param + "?: string;"}
 		f.FilterQuery = []string{param + "=x"}
 		if f.Search == SearchLike {
-			op, value = " ILIKE ?", `"%"+escapeLike(v)+"%"`
+			value = `"%"+escapeLike(v)+"%"`
 		}
-		f.FilterApply = fmt.Sprintf("if v := strings.TrimSpace(f.%s); v != \"\" {\n\t\tq = q.Where(%q, %s)\n\t}", f.GoName, col+op, value)
+		where := col + op
+		if f.Search == SearchLike {
+			where = "LOWER(" + col + ") LIKE LOWER(?)"
+		}
+		f.FilterApply = fmt.Sprintf("if v := strings.TrimSpace(f.%s); v != \"\" {\n\t\tq = q.Where(%q, %s)\n\t}", f.GoName, where, value)
 		return
 	case f.Kind == kindID:
 		f.SearchWidget = "id"

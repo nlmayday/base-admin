@@ -67,7 +67,7 @@ func (m *Module) listDictTypes(c *gin.Context) (any, error) {
 	q := m.db.WithContext(c.Request.Context()).Table("sys_dict_types AS t")
 	if kw := strings.TrimSpace(c.Query("keyword")); kw != "" {
 		like := "%" + escapeLike(kw) + "%"
-		q = q.Where("t.code ILIKE ? OR t.name ILIKE ?", like, like)
+		q = q.Where("LOWER(t.code) LIKE LOWER(?) OR LOWER(t.name) LIKE LOWER(?)", like, like)
 	}
 	if status != 0 {
 		q = q.Where("t.status = ?", status)
@@ -132,14 +132,13 @@ func (m *Module) createDictType(c *gin.Context) (any, error) {
 	}
 	ctx := c.Request.Context()
 	uid := actor.From(ctx).UserID()
-	var id int64
-	res := m.db.WithContext(ctx).Raw(`INSERT INTO sys_dict_types (code, name, status, remark, created_by, updated_by)
-		VALUES (?, ?, ?, ?, ?, ?) RETURNING id`, req.Code, req.Name, req.Status, req.Remark, uid, uid).Scan(&id)
-	if res.Error != nil {
-		if database.IsUniqueViolation(res.Error) {
+	id, err := database.InsertID(m.db.WithContext(ctx), `INSERT INTO sys_dict_types (code, name, status, remark, created_by, updated_by)
+		VALUES (?, ?, ?, ?, ?, ?)`, req.Code, req.Name, req.Status, req.Remark, uid, uid)
+	if err != nil {
+		if database.IsUniqueViolation(err) {
 			return nil, fieldError("code", "字典编码已存在")
 		}
-		return nil, res.Error
+		return nil, err
 	}
 	m.invalidateDict(ctx, req.Code)
 	row, err := loadDictType(m.db.WithContext(ctx), id)

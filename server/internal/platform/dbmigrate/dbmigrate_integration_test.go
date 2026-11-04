@@ -5,6 +5,7 @@ package dbmigrate
 import (
 	"context"
 	"database/sql"
+	"io/fs"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -21,7 +22,7 @@ func newRunner(t *testing.T) (*Runner, *sql.DB) {
 	cfg := testinfra.Database(t)
 	ctx := context.Background()
 
-	db, err := database.OpenSQL(ctx, cfg, "migrate-test")
+	db, err := database.OpenSQL(ctx, cfg, "migrate-test", database.ForMigrations())
 	require.NoError(t, err)
 	runner, err := New(db, BaseTrack)
 	require.NoError(t, err)
@@ -37,13 +38,18 @@ func newRunner(t *testing.T) (*Runner, *sql.DB) {
 }
 
 func testTrack(files fstest.MapFS) Track {
-	return Track{Name: "test", Table: "schema_migrations", Files: files}
+	return Track{Name: "test", Table: "schema_migrations", Files: bothDialects(files)}
 }
 
-func tableExists(t *testing.T, db *sql.DB, name string) bool {
+// bothDialects uses the same files, plain SQL both accept, for each dialect.
+func bothDialects(files fs.FS) map[database.Dialect]fs.FS {
+	return map[database.Dialect]fs.FS{database.Postgres: files, database.MySQL: files}
+}
+
+func hasTable(t *testing.T, db *sql.DB, name string) bool {
 	t.Helper()
-	var exists bool
-	require.NoError(t, db.QueryRow("SELECT to_regclass($1) IS NOT NULL", name).Scan(&exists))
+	exists, err := tableExists(context.Background(), db, name)
+	require.NoError(t, err)
 	return exists
 }
 
@@ -57,7 +63,7 @@ func TestUpIsRepeatableAndTracked(t *testing.T) {
 	require.NoError(t, runner.Up())
 	require.NoError(t, runner.Up(), "second run must be a no-op")
 
-	latest, err := BaseTrack.Latest()
+	latest, err := BaseTrack.Latest(database.SQLDialect(probe))
 	require.NoError(t, err)
 	status, err = runner.Status()
 	require.NoError(t, err)
@@ -73,19 +79,19 @@ func TestDownAndUpAgain(t *testing.T) {
 	runner, probe := newRunner(t)
 	require.NoError(t, runner.Up())
 
-	latest, err := BaseTrack.Latest()
+	latest, err := BaseTrack.Latest(database.SQLDialect(probe))
 	require.NoError(t, err)
 	require.NoError(t, runner.Down(1))
 	assert.Error(t, BaseTrack.RequireCurrent(context.Background(), probe), "one step behind must be refused")
 	require.NoError(t, runner.Down(int(latest)-1))
-	assert.False(t, tableExists(t, probe, "sys_auth_version"))
+	assert.False(t, hasTable(t, probe, "sys_auth_version"))
 	status, err := runner.Status()
 	require.NoError(t, err)
 	assert.False(t, status.Applied)
 	assert.Error(t, BaseTrack.RequireCurrent(context.Background(), probe))
 
 	require.NoError(t, runner.Up())
-	assert.True(t, tableExists(t, probe, "sys_auth_version"))
+	assert.True(t, hasTable(t, probe, "sys_auth_version"))
 }
 
 func TestDownRequiresPositiveSteps(t *testing.T) {
@@ -106,7 +112,7 @@ func TestAuthVersionConstraints(t *testing.T) {
 
 func TestFailedMigrationLeavesDirtyStateThatForceRecovers(t *testing.T) {
 	cfg := testinfra.Database(t)
-	db, err := database.OpenSQL(context.Background(), cfg, "migrate-test")
+	db, err := database.OpenSQL(context.Background(), cfg, "migrate-test", database.ForMigrations())
 	require.NoError(t, err)
 
 	broken := fstest.MapFS{
@@ -141,7 +147,7 @@ func TestFailedMigrationLeavesDirtyStateThatForceRecovers(t *testing.T) {
 
 func TestStopOnDoneStopsBeforeNextMigration(t *testing.T) {
 	cfg := testinfra.Database(t)
-	db, err := database.OpenSQL(context.Background(), cfg, "migrate-test")
+	db, err := database.OpenSQL(context.Background(), cfg, "migrate-test", database.ForMigrations())
 	require.NoError(t, err)
 
 	files := fstest.MapFS{
@@ -178,19 +184,19 @@ func TestTracksAreIndependent(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = probe.Close() }()
 
-	base := Track{Name: "base", Table: "schema_migrations", Files: fstest.MapFS{
+	base := Track{Name: "base", Table: "schema_migrations", Files: bothDialects(fstest.MapFS{
 		"000001_base.up.sql":   {Data: []byte("CREATE TABLE base_a (id int PRIMARY KEY);")},
 		"000001_base.down.sql": {Data: []byte("DROP TABLE base_a;")},
-	}}
-	app := Track{Name: "app", Table: "app_schema_migrations", Files: fstest.MapFS{
+	})}
+	app := Track{Name: "app", Table: "app_schema_migrations", Files: bothDialects(fstest.MapFS{
 		"000001_app.up.sql":   {Data: []byte("CREATE TABLE app_a (id int REFERENCES base_a (id));")},
 		"000001_app.down.sql": {Data: []byte("DROP TABLE app_a;")},
 		"000002_app.up.sql":   {Data: []byte("CREATE TABLE app_b (id int);")},
 		"000002_app.down.sql": {Data: []byte("DROP TABLE app_b;")},
-	}}
+	})}
 	up := func(tr Track) Status {
 		t.Helper()
-		db, err := database.OpenSQL(ctx, cfg, "migrate-test")
+		db, err := database.OpenSQL(ctx, cfg, "migrate-test", database.ForMigrations())
 		require.NoError(t, err)
 		r, err := New(db, tr)
 		require.NoError(t, err)
@@ -208,11 +214,11 @@ func TestTracksAreIndependent(t *testing.T) {
 	require.NoError(t, app.RequireCurrent(ctx, probe))
 
 	// Upstream adds scaffold migration 2 after the app track reached 2.
-	base.Files.(fstest.MapFS)["000002_base.up.sql"] = &fstest.MapFile{Data: []byte("CREATE TABLE base_b (id int);")}
-	base.Files.(fstest.MapFS)["000002_base.down.sql"] = &fstest.MapFile{Data: []byte("DROP TABLE base_b;")}
+	base.Files[database.Postgres].(fstest.MapFS)["000002_base.up.sql"] = &fstest.MapFile{Data: []byte("CREATE TABLE base_b (id int);")}
+	base.Files[database.Postgres].(fstest.MapFS)["000002_base.down.sql"] = &fstest.MapFile{Data: []byte("DROP TABLE base_b;")}
 	assert.Error(t, base.RequireCurrent(ctx, probe), "a new scaffold migration is pending")
 	assert.Equal(t, uint(2), up(base).Version)
-	assert.True(t, tableExists(t, probe, "base_b"))
+	assert.True(t, hasTable(t, probe, "base_b"))
 	require.NoError(t, base.RequireCurrent(ctx, probe))
 	require.NoError(t, app.RequireCurrent(ctx, probe))
 }
@@ -221,9 +227,9 @@ func TestTracksAreIndependent(t *testing.T) {
 func TestEmptyTrack(t *testing.T) {
 	cfg := testinfra.Database(t)
 	ctx := context.Background()
-	db, err := database.OpenSQL(ctx, cfg, "migrate-test")
+	db, err := database.OpenSQL(ctx, cfg, "migrate-test", database.ForMigrations())
 	require.NoError(t, err)
-	empty := Track{Name: "app", Table: "app_schema_migrations", Files: fstest.MapFS{"README.md": {Data: []byte("x")}}}
+	empty := Track{Name: "app", Table: "app_schema_migrations", Files: bothDialects(fstest.MapFS{"README.md": {Data: []byte("x")}})}
 	r, err := New(db, empty)
 	require.NoError(t, err)
 	defer func() { _ = r.Close() }()

@@ -97,7 +97,7 @@ func (r runRow) view() runView {
 		Instance: r.Instance, TriggeredBy: optID(r.TriggeredBy)}
 }
 
-const runColumns = `id, job_id, job_name, handler_key, trigger, status, attempt, scheduled_at, started_at,
+const runColumns = `id, job_id, job_name, handler_key, "trigger", status, attempt, scheduled_at, started_at,
 	finished_at, duration_ms, error, instance, triggered_by`
 
 type runFilter struct {
@@ -134,7 +134,7 @@ func applyRunFilter(q *gorm.DB, f runFilter) (*gorm.DB, error) {
 		if !runTriggers[f.Trigger] {
 			add("trigger", "触发方式无效")
 		}
-		q = q.Where("trigger = ?", f.Trigger)
+		q = q.Where(`"trigger" = ?`, f.Trigger)
 	}
 	for _, t := range []struct{ field, value, cond string }{
 		{"startFrom", f.StartFrom, "started_at >= ?"}, {"startTo", f.StartTo, "started_at < ?"},

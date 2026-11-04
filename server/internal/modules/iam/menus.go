@@ -180,11 +180,12 @@ func (m *Module) createMenu(c *gin.Context) (any, error) {
 			return err
 		}
 		uid := actor.From(ctx).UserID()
-		return tx.Raw(`INSERT INTO sys_menus (code, parent_id, type, title, path, icon, sort, hidden, external_url,
+		id, err = database.InsertID(tx, `INSERT INTO sys_menus (code, parent_id, type, title, path, icon, sort, hidden, external_url,
 				source, created_by, updated_by)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'custom', ?, ?) RETURNING id`,
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'custom', ?, ?)`,
 			code, int64Ptr(req.ParentID), req.Type, req.Title, req.Path, req.Icon, req.Sort, req.Hidden,
-			req.ExternalURL, uid, uid).Scan(&id).Error
+			req.ExternalURL, uid, uid)
+		return err
 	})
 	if err != nil {
 		return nil, err

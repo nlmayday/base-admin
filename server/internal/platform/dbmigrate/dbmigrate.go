@@ -1,7 +1,8 @@
 // Package dbmigrate applies the embedded SQL migrations with golang-migrate.
 // Migrations come in tracks, each with its own numbering and version table:
-// the scaffold's and the application's. A PostgreSQL advisory lock per
-// version table prevents concurrent runs.
+// the scaffold's and the application's. Each track has one set of files per
+// dialect, picked from the pool's database. A lock per version table
+// (PostgreSQL advisory lock, MySQL GET_LOCK) prevents concurrent runs.
 package dbmigrate
 
 import (
@@ -14,10 +15,12 @@ import (
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database"
+	mysqlmigrate "github.com/golang-migrate/migrate/v4/database/mysql"
 	pgxmigrate "github.com/golang-migrate/migrate/v4/database/pgx/v5"
 	"github.com/golang-migrate/migrate/v4/source"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 
+	dbpkg "base-admin/server/internal/platform/database"
 	"base-admin/server/migrations"
 )
 
@@ -29,15 +32,31 @@ const NilVersion = database.NilVersion
 type Track struct {
 	Name  string
 	Table string
-	Files fs.FS
+	// Files holds the migrations of each dialect.
+	Files map[dbpkg.Dialect]fs.FS
 }
 
 // The scaffold track keeps the original version table, so existing
 // databases need no conversion; the application track starts empty.
 var (
-	BaseTrack = Track{Name: "base", Table: "schema_migrations", Files: migrations.FS}
-	AppTrack  = Track{Name: "app", Table: "app_schema_migrations", Files: migrations.App}
+	BaseTrack = Track{
+		Name: "base", Table: "schema_migrations",
+		Files: map[dbpkg.Dialect]fs.FS{dbpkg.Postgres: migrations.FS, dbpkg.MySQL: migrations.MySQL},
+	}
+	AppTrack = Track{
+		Name: "app", Table: "app_schema_migrations",
+		Files: map[dbpkg.Dialect]fs.FS{dbpkg.Postgres: migrations.App, dbpkg.MySQL: migrations.AppMySQL},
+	}
 )
+
+// FilesFor returns the migrations of a dialect.
+func (t Track) FilesFor(d dbpkg.Dialect) (fs.FS, error) {
+	files, ok := t.Files[d]
+	if !ok {
+		return nil, fmt.Errorf("the %s track has no %s migrations", t.Name, d)
+	}
+	return files, nil
+}
 
 // Tracks returns the tracks in the order they are applied: application
 // migrations may reference scaffold tables, never the reverse.
@@ -72,9 +91,15 @@ type Status struct {
 	Applied bool
 }
 
-// New creates a Runner for a track.
+// New creates a Runner for a track on a pool opened by database.OpenSQL;
+// on MySQL the pool must be opened with database.ForMigrations.
 func New(db *sql.DB, t Track) (*Runner, error) {
-	src, err := iofs.New(t.Files, ".")
+	dialect := dbpkg.SQLDialect(db)
+	files, err := t.FilesFor(dialect)
+	if err != nil {
+		return nil, err
+	}
+	src, err := iofs.New(files, ".")
 	if err != nil {
 		return nil, fmt.Errorf("open %s migrations: %w", t.Name, err)
 	}
@@ -83,11 +108,19 @@ func New(db *sql.DB, t Track) (*Runner, error) {
 	if err != nil && !empty {
 		return nil, fmt.Errorf("read %s migrations: %w", t.Name, err)
 	}
-	driver, err := pgxmigrate.WithInstance(db, &pgxmigrate.Config{MigrationsTable: t.Table})
+	var driver database.Driver
+	var driverName string
+	if dialect == dbpkg.MySQL {
+		driver, err = mysqlmigrate.WithInstance(db, &mysqlmigrate.Config{MigrationsTable: t.Table})
+		driverName = "mysql"
+	} else {
+		driver, err = pgxmigrate.WithInstance(db, &pgxmigrate.Config{MigrationsTable: t.Table})
+		driverName = "pgx5"
+	}
 	if err != nil {
 		return nil, fmt.Errorf("open migration driver: %w", err)
 	}
-	m, err := migrate.NewWithInstance("iofs", src, "pgx5", driver)
+	m, err := migrate.NewWithInstance("iofs", src, driverName, driver)
 	if err != nil {
 		return nil, fmt.Errorf("create migrator: %w", err)
 	}
@@ -181,9 +214,14 @@ func (r *Runner) Close() error {
 	return errors.Join(srcErr, dbErr)
 }
 
-// Latest returns the highest version of the track; 0 when it has none.
-func (t Track) Latest() (uint, error) {
-	entries, err := fs.ReadDir(t.Files, ".")
+// Latest returns the highest version of the track's migrations for a
+// dialect; 0 when it has none.
+func (t Track) Latest(d dbpkg.Dialect) (uint, error) {
+	files, err := t.FilesFor(d)
+	if err != nil {
+		return 0, err
+	}
+	entries, err := fs.ReadDir(files, ".")
 	if err != nil {
 		return 0, fmt.Errorf("read %s migrations: %w", t.Name, err)
 	}
@@ -210,7 +248,7 @@ func RequireCurrent(ctx context.Context, db *sql.DB) error {
 
 // RequireCurrent fails unless the track is clean and at its latest version.
 func (t Track) RequireCurrent(ctx context.Context, db *sql.DB) error {
-	latest, err := t.Latest()
+	latest, err := t.Latest(dbpkg.SQLDialect(db))
 	if err != nil {
 		return err
 	}
@@ -227,8 +265,8 @@ func (t Track) RequireCurrent(ctx context.Context, db *sql.DB) error {
 
 // State reads the version table; a missing table or row is version 0.
 func (t Track) State(ctx context.Context, db *sql.DB) (version uint64, dirty bool, err error) {
-	var exists bool
-	if err := db.QueryRowContext(ctx, "SELECT to_regclass($1) IS NOT NULL", t.Table).Scan(&exists); err != nil {
+	exists, err := tableExists(ctx, db, t.Table)
+	if err != nil {
 		return 0, false, fmt.Errorf("read %s schema version: %w", t.Name, err)
 	}
 	if !exists {
@@ -243,4 +281,16 @@ func (t Track) State(ctx context.Context, db *sql.DB) (version uint64, dirty boo
 		return 0, false, fmt.Errorf("read %s schema version: %w", t.Name, err)
 	}
 	return version, dirty, nil
+}
+
+func tableExists(ctx context.Context, db *sql.DB, table string) (bool, error) {
+	var exists bool
+	var err error
+	if dbpkg.SQLDialect(db) == dbpkg.MySQL {
+		err = db.QueryRowContext(ctx, `SELECT COUNT(*) > 0 FROM information_schema.tables
+			WHERE table_schema = DATABASE() AND table_name = ?`, table).Scan(&exists)
+	} else {
+		err = db.QueryRowContext(ctx, "SELECT to_regclass($1) IS NOT NULL", table).Scan(&exists)
+	}
+	return exists, err
 }

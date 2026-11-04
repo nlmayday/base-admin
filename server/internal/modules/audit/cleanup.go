@@ -84,8 +84,10 @@ func (m *Module) deleteBefore(ctx context.Context, table string, cutoff time.Tim
 		if err := ctx.Err(); err != nil {
 			return total, err
 		}
+		// The derived table lets MySQL limit a subquery of the table it
+		// deletes from; PostgreSQL accepts the same statement.
 		res := m.db.WithContext(ctx).Exec(`DELETE FROM `+table+` WHERE id IN (
-			SELECT id FROM `+table+` WHERE created_at < ? LIMIT ?)`, cutoff, cleanupBatchSize)
+			SELECT id FROM (SELECT id FROM `+table+` WHERE created_at < ? LIMIT ?) AS batch)`, cutoff, cleanupBatchSize)
 		if res.Error != nil {
 			return total, fmt.Errorf("clean up %s: %w", table, res.Error)
 		}

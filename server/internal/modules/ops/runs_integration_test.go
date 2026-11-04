@@ -4,7 +4,6 @@ package ops
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"net/url"
 	"testing"
@@ -187,9 +186,9 @@ func TestCleanupHandler(t *testing.T) {
 	e := newEnv(t)
 	a := e.newInstance("inst-a", nil)
 	insert := func(name, status string, age time.Duration) {
-		require.NoError(t, e.db.Exec(`INSERT INTO sys_job_runs (job_name, handler_key, trigger, status, started_at, expires_at)
-			VALUES (?, 'test.ok', 'cron', ?, now() - ?::interval, now() + interval '1 hour')`,
-			name, status, fmt.Sprintf("%d hours", int(age.Hours()))).Error)
+		require.NoError(t, e.db.Exec(`INSERT INTO sys_job_runs (job_name, handler_key, "trigger", status, started_at, expires_at)
+			VALUES (?, 'test.ok', 'cron', ?, ?, ?)`,
+			name, status, time.Now().Add(-age), time.Now().Add(time.Hour)).Error)
 	}
 	insert("old-success", statusSuccess, 40*24*time.Hour)
 	insert("old-failed", statusFailed, 31*24*time.Hour)

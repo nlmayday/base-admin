@@ -86,7 +86,7 @@ func (m *Module) listConfigs(c *gin.Context) (any, error) {
 	}
 	if kw := strings.TrimSpace(c.Query("keyword")); kw != "" {
 		like := "%" + escapeLike(kw) + "%"
-		q = q.Where("key ILIKE ? OR name ILIKE ?", like, like)
+		q = q.Where(`LOWER("key") LIKE LOWER(?) OR LOWER(name) LIKE LOWER(?)`, like, like)
 	}
 	if g := strings.TrimSpace(c.Query("group")); g != "" {
 		q = q.Where("group_name = ?", g)
@@ -96,7 +96,7 @@ func (m *Module) listConfigs(c *gin.Context) (any, error) {
 		return nil, err
 	}
 	var rows []configRow
-	if err := q.Order("group_name, key").Offset(pq.Offset()).Limit(pq.PageSize).Scan(&rows).Error; err != nil {
+	if err := q.Order(`group_name, "key"`).Offset(pq.Offset()).Limit(pq.PageSize).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	views := make([]configView, len(rows))
@@ -189,14 +189,15 @@ func (m *Module) createConfig(c *gin.Context) (any, error) {
 	uid := actor.From(ctx).UserID()
 	var id int64
 	err := database.RunTx(ctx, m.db, func(tx *gorm.DB) error {
-		res := tx.Raw(`INSERT INTO sys_configs (key, value, value_type, group_name, name, description, created_by, updated_by)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
-			req.Key, req.Value, req.ValueType, req.GroupName, req.Name, req.Description, uid, uid).Scan(&id)
-		if res.Error != nil {
-			if database.IsUniqueViolation(res.Error) {
+		var err error
+		id, err = database.InsertID(tx, `INSERT INTO sys_configs ("key", value, value_type, group_name, name, description, created_by, updated_by)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			req.Key, req.Value, req.ValueType, req.GroupName, req.Name, req.Description, uid, uid)
+		if err != nil {
+			if database.IsUniqueViolation(err) {
 				return fieldError("key", "参数键已存在")
 			}
-			return res.Error
+			return err
 		}
 		return insertChange(tx, id, req.Key, nil, req.Value, uid)
 	})

@@ -229,11 +229,10 @@ func (m *Module) insertFile(ctx context.Context, obj *storedObject, categoryID *
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
 	defer cancel()
 	db := m.db.WithContext(ctx)
-	var id int64
-	err := db.Raw(`INSERT INTO sys_files (category_id, original_name, object_key, storage, size, mime_type, ext, kind, sha256, uploaded_by)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+	id, err := database.InsertID(db, `INSERT INTO sys_files (category_id, original_name, object_key, storage, size, mime_type, ext, kind, sha256, uploaded_by)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		categoryID, obj.name, obj.key, m.storage.Name(), obj.size, obj.mime, obj.ext, obj.kind, obj.sha256,
-		uid).Scan(&id).Error
+		uid)
 	if err != nil {
 		if database.IsForeignKeyViolation(err) {
 			return 0, fieldError("categoryId", "分类不存在")

@@ -14,6 +14,7 @@ import (
 	"gorm.io/gorm"
 
 	"base-admin/server/internal/platform/database"
+	"base-admin/server/internal/platform/testinfra"
 	"base-admin/server/internal/platform/testinfra/migrated"
 )
 
@@ -61,6 +62,7 @@ func openDB(t *testing.T) *gorm.DB {
 }
 
 func TestIntrospect(t *testing.T) {
+	testinfra.SkipOnMySQL(t, "the code generator reads and writes PostgreSQL tables")
 	db := openDB(t)
 	ctx := context.Background()
 	tb, err := Introspect(ctx, db, "biz_gadgets")
@@ -93,6 +95,7 @@ func TestIntrospect(t *testing.T) {
 }
 
 func TestListTables(t *testing.T) {
+	testinfra.SkipOnMySQL(t, "the code generator reads and writes PostgreSQL tables")
 	db := openDB(t)
 	tables, err := ListTables(context.Background(), db)
 	require.NoError(t, err)
@@ -108,6 +111,7 @@ func TestListTables(t *testing.T) {
 }
 
 func TestIntrospectForeignKeys(t *testing.T) {
+	testinfra.SkipOnMySQL(t, "the code generator reads and writes PostgreSQL tables")
 	db := openDB(t)
 	tb, err := Introspect(context.Background(), db, "biz_items")
 	require.NoError(t, err)
@@ -130,6 +134,7 @@ func TestIntrospectForeignKeys(t *testing.T) {
 // module from the resulting table: the conventions it writes are the ones
 // the generator reads (relations, uploads, options, standard columns).
 func TestTableSpecRoundTrip(t *testing.T) {
+	testinfra.SkipOnMySQL(t, "the code generator reads and writes PostgreSQL tables")
 	db := openDB(t)
 	customers := TableSpec{Name: "biz_customers", Label: "客户", Columns: []ColumnSpec{
 		{Name: "name", Type: ColString, Label: "客户名称", Required: true, Unique: true},

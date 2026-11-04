@@ -11,6 +11,7 @@ import (
 	"go.uber.org/zap"
 
 	"base-admin/server/internal/platform/database"
+	"base-admin/server/internal/platform/testinfra/dbtest"
 	"base-admin/server/internal/platform/testinfra/migrated"
 )
 
@@ -25,8 +26,8 @@ func TestTarget(t *testing.T) {
 
 	var alice, bob, gone int64
 	insert := func(name, nickname string, deleted bool, id *int64) {
-		require.NoError(t, db.Raw(`INSERT INTO sys_users (username, password_hash, nickname, deleted_at)
-			VALUES (?, 'x', ?, CASE WHEN ? THEN now() END) RETURNING id`, name, nickname, deleted).Scan(id).Error)
+		*id = dbtest.InsertID(t, db, `INSERT INTO sys_users (username, password_hash, nickname, deleted_at)
+			VALUES (?, 'x', ?, CASE WHEN ? THEN CURRENT_TIMESTAMP(6) END)`, name, nickname, deleted)
 	}
 	insert("alice", "爱丽丝", false, &alice)
 	insert("bob", "鲍勃_%", false, &bob)

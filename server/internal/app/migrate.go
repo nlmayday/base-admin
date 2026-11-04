@@ -62,7 +62,7 @@ func Migrate(ctx context.Context, cfg config.Config, logger *zap.Logger, out io.
 // migrateTrack runs the action on one track with its own connection pool,
 // which the runner closes.
 func migrateTrack(ctx context.Context, dbCfg config.DatabaseConfig, appName string, track dbmigrate.Track, cmd migrateCmd) (status dbmigrate.Status, err error) {
-	sqlDB, err := database.OpenSQL(ctx, dbCfg, appName+"-migrate")
+	sqlDB, err := database.OpenSQL(ctx, dbCfg, appName+"-migrate", database.ForMigrations())
 	if err != nil {
 		return status, err
 	}

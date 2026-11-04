@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS sys_job_runs;
+DROP TABLE IF EXISTS sys_jobs;

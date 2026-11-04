@@ -84,7 +84,7 @@ type noticeRow struct {
 	UpdatedBy   *int64
 }
 
-const noticeColumns = `t.id, t.title, t.type, t.content, t.published_at, t.attachments::text AS attachments, t.version, t.created_at, t.updated_at, t.created_by, t.updated_by`
+const noticeColumns = `t.id, t.title, t.type, t.content, t.published_at, t.attachments AS attachments, t.version, t.created_at, t.updated_at, t.created_by, t.updated_by`
 
 func (r noticeRow) view() noticeView {
 	return noticeView{
@@ -116,7 +116,7 @@ func scopedNotices(ctx context.Context, db *gorm.DB) *gorm.DB {
 
 func applyNoticeFilter(q *gorm.DB, f noticeFilter) *gorm.DB {
 	if v := strings.TrimSpace(f.Title); v != "" {
-		q = q.Where("t.title ILIKE ?", "%"+escapeLike(v)+"%")
+		q = q.Where("LOWER(t.title) LIKE LOWER(?)", "%"+escapeLike(v)+"%")
 	}
 	if f.Type != nil {
 		q = q.Where("t.type = ?", *f.Type)
@@ -217,10 +217,9 @@ func (m *Module) createNotice(c *gin.Context) (any, error) {
 	uid := actor.From(ctx).UserID()
 	var view noticeView
 	err = database.RunTx(ctx, m.db, func(tx *gorm.DB) error {
-		var id int64
-		err := tx.Raw(`INSERT INTO sys_notices (title, type, content, attachments, created_by, updated_by)
-			VALUES (?, ?, ?, ?::jsonb, ?, ?) RETURNING id`,
-			req.Title, req.Type, req.Content, files, uid, uid).Scan(&id).Error
+		id, err := database.InsertID(tx, `INSERT INTO sys_notices (title, type, content, attachments, created_by, updated_by)
+			VALUES (?, ?, ?, ?, ?, ?)`,
+			req.Title, req.Type, req.Content, files, uid, uid)
 		if err != nil {
 			if constraint, ok := database.UniqueConstraint(err); ok {
 				return noticeDuplicate(constraint)
@@ -260,9 +259,9 @@ func (m *Module) updateNotice(c *gin.Context) (any, error) {
 		"title":       req.Title,
 		"type":        req.Type,
 		"content":     req.Content,
-		"attachments": gorm.Expr("?::jsonb", files),
+		"attachments": files,
 		"updated_by":  actor.From(ctx).UserID(),
-		"updated_at":  gorm.Expr("now()"),
+		"updated_at":  gorm.Expr("CURRENT_TIMESTAMP(6)"),
 	}
 	var view noticeView
 	err = database.RunTx(ctx, m.db, func(tx *gorm.DB) error {

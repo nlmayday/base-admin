@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"base-admin/server/internal/platform/httpx"
+	"base-admin/server/internal/platform/testinfra/dbtest"
 )
 
 // recorder keeps the login events.
@@ -39,8 +40,13 @@ func (r *recorder) last() LoginEvent {
 func (h *harness) grantRole(uid int64, code string) {
 	h.t.Helper()
 	var rid int64
-	require.NoError(h.t, h.db.Raw(`INSERT INTO sys_roles (code, name, data_scope) VALUES (?, ?, 'all')
-		ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name RETURNING id`, code, code).Scan(&rid).Error)
+	var existing []int64
+	require.NoError(h.t, h.db.Raw(`SELECT id FROM sys_roles WHERE code = ?`, code).Scan(&existing).Error)
+	if len(existing) > 0 {
+		rid = existing[0]
+	} else {
+		rid = dbtest.InsertID(h.t, h.db, `INSERT INTO sys_roles (code, name, data_scope) VALUES (?, ?, 'all')`, code, code)
+	}
 	require.NoError(h.t, h.db.Exec(`INSERT INTO sys_user_roles (user_id, role_id) VALUES (?, ?)`, uid, rid).Error)
 }
 

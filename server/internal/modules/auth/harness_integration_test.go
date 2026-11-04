@@ -29,6 +29,7 @@ import (
 	"base-admin/server/internal/platform/httpx"
 	"base-admin/server/internal/platform/password"
 	"base-admin/server/internal/platform/testinfra"
+	"base-admin/server/internal/platform/testinfra/dbtest"
 	"base-admin/server/internal/platform/testinfra/migrated"
 )
 
@@ -120,10 +121,7 @@ func (h *harness) createUser(username string) int64 {
 	h.t.Helper()
 	hash, err := password.Hash(testPass, fastHash)
 	require.NoError(h.t, err)
-	var id int64
-	require.NoError(h.t, h.db.Raw(`INSERT INTO sys_users (username, password_hash) VALUES (?, ?) RETURNING id`,
-		username, hash).Scan(&id).Error)
-	return id
+	return dbtest.InsertID(h.t, h.db, `INSERT INTO sys_users (username, password_hash) VALUES (?, ?)`, username, hash)
 }
 
 func (h *harness) pgGen(uid int64) int64 {

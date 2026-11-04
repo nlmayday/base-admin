@@ -55,10 +55,10 @@ func TestSettingsDefaultsAndUpdate(t *testing.T) {
 
 	// Exactly one history row per changed key.
 	var changed []string
-	require.NoError(t, h.db.Raw("SELECT key FROM sys_config_changes ORDER BY key").Scan(&changed).Error)
+	require.NoError(t, h.db.Raw(`SELECT "key" FROM sys_config_changes ORDER BY "key"`).Scan(&changed).Error)
 	assert.Equal(t, []string{KeySiteName, KeyUploadAllowedExtensions, KeyUploadMaxSizeMB}, changed)
 	var old string
-	require.NoError(t, h.db.Raw("SELECT old_value FROM sys_config_changes WHERE key = ?", KeySiteName).Scan(&old).Error)
+	require.NoError(t, h.db.Raw(`SELECT old_value FROM sys_config_changes WHERE "key" = ?`, KeySiteName).Scan(&old).Error)
 	assert.Equal(t, "Base Admin", old)
 	assert.Equal(t, int64(3), h.count("SELECT count(*) FROM sys_config_changes WHERE changed_by = ?", h.userID))
 
@@ -131,7 +131,7 @@ func TestPublicSettingsExposeOnlySiteInfo(t *testing.T) {
 	h.fail(h.do(http.MethodPut, "/settings", body), http.StatusUnauthorized, 20001)
 
 	// A hand-edited unsafe logo is never served publicly.
-	require.NoError(t, h.db.Exec("UPDATE sys_configs SET value = 'javascript:x' WHERE key = ?", KeySiteLogoURL).Error)
+	require.NoError(t, h.db.Exec(`UPDATE sys_configs SET value = 'javascript:x' WHERE "key" = ?`, KeySiteLogoURL).Error)
 	h.mod.values.clear()
 	h.ok(h.do(http.MethodGet, "/settings/public", nil), &raw)
 	assert.JSONEq(t, `""`, string(raw["logoUrl"]))
@@ -165,7 +165,7 @@ func TestGoAPIAndCache(t *testing.T) {
 	assert.Error(t, err, "not an integer")
 
 	// Cached: a direct database write is not seen until the cache clears.
-	require.NoError(t, h.db.Exec("UPDATE sys_configs SET value = 'png, HTML,svg,.PDF' WHERE key = ?", KeyUploadAllowedExtensions).Error)
+	require.NoError(t, h.db.Exec(`UPDATE sys_configs SET value = 'png, HTML,svg,.PDF' WHERE "key" = ?`, KeyUploadAllowedExtensions).Error)
 	exts, _, err = h.mod.UploadPolicy(ctx)
 	require.NoError(t, err)
 	assert.Len(t, exts, len(strings.Split(defaultExtensionCSV, ",")))
@@ -191,7 +191,7 @@ func TestSeedIsIdempotentAndKeepsValues(t *testing.T) {
 	body := settingsBody(h.settings())
 	body["siteName"] = "自定义名称"
 	h.ok(h.do(http.MethodPut, "/settings", body), nil)
-	require.NoError(t, h.db.Exec("UPDATE sys_configs SET name = 'renamed', builtin = false WHERE key = ?", KeySiteName).Error)
+	require.NoError(t, h.db.Exec(`UPDATE sys_configs SET name = 'renamed', builtin = false WHERE "key" = ?`, KeySiteName).Error)
 
 	ctx := context.Background()
 	for range 2 {
@@ -199,7 +199,7 @@ func TestSeedIsIdempotentAndKeepsValues(t *testing.T) {
 	}
 	assert.Equal(t, int64(len(builtinSettings)), h.count("SELECT count(*) FROM sys_configs"))
 	var row configRow
-	require.NoError(t, h.db.Raw("SELECT * FROM sys_configs WHERE key = ?", KeySiteName).Scan(&row).Error)
+	require.NoError(t, h.db.Raw(`SELECT * FROM sys_configs WHERE "key" = ?`, KeySiteName).Scan(&row).Error)
 	assert.Equal(t, "自定义名称", row.Value, "admin value kept")
 	assert.Equal(t, "站点名称", row.Name, "metadata restored")
 	assert.True(t, row.Builtin)

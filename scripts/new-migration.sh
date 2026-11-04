@@ -5,12 +5,30 @@
 # 名称以 create_ 开头时，up 文件是一张业务表的模板，已带上标准字段
 # （见 docs/table-guide.md），改好业务字段和注释后运行 make migrate-up。
 #
+# DIALECT=mysql 写到对应的 mysql/ 子目录，表模板换成 MySQL 写法；不给时
+# 按 ADMIN_DATABASE_URL 判断（mysql:// 为 MySQL，否则 PostgreSQL）。
+#
 #   make new-migration NAME=create_biz_orders
+#   make new-migration NAME=create_biz_orders DIALECT=mysql
 #   make new-migration NAME=add_sys_x TRACK=base
 set -eu
 
 name="${1:-}"
 track="${2:-app}"
+dialect="${3:-}"
+if [ -z "$dialect" ]; then
+  case "${ADMIN_DATABASE_URL:-}" in
+    mysql://*) dialect=mysql ;;
+    *) dialect=postgres ;;
+  esac
+fi
+case "$dialect" in
+  postgres | mysql) ;;
+  *)
+    echo "DIALECT 只能是 postgres（默认）或 mysql" >&2
+    exit 2
+    ;;
+esac
 case "$name" in
   '' | *[!a-z0-9_]* | [!a-z]*)
     echo "用法：make new-migration NAME=create_biz_orders（小写字母开头，只含小写字母、数字、下划线）" >&2
@@ -26,6 +44,9 @@ case "$track" in
     exit 2
     ;;
 esac
+if [ "$dialect" = mysql ]; then
+  dir="$dir/mysql"
+fi
 mkdir -p "$dir"
 last=$(ls "$dir" | sed -n 's/^\([0-9]\{6\}\)_.*\.up\.sql$/\1/p' | sort | tail -n 1)
 next=$(printf '%06d' "$(expr "${last:-0}" + 1)")
@@ -33,7 +54,40 @@ up="$dir/${next}_${name}.up.sql"
 down="$dir/${next}_${name}.down.sql"
 
 table="${name#create_}"
-if [ "$table" != "$name" ]; then
+if [ "$table" != "$name" ] && [ "$dialect" = mysql ]; then
+  cat > "$up" <<SQL
+-- ${table}：<用途>。规范见 docs/table-guide.md，MySQL 写法见 docs/mysql.md。
+
+CREATE TABLE ${table} (
+    id         bigint       NOT NULL AUTO_INCREMENT PRIMARY KEY,
+
+    -- 业务字段：按需修改。每个字段都写 COMMENT（中文名，生成器用作标签）。
+    name       varchar(64)  NOT NULL COMMENT '名称',
+    -- 写成「中文名：值=文字,值=文字」，生成器会做成下拉框并校验取值
+    type       smallint     NOT NULL DEFAULT 1 COMMENT '类型：1=普通,2=重要',
+    remark     varchar(255) NOT NULL DEFAULT '' COMMENT '备注',
+
+    -- 可选的约定字段：不需要就删掉
+    status     smallint     NOT NULL DEFAULT 1 CHECK (status IN (1, 2)), -- 启用/停用
+    sort       integer      NOT NULL DEFAULT 0,                          -- 排序
+    dept_id    bigint COMMENT '所属部门',                                 -- 按部门做数据权限
+
+    -- 标准字段：保留
+    version    integer      NOT NULL DEFAULT 0,
+    created_at datetime(6)  NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    updated_at datetime(6)  NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    created_by bigint,
+    updated_by bigint,
+
+    -- MySQL 会忽略写在列定义里的 REFERENCES，外键必须写成表级约束
+    CONSTRAINT ${table}_dept_fk FOREIGN KEY (dept_id) REFERENCES sys_departments (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_as_cs COMMENT='<中文表名>';
+
+-- 按常用查询建索引，唯一约束写成 UNIQUE 索引（重复时生成的代码会提示「xx 已存在」）
+-- CREATE UNIQUE INDEX ${table}_name_uq ON ${table} (name);
+SQL
+  echo "DROP TABLE IF EXISTS ${table};" > "$down"
+elif [ "$table" != "$name" ]; then
   cat > "$up" <<SQL
 -- ${table}：<用途>。规范见 docs/table-guide.md。
 

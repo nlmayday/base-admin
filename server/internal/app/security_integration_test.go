@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"base-admin/server/internal/platform/database"
+
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -87,7 +89,7 @@ func TestH3_CannotTakeOverMorePrivilegedPeer(t *testing.T) {
 	plain := idOf(t, admin.ok(http.MethodPost, "/api/v1/users", gin.H{"username": "plain", "password": "plain-pass-1", "deptId": o.sales}))
 
 	var victimID string
-	require.NoError(t, h.db.Raw("SELECT id::text FROM sys_users WHERE username = 'victim'").Scan(&victimID).Error)
+	require.NoError(t, h.db.Raw("SELECT id FROM sys_users WHERE username = 'victim'").Scan(&victimID).Error)
 	resp := support.do(http.MethodPut, "/api/v1/users/"+victimID+"/password", gin.H{"password": "taken-over-1"})
 	assert.Equal(t, http.StatusForbidden, resp.Status, "reset-password takeover: %s", resp.Body)
 	resp = support.do(http.MethodPut, "/api/v1/users/"+victimID, gin.H{"deptId": o.sales, "roleIds": []string{}, "version": 0})
@@ -104,7 +106,7 @@ func TestM1_CannotWidenScopeByMovingSelf(t *testing.T) {
 	extra := idOf(t, admin.ok(http.MethodPost, "/api/v1/roles", gin.H{"code": "hq_only", "name": "hq", "dataScope": "custom",
 		"deptIds": []string{o.hq}}))
 	var uid string
-	require.NoError(t, h.db.Raw("SELECT id::text FROM sys_users WHERE username = 'mgr'").Scan(&uid).Error)
+	require.NoError(t, h.db.Raw("SELECT id FROM sys_users WHERE username = 'mgr'").Scan(&uid).Error)
 	admin.ok(http.MethodPut, "/api/v1/users/"+uid, gin.H{"deptId": o.sales, "roleIds": []string{role, extra}, "version": 0})
 
 	resp := mgr.do(http.MethodPut, "/api/v1/users/"+uid, gin.H{"deptId": o.hq, "roleIds": []string{role, extra}, "version": 1})
@@ -132,7 +134,7 @@ func TestM4_DepartmentMovesAreSerialized(t *testing.T) {
 	// Hold the tree lock from another connection: a move must wait for it,
 	// which is what prevents two concurrent moves from forming a cycle.
 	holder := h.db.Begin()
-	require.NoError(t, holder.Exec("SELECT pg_advisory_xact_lock(hashtext('base-admin:dept-tree'))").Error)
+	require.NoError(t, database.LockTx(holder, "base-admin:dept-tree"))
 	done := make(chan int, 1)
 	go func() {
 		done <- admin.do(http.MethodPut, "/api/v1/departments/"+o.sales, gin.H{"name": "x", "parentId": o.ops, "version": 0}).Status
@@ -188,8 +190,8 @@ func TestSessionRevokerCannotKickStrongerAdmin(t *testing.T) {
 	h.actor(admin, "peer", o.sales, "dept", nil, []string{"auth:session:view"})
 
 	var strongerID, peerID string
-	require.NoError(t, h.db.Raw("SELECT id::text FROM sys_users WHERE username = 'stronger'").Scan(&strongerID).Error)
-	require.NoError(t, h.db.Raw("SELECT id::text FROM sys_users WHERE username = 'peer'").Scan(&peerID).Error)
+	require.NoError(t, h.db.Raw("SELECT id FROM sys_users WHERE username = 'stronger'").Scan(&strongerID).Error)
+	require.NoError(t, h.db.Raw("SELECT id FROM sys_users WHERE username = 'peer'").Scan(&peerID).Error)
 
 	resp := revoker.do(http.MethodDelete, "/api/v1/sessions/users/"+strongerID, nil)
 	assert.Equal(t, http.StatusForbidden, resp.Status, "kicking a more privileged admin: %s", resp.Body)

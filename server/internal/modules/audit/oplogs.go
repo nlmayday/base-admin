@@ -96,7 +96,7 @@ func (m *Module) opLogQuery(c *gin.Context) (*gorm.DB, error) {
 func applyOpFilter(q *gorm.DB, f opFilter) (*gorm.DB, error) {
 	if v := strings.TrimSpace(f.User); v != "" {
 		like := "%" + escapeLike(v) + "%"
-		q = q.Where("(u.username ILIKE ? OR u.nickname ILIKE ?)", like, like)
+		q = q.Where("(LOWER(u.username) LIKE LOWER(?) OR LOWER(u.nickname) LIKE LOWER(?))", like, like)
 	}
 	if v := strings.TrimSpace(f.Module); v != "" {
 		q = q.Where("o.module = ?", v)
@@ -106,7 +106,7 @@ func applyOpFilter(q *gorm.DB, f opFilter) (*gorm.DB, error) {
 	}
 	if v := strings.TrimSpace(f.Path); v != "" {
 		like := "%" + escapeLike(v) + "%"
-		q = q.Where("(o.path ILIKE ? OR o.summary ILIKE ?)", like, like)
+		q = q.Where("(LOWER(o.path) LIKE LOWER(?) OR LOWER(o.summary) LIKE LOWER(?))", like, like)
 	}
 	success, err := parseSuccess(f.Success)
 	if err != nil {

@@ -151,7 +151,7 @@ func (s *scheduler) recordUnrunnable(ctx context.Context, job jobRow, fire time.
 		s.logger.Warn("record unrunnable job failed", zap.Int64("job", job.ID), zap.Error(err))
 		return
 	}
-	if err := s.db.WithContext(ctx).Exec(`UPDATE sys_jobs SET last_run_at = now(), last_status = 'failed' WHERE id = ?`,
+	if err := s.db.WithContext(ctx).Exec(`UPDATE sys_jobs SET last_run_at = CURRENT_TIMESTAMP(6), last_status = 'failed' WHERE id = ?`,
 		job.ID).Error; err != nil {
 		s.logger.Warn("update job last status failed", zap.Int64("job", job.ID), zap.Error(err))
 	}

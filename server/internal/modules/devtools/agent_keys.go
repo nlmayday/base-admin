@@ -14,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"base-admin/server/internal/core/actor"
+	"base-admin/server/internal/platform/database"
 	"base-admin/server/internal/platform/httpx"
 	"base-admin/server/internal/platform/ids"
 )
@@ -88,10 +89,8 @@ func (m *Module) createAgentKey(c *gin.Context) (any, error) {
 	key, hash := newAgentKey()
 	expires := time.Now().AddDate(0, 0, cmp.Or(req.ExpiresInDays, defaultKeyDays))
 	ctx := c.Request.Context()
-	var id int64
-	err := m.deps.DB.WithContext(ctx).Raw(`INSERT INTO sys_agent_keys (name, prefix, key_hash, user_id, expires_at)
-		VALUES (?, ?, ?, ?, ?) RETURNING id`, name, key[:len(agentKeyPrefix)+8], hash, actor.From(ctx).UserID(), expires).
-		Scan(&id).Error
+	id, err := database.InsertID(m.deps.DB.WithContext(ctx), `INSERT INTO sys_agent_keys (name, prefix, key_hash, user_id, expires_at)
+		VALUES (?, ?, ?, ?, ?)`, name, key[:len(agentKeyPrefix)+8], hash, actor.From(ctx).UserID(), expires)
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +108,7 @@ func (m *Module) revokeAgentKey(c *gin.Context) (any, error) {
 		return nil, err
 	}
 	res := m.deps.DB.WithContext(c.Request.Context()).Exec(
-		`UPDATE sys_agent_keys SET revoked_at = COALESCE(revoked_at, now()) WHERE id = ?`, id)
+		`UPDATE sys_agent_keys SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP(6)) WHERE id = ?`, id)
 	if res.Error != nil {
 		return nil, res.Error
 	}

@@ -63,7 +63,7 @@ func parseFlags(args []string, stderr io.Writer) (options, error) {
 	fs.StringVar(&o.spec.ModuleTitle, "module-title", "", "directory menu title when the module is new (default: module name)")
 	fs.StringVar(&o.spec.ParentMenu, "parent-menu", "", "parent menu code (default: <module>.root)")
 	fs.StringVar(&o.root, "root", "", "repository root (default: found from the working directory)")
-	fs.StringVar(&o.dsn, "dsn", os.Getenv("ADMIN_DATABASE_URL"), "PostgreSQL URL (default: $ADMIN_DATABASE_URL)")
+	fs.StringVar(&o.dsn, "dsn", os.Getenv("ADMIN_DATABASE_URL"), "database URL, postgres:// or mysql:// (default: $ADMIN_DATABASE_URL)")
 	fs.BoolVar(&o.force, "force", false, "overwrite existing files")
 	fs.BoolVar(&o.dryRun, "dry-run", false, "print the files instead of writing them")
 	fs.BoolVar(&o.noFormat, "no-format", false, "do not run prettier on the generated frontend files")

@@ -89,7 +89,7 @@ func TestFieldOptionsApplied(t *testing.T) {
 	assert.Contains(t, src, `q = q.Where("t.dept_id = ?", f.DeptID)`)
 	assert.Contains(t, src, `q = q.Where("t.created_at >= ?", d)`)
 	assert.Contains(t, src, `q = q.Where("t.created_at < ?", d.AddDate(0, 0, 1))`)
-	assert.NotContains(t, src, "t.phone ILIKE")
+	assert.NotContains(t, src, "LOWER(t.phone) LIKE")
 	assert.Contains(t, api, "createdAtStart?: string;")
 	assert.Contains(t, api, "deptId?: string | null;")
 	assert.Contains(t, index, `<el-form-item label="联系人姓名">`)

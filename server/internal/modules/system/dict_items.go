@@ -76,7 +76,7 @@ func (m *Module) listDictItems(c *gin.Context) (any, error) {
 		Select(dictItemColumns).Where("i.type_id = ?", typeID)
 	if kw := strings.TrimSpace(c.Query("keyword")); kw != "" {
 		like := "%" + escapeLike(kw) + "%"
-		q = q.Where("i.label ILIKE ? OR i.value ILIKE ?", like, like)
+		q = q.Where("LOWER(i.label) LIKE LOWER(?) OR LOWER(i.value) LIKE LOWER(?)", like, like)
 	}
 	if status != 0 {
 		q = q.Where("i.status = ?", status)
@@ -150,18 +150,17 @@ func (m *Module) createDictItem(c *gin.Context) (any, error) {
 		return nil, err
 	}
 	uid := actor.From(ctx).UserID()
-	var id int64
-	res := db.Raw(`INSERT INTO sys_dict_items (type_id, label, value, sort, status, tag_type, remark, created_by, updated_by)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
-		typeID, req.Label, req.Value, req.Sort, req.Status, req.TagType, req.Remark, uid, uid).Scan(&id)
-	if res.Error != nil {
+	id, err := database.InsertID(db, `INSERT INTO sys_dict_items (type_id, label, value, sort, status, tag_type, remark, created_by, updated_by)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		typeID, req.Label, req.Value, req.Sort, req.Status, req.TagType, req.Remark, uid, uid)
+	if err != nil {
 		switch {
-		case database.IsUniqueViolation(res.Error):
+		case database.IsUniqueViolation(err):
 			return nil, errDuplicateItemValue
-		case database.IsForeignKeyViolation(res.Error):
+		case database.IsForeignKeyViolation(err):
 			return nil, httpx.NotFound("字典类型不存在")
 		}
-		return nil, res.Error
+		return nil, err
 	}
 	m.invalidateDict(ctx, dictType.Code)
 	row, err := loadDictItem(db, id)

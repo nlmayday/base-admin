@@ -1,14 +1,37 @@
 package database
 
 import (
+	"context"
 	"database/sql/driver"
+	"encoding/json"
 	"fmt"
 	"strings"
+
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
-// TextArray is a PostgreSQL text[] parameter. GORM expands plain slices into
-// "(?,?)" lists, so array parameters must implement driver.Valuer.
+// TextArray is a list of strings stored in one column: text[] on
+// PostgreSQL, a JSON array on MySQL. GORM expands plain slices into "(?,?)"
+// lists, so list parameters must implement driver.Valuer.
 type TextArray []string
+
+// GormValue encodes the list for the database of the statement.
+func (a TextArray) GormValue(_ context.Context, db *gorm.DB) clause.Expr {
+	if IsMySQL(db) {
+		list := a
+		if list == nil {
+			list = TextArray{}
+		}
+		b, err := json.Marshal([]string(list))
+		if err != nil {
+			_ = db.AddError(fmt.Errorf("encode text list: %w", err))
+		}
+		return clause.Expr{SQL: "?", Vars: []any{string(b)}}
+	}
+	v, _ := a.Value()
+	return clause.Expr{SQL: "?", Vars: []any{v}}
+}
 
 // Value renders the array literal with every element quoted.
 func (a TextArray) Value() (driver.Value, error) {
@@ -36,7 +59,7 @@ func (a TextArray) Value() (driver.Value, error) {
 func (TextArray) GormDataType() string { return "text[]" }
 
 // Scan implements sql.Scanner for the text form of a one-dimensional
-// text[], e.g. {a,"b c"}.
+// text[], e.g. {a,"b c"}, and for a JSON array of strings (MySQL).
 func (a *TextArray) Scan(src any) error {
 	var s string
 	switch v := src.(type) {
@@ -49,6 +72,17 @@ func (a *TextArray) Scan(src any) error {
 		return nil
 	default:
 		return fmt.Errorf("unsupported text[] source %T", src)
+	}
+	if strings.HasPrefix(s, "[") {
+		var out []string
+		if err := json.Unmarshal([]byte(s), &out); err != nil {
+			return fmt.Errorf("malformed json string list: %w", err)
+		}
+		if out == nil {
+			out = []string{}
+		}
+		*a = out
+		return nil
 	}
 	out, err := parseTextArray(s)
 	if err != nil {

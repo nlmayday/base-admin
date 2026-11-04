@@ -223,7 +223,7 @@ func (m *Module) completeLogin(c *gin.Context, account, token string, sess Sessi
 		m.core.logger.Warn("login counter not reset", zap.Error(err))
 	}
 	m.endPreviousSession(c)
-	if err := m.core.db.WithContext(ctx).Exec(`UPDATE sys_users SET last_login_at = now(), last_login_ip = ?
+	if err := m.core.db.WithContext(ctx).Exec(`UPDATE sys_users SET last_login_at = CURRENT_TIMESTAMP(6), last_login_ip = ?
 		WHERE id = ?`, c.ClientIP(), sess.UserID).Error; err != nil {
 		m.core.logger.Warn("last login not recorded", zap.Error(err))
 	}
@@ -323,7 +323,7 @@ func (m *Module) changePassword(c *gin.Context) {
 	_, err = m.core.Revoker.Revoke(ctx, uid, RevokeSpec{
 		Prepare: func(tx *gorm.DB) error { return requireHash(tx, uid, current) },
 		Apply: func(tx *gorm.DB, _ int64) error {
-			return tx.Exec(`UPDATE sys_users SET password_hash = ?, password_changed_at = now(),
+			return tx.Exec(`UPDATE sys_users SET password_hash = ?, password_changed_at = CURRENT_TIMESTAMP(6),
 				must_change_password = false, version = version + 1 WHERE id = ?`, newHash, uid).Error
 		},
 	})

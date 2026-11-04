@@ -44,16 +44,16 @@ func (m *Module) Send(ctx context.Context, tx *gorm.DB, msgs ...message.Message)
 	db = db.WithContext(ctx)
 	for start := 0; start < len(msgs); start += sendBatch {
 		batch := msgs[start:min(start+sendBatch, len(msgs))]
+		// One SELECT per message, so a message to a missing or deleted user
+		// yields no row; both databases accept this form.
 		rows := make([]string, len(batch))
 		args := make([]any, 0, len(batch)*5)
 		for i, msg := range batch {
-			rows[i] = "(?::bigint, ?, ?, ?, ?)"
-			args = append(args, msg.UserID, msg.Category, strings.TrimSpace(msg.Title), msg.Content, msg.Link)
+			rows[i] = "SELECT u.id, ?, ?, ?, ? FROM sys_users u WHERE u.id = ? AND u.deleted_at IS NULL"
+			args = append(args, msg.Category, strings.TrimSpace(msg.Title), msg.Content, msg.Link, msg.UserID)
 		}
-		err := db.Exec(`INSERT INTO sys_user_messages (user_id, category, title, content, link)
-			SELECT v.user_id, v.category, v.title, v.content, v.link
-			FROM (VALUES `+strings.Join(rows, ", ")+`) AS v (user_id, category, title, content, link)
-			JOIN sys_users u ON u.id = v.user_id AND u.deleted_at IS NULL`, args...).Error
+		err := db.Exec(`INSERT INTO sys_user_messages (user_id, category, title, content, link) `+
+			strings.Join(rows, " UNION ALL "), args...).Error
 		if err != nil {
 			return fmt.Errorf("send messages: %w", err)
 		}
@@ -126,7 +126,7 @@ func (m *Module) listMessages(c *gin.Context) (any, error) {
 		q = q.Where("read_at IS NULL")
 	}
 	if f.Title != "" {
-		q = q.Where("title ILIKE ?", "%"+escapeLike(f.Title)+"%")
+		q = q.Where("LOWER(title) LIKE LOWER(?)", "%"+escapeLike(f.Title)+"%")
 	}
 	var total int64
 	if err := q.Session(&gorm.Session{}).Count(&total).Error; err != nil {
@@ -151,11 +151,15 @@ func (m *Module) readMessage(c *gin.Context) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	db := m.db.WithContext(c.Request.Context())
+	uid := actor.From(c.Request.Context()).UserID()
+	if err := db.Exec(`UPDATE sys_user_messages SET read_at = CURRENT_TIMESTAMP(6)
+		WHERE id = ? AND user_id = ? AND read_at IS NULL`, id, uid).Error; err != nil {
+		return nil, err
+	}
 	var rows []messageRow
-	err = m.db.WithContext(c.Request.Context()).Raw(`UPDATE sys_user_messages
-		SET read_at = COALESCE(read_at, now()) WHERE id = ? AND user_id = ?
-		RETURNING `+messageColumns, id, actor.From(c.Request.Context()).UserID()).Scan(&rows).Error
-	if err != nil {
+	if err := db.Raw(`SELECT `+messageColumns+` FROM sys_user_messages WHERE id = ? AND user_id = ?`, id, uid).
+		Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	if len(rows) == 0 {
@@ -165,7 +169,7 @@ func (m *Module) readMessage(c *gin.Context) (any, error) {
 }
 
 func (m *Module) readAllMessages(c *gin.Context) (any, error) {
-	res := m.myMessages(c).Where("read_at IS NULL").Update("read_at", gorm.Expr("now()"))
+	res := m.myMessages(c).Where("read_at IS NULL").Update("read_at", gorm.Expr("CURRENT_TIMESTAMP(6)"))
 	if res.Error != nil {
 		return nil, res.Error
 	}
@@ -225,9 +229,11 @@ func (m *Module) cleanupMessages(ctx context.Context, raw json.RawMessage) error
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		// The derived table lets MySQL limit a subquery of the table it
+		// deletes from; PostgreSQL accepts the same statement.
 		res := m.db.WithContext(ctx).Exec(`DELETE FROM sys_user_messages WHERE id IN (
-			SELECT msg.id FROM sys_user_messages msg JOIN sys_users u ON u.id = msg.user_id
-			WHERE msg.read_at < ? OR u.deleted_at IS NOT NULL LIMIT ?)`, cutoff, cleanupBatchSize)
+			SELECT id FROM (SELECT msg.id FROM sys_user_messages msg JOIN sys_users u ON u.id = msg.user_id
+			WHERE msg.read_at < ? OR u.deleted_at IS NOT NULL LIMIT ?) AS batch)`, cutoff, cleanupBatchSize)
 		if res.Error != nil {
 			return fmt.Errorf("clean up messages: %w", res.Error)
 		}

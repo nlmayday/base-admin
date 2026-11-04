@@ -112,10 +112,10 @@ func (m *Module) createDept(c *gin.Context) (any, error) {
 		if err := requireLeader(ctx, tx, req.LeaderUserID); err != nil {
 			return err
 		}
-		var id int64
-		if err := tx.Raw(`INSERT INTO sys_departments (parent_id, name, leader_user_id, sort, status, created_by, updated_by)
-			VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id`, int64Ptr(req.ParentID), req.Name, int64Ptr(req.LeaderUserID),
-			req.Sort, req.Status, actor.From(ctx).UserID(), actor.From(ctx).UserID()).Scan(&id).Error; err != nil {
+		id, err := database.InsertID(tx, `INSERT INTO sys_departments (parent_id, name, leader_user_id, sort, status, created_by, updated_by)
+			VALUES (?, ?, ?, ?, ?, ?, ?)`, int64Ptr(req.ParentID), req.Name, int64Ptr(req.LeaderUserID),
+			req.Sort, req.Status, actor.From(ctx).UserID(), actor.From(ctx).UserID())
+		if err != nil {
 			return err
 		}
 		path := fmt.Sprintf("%s%d/", parentPath, id)

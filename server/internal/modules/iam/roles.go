@@ -53,7 +53,7 @@ func (m *Module) listRoles(c *gin.Context) (any, error) {
 	q := m.db.WithContext(c.Request.Context()).Table("sys_roles")
 	if kw := strings.TrimSpace(c.Query("keyword")); kw != "" {
 		like := "%" + escapeLike(kw) + "%"
-		q = q.Where("code ILIKE ? OR name ILIKE ?", like, like)
+		q = q.Where("LOWER(code) LIKE LOWER(?) OR LOWER(name) LIKE LOWER(?)", like, like)
 	}
 	var total int64
 	if err := q.Session(&gorm.Session{}).Count(&total).Error; err != nil {
@@ -201,14 +201,15 @@ func (m *Module) createRole(c *gin.Context) (any, error) {
 		if err := guardRoleDefinition(ctx, tx, req.DataScope, ids.Int64s(req.DeptIDs)); err != nil {
 			return err
 		}
-		res := tx.Raw(`INSERT INTO sys_roles (code, name, data_scope, status, sort, remark, created_by, updated_by)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`, req.Code, req.Name, req.DataScope, req.Status, req.Sort,
-			req.Remark, actor.From(ctx).UserID(), actor.From(ctx).UserID()).Scan(&id)
-		if res.Error != nil {
-			if database.IsUniqueViolation(res.Error) {
+		var err error
+		id, err = database.InsertID(tx, `INSERT INTO sys_roles (code, name, data_scope, status, sort, remark, created_by, updated_by)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, req.Code, req.Name, req.DataScope, req.Status, req.Sort,
+			req.Remark, actor.From(ctx).UserID(), actor.From(ctx).UserID())
+		if err != nil {
+			if database.IsUniqueViolation(err) {
 				return fieldError("code", "角色编码已存在")
 			}
-			return res.Error
+			return err
 		}
 		return replaceRoleDepts(tx, id, ids.Int64s(req.DeptIDs))
 	})

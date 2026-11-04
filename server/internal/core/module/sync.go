@@ -16,11 +16,11 @@ import (
 const syncLockKey = "base-admin:module-sync"
 
 // Sync writes declared permissions and menus to the database and runs every
-// module's seed, in one transaction guarded by an advisory lock (design doc
+// module's seed, in one transaction guarded by database.LockTx (design doc
 // 4.4). It bumps the auth version so cached snapshots pick up changes.
 func Sync(ctx context.Context, db *gorm.DB, mods []Module) error {
 	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtext(?))", syncLockKey).Error; err != nil {
+		if err := database.LockTx(tx, syncLockKey); err != nil {
 			return fmt.Errorf("acquire sync lock: %w", err)
 		}
 		if err := syncPermissions(tx, mods); err != nil {
@@ -48,10 +48,9 @@ func syncPermissions(tx *gorm.DB, mods []Module) error {
 			codes = append(codes, d.Code)
 			err := tx.Exec(`
 				INSERT INTO sys_permissions (code, module, name, menu_code, requires, sort, status, synced_at)
-				VALUES (?, ?, ?, NULLIF(?, ''), ?, ?, 'active', now())
-				ON CONFLICT (code) DO UPDATE SET
-					module = EXCLUDED.module, name = EXCLUDED.name, menu_code = EXCLUDED.menu_code,
-					requires = EXCLUDED.requires, sort = EXCLUDED.sort, status = 'active', synced_at = now()`,
+				VALUES (?, ?, ?, NULLIF(?, ''), ?, ?, 'active', CURRENT_TIMESTAMP(6)) `+database.OnConflictUpdate(tx, "code")+`
+					module = excluded.module, name = excluded.name, menu_code = excluded.menu_code,
+					requires = excluded.requires, sort = excluded.sort, status = 'active', synced_at = CURRENT_TIMESTAMP(6)`,
 				d.Code, m.Name(), d.Name, d.Menu, database.TextArray(d.EffectiveRequires()), i,
 			).Error
 			if err != nil {
@@ -61,8 +60,9 @@ func syncPermissions(tx *gorm.DB, mods []Module) error {
 	}
 	// Removed codes are deprecated, never deleted, so existing grants survive
 	// and the change is visible to administrators.
-	err := tx.Exec(`UPDATE sys_permissions SET status = 'deprecated', synced_at = now()
-		WHERE status = 'active' AND code <> ALL(?::text[])`, database.TextArray(codes)).Error
+	sql, args := notIn(`UPDATE sys_permissions SET status = 'deprecated', synced_at = CURRENT_TIMESTAMP(6)
+		WHERE status = 'active'`, codes)
+	err := tx.Exec(sql, args...).Error
 	if err != nil {
 		return fmt.Errorf("deprecate removed permissions: %w", err)
 	}
@@ -78,9 +78,8 @@ func syncMenus(tx *gorm.DB, mods []Module) error {
 			return err
 		}
 	}
-	err := tx.Exec(`DELETE FROM sys_menus WHERE source = 'module' AND code <> ALL(?::text[])`,
-		database.TextArray(codes)).Error
-	if err != nil {
+	sql, args := notIn(`DELETE FROM sys_menus WHERE source = 'module'`, codes)
+	if err := tx.Exec(sql, args...).Error; err != nil {
 		return fmt.Errorf("remove undeclared module menus: %w", err)
 	}
 	return nil
@@ -89,17 +88,31 @@ func syncMenus(tx *gorm.DB, mods []Module) error {
 // upsertMenu overwrites code-owned fields and keeps administrator-editable
 // ones (title, icon, sort, hidden) after the first insert.
 func upsertMenu(tx *gorm.DB, module string, d menu.Def) error {
+	// The parent is looked up first: MySQL cannot read the table an INSERT
+	// writes in a subquery of its VALUES.
+	if d.Parent == d.Code {
+		// PostgreSQL's CHECK (id <> parent_id) has no MySQL counterpart.
+		return fmt.Errorf("menu %s cannot be its own parent", d.Code)
+	}
+	var parentID *int64
+	if d.Parent != "" {
+		var ids []int64
+		if err := tx.Raw("SELECT id FROM sys_menus WHERE code = ?", d.Parent).Scan(&ids).Error; err != nil {
+			return fmt.Errorf("find parent of menu %s: %w", d.Code, err)
+		}
+		if len(ids) > 0 {
+			parentID = &ids[0]
+		}
+	}
 	err := tx.Exec(`
 		INSERT INTO sys_menus (code, parent_id, type, title, path, component, icon, sort, hidden,
 			keep_alive, permission_code, external_url, source, module)
-		VALUES (?, (SELECT id FROM sys_menus WHERE code = NULLIF(?, '')), ?, ?, ?, ?, ?, ?, ?,
-			?, NULLIF(?, ''), ?, 'module', ?)
-		ON CONFLICT (code) DO UPDATE SET
-			parent_id = EXCLUDED.parent_id, type = EXCLUDED.type, path = EXCLUDED.path,
-			component = EXCLUDED.component, keep_alive = EXCLUDED.keep_alive,
-			permission_code = EXCLUDED.permission_code, external_url = EXCLUDED.external_url,
-			source = 'module', module = EXCLUDED.module, updated_at = now()`,
-		d.Code, d.Parent, string(d.Type), d.Title, d.Path, d.Component, d.Icon, d.Sort, d.Hidden,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULLIF(?, ''), ?, 'module', ?) `+database.OnConflictUpdate(tx, "code")+`
+			parent_id = excluded.parent_id, type = excluded.type, path = excluded.path,
+			component = excluded.component, keep_alive = excluded.keep_alive,
+			permission_code = excluded.permission_code, external_url = excluded.external_url,
+			source = 'module', module = excluded.module, updated_at = CURRENT_TIMESTAMP(6)`,
+		d.Code, parentID, string(d.Type), d.Title, d.Path, d.Component, d.Icon, d.Sort, d.Hidden,
 		d.KeepAlive, d.Permission, d.ExternalURL, module,
 	).Error
 	if err != nil {
@@ -151,4 +164,13 @@ func Catalog(mods []Module) perm.Catalog {
 		defs = append(defs, m.Permissions()...)
 	}
 	return perm.NewCatalog(defs)
+}
+
+// notIn restricts a statement to rows whose code is not in codes; with no
+// codes every row matches (NOT IN of an empty list would match none).
+func notIn(sql string, codes []string) (string, []any) {
+	if len(codes) == 0 {
+		return sql, nil
+	}
+	return sql + " AND code NOT IN ?", []any{codes}
 }

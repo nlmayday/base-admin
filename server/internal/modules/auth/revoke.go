@@ -75,7 +75,7 @@ func (r *Revoker) Revoke(ctx context.Context, uid int64, spec RevokeSpec) (int64
 			return errRevocationSideEffect.WithCause(err)
 		}
 		newGen = n
-		if err := tx.Exec("UPDATE sys_users SET session_gen = ?, updated_at = now() WHERE id = ?", n, uid).Error; err != nil {
+		if err := tx.Exec("UPDATE sys_users SET session_gen = ?, updated_at = CURRENT_TIMESTAMP(6) WHERE id = ?", n, uid).Error; err != nil {
 			return err
 		}
 		if spec.Apply != nil {

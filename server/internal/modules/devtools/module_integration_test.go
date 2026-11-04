@@ -30,6 +30,7 @@ import (
 	"base-admin/server/internal/platform/database"
 	"base-admin/server/internal/platform/httpx"
 	"base-admin/server/internal/platform/ids"
+	"base-admin/server/internal/platform/testinfra"
 	"base-admin/server/internal/platform/testinfra/migrated"
 )
 
@@ -245,6 +246,15 @@ func TestRouteListForTheUI(t *testing.T) {
 	assert.Equal(t, "application/json", byKey["GET /api/v1/devtools/openapi.json"].ResponseType)
 }
 
+// tablesStatus is the status of an authorized table listing: the code
+// generator refuses MySQL databases with 409 (after authorization passed).
+func tablesStatus(t *testing.T) int {
+	if testinfra.IsMySQL(t) {
+		return http.StatusConflict
+	}
+	return http.StatusOK
+}
+
 func TestPermissionLevels(t *testing.T) {
 	h := newHarness(t, config.EnvDev, "")
 	for _, tc := range []struct {
@@ -255,7 +265,7 @@ func TestPermissionLevels(t *testing.T) {
 		{http.MethodGet, "/api/v1/devtools/openapi.json", PermCodegen, http.StatusForbidden},
 		{http.MethodGet, "/api/v1/devtools/routes", PermAPIDoc, http.StatusOK},
 		{http.MethodGet, "/api/v1/devtools/codegen/tables", PermAPIDoc, http.StatusForbidden},
-		{http.MethodGet, "/api/v1/devtools/codegen/tables", PermCodegen, http.StatusOK},
+		{http.MethodGet, "/api/v1/devtools/codegen/tables", PermCodegen, tablesStatus(t)},
 	} {
 		r := h.do(tc.method, tc.path, tc.perms, nil)
 		assert.Equal(t, tc.status, r.status, "%s %s with %q", tc.method, tc.path, tc.perms)
@@ -302,6 +312,7 @@ func fakeRepo(t *testing.T) string {
 }
 
 func TestCodegenTablesAndPreview(t *testing.T) {
+	testinfra.SkipOnMySQL(t, "the code generator reads and writes PostgreSQL tables")
 	root := fakeRepo(t)
 	h := newHarness(t, config.EnvDev, root)
 	require.NoError(t, h.db.Exec(gadgetDDL).Error)
@@ -346,6 +357,7 @@ func TestCodegenTablesAndPreview(t *testing.T) {
 }
 
 func TestCodegenPreviewValidation(t *testing.T) {
+	testinfra.SkipOnMySQL(t, "the code generator reads and writes PostgreSQL tables")
 	h := newHarness(t, config.EnvDev, fakeRepo(t))
 	require.NoError(t, h.db.Exec(gadgetDDL).Error)
 	cases := []struct {
@@ -375,6 +387,7 @@ func mustJSON(t *testing.T, v any) string {
 }
 
 func TestCodegenFieldsAndGenerate(t *testing.T) {
+	testinfra.SkipOnMySQL(t, "the code generator reads and writes PostgreSQL tables")
 	root := fakeRepo(t)
 	modules := filepath.Join(root, "server", "internal", "app", "modules.go")
 	require.NoError(t, os.MkdirAll(filepath.Dir(modules), 0o750))

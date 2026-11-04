@@ -76,7 +76,7 @@ func handle(fn func(c *gin.Context) (any, error)) gin.HandlerFunc {
 // matches, incrementing the version (design doc 8.1 optimistic locking).
 func updateVersioned(tx *gorm.DB, table string, id int64, version int, sets map[string]any, uniqueField, uniqueMsg string) error {
 	sets["version"] = gorm.Expr("version + 1")
-	sets["updated_at"] = gorm.Expr("now()")
+	sets["updated_at"] = gorm.Expr("CURRENT_TIMESTAMP(6)")
 	res := tx.Table(table).Where("id = ? AND version = ?", id, version).Updates(sets)
 	if res.Error != nil {
 		if uniqueMsg != "" && database.IsUniqueViolation(res.Error) {
