@@ -78,9 +78,9 @@ var [[.Lower]]Permissions = []perm.Def{
 
 var [[.Lower]]Menus = []menu.Def{
 	{
-		Code: "[[.MenuCode]]", Parent: "[[.ParentMenu]]", Type: menu.TypeMenu, Title: "[[.Name]]管理",
+		Code: "[[.MenuCode]]", Parent: "[[.ParentMenu]]", Type: menu.TypeMenu, Title: [[goString .MenuName]],
 		Path: "[[.PagePath]]", Component: "[[.Component]]", Permission: "[[.PermPrefix]]:view",
-		Icon: "ri:file-list-3-line", Sort: 1,
+		Icon: "ri:file-list-3-line", Sort: [[.MenuOrder]],
 	},
 }
 
@@ -534,12 +534,16 @@ func (m *Module) create[[.Upper]](c *gin.Context) (any, error) {
 [[- else if .KeyGenerated]]
 	key := m.NextID()
 [[- end]]
+[[- if .KeyAuto]]
+	var key [[.KeyGo]]
+[[- end]]
 	var view [[.Lower]]View
 	err := database.RunTx(ctx, m.db, func(tx *gorm.DB) error {
 [[- if .KeyAuto]]
-		key, err := database.InsertID(tx, `INSERT INTO [[.Table]] ([[.InsertCols]])
+		id, err := database.InsertID(tx, `INSERT INTO [[.Table]] ([[.InsertCols]])
 			VALUES ([[.InsertVals]])`,
 			[[join .InsertArgs ", "]])
+		key = [[if eq .KeyGo "int64"]]id[[else]][[.KeyGo]](id) //nolint:gosec // G115: the database assigned it in this column's type[[end]]
 [[- else]]
 		err := tx.Exec(`INSERT INTO [[.Table]] ([[.InsertCols]])
 			VALUES ([[.InsertVals]])`,
@@ -568,6 +572,7 @@ func (m *Module) create[[.Upper]](c *gin.Context) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	m.[[.Lower]]Committed(ctx, opCreate, key, &view)
 	return view, nil
 }
 
@@ -687,6 +692,7 @@ func (m *Module) update[[.Upper]](c *gin.Context) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	m.[[.Lower]]Committed(ctx, opUpdate, key, &view)
 	return view, nil
 }
 
@@ -696,7 +702,7 @@ func (m *Module) delete[[.Upper]](c *gin.Context) (any, error) {
 		return nil, err
 	}
 	ctx := c.Request.Context()
-	return nil, database.RunTx(ctx, m.db, func(tx *gorm.DB) error {
+	err = database.RunTx(ctx, m.db, func(tx *gorm.DB) error {
 		if _, err := m.load[[.Upper]](ctx, tx, key); err != nil {
 			return err
 		}
@@ -721,6 +727,32 @@ func (m *Module) delete[[.Upper]](c *gin.Context) (any, error) {
 [[- end]]
 		return m.[[.Lower]]AfterDelete(ctx, tx, key)
 	})
+	if err != nil {
+		return nil, err
+	}
+	m.[[.Lower]]Committed(ctx, opDelete, key, nil)
+	return nil, nil
+}
+
+// [[.Lower]]Committer is implemented by [[.Lower]]AfterCommit in
+// [[.FileBase]]_ext.go; extension files written before the hook existed
+// lack it, and then nothing is called.
+type [[.Lower]]Committer interface {
+	[[.Lower]]AfterCommit(ctx context.Context, op string, key [[.KeyGo]], row *[[.Lower]]View) error
+}
+
+// [[.Lower]]Committed runs [[.Lower]]AfterCommit once a write is committed;
+// the write stands, so an error is only logged.
+func (m *Module) [[.Lower]]Committed(ctx context.Context, op string, key [[.KeyGo]], row *[[.Lower]]View) {
+	h, ok := any(m).([[.Lower]]Committer)
+	if !ok {
+		return
+	}
+	// The response may already be on its way: the hook outlives the request.
+	ctx = context.WithoutCancel(ctx)
+	if err := h.[[.Lower]]AfterCommit(ctx, op, key, row); err != nil {
+		afterCommitFailed(ctx, [[goString .Resource]], op, key, err)
+	}
 }
 [[- end]]
 

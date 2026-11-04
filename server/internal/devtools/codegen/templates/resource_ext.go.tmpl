@@ -30,4 +30,13 @@ func (m *Module) [[.Lower]]AfterSave(ctx context.Context, tx *gorm.DB, row [[.Lo
 func (m *Module) [[.Lower]]AfterDelete(ctx context.Context, tx *gorm.DB, key [[.KeyGo]]) error {
 	return nil
 }
+
+// [[.Lower]]AfterCommit runs after a create, update or delete is committed
+// (op is opCreate, opUpdate or opDelete; row is nil after a delete), say
+// to tell another service to reload its cache. The write already stands:
+// an error is only logged. It runs before the response is sent and is not
+// cancelled with the request; start a goroutine for slow work.
+func (m *Module) [[.Lower]]AfterCommit(ctx context.Context, op string, key [[.KeyGo]], row *[[.Lower]]View) error {
+	return nil
+}
 [[- end]]

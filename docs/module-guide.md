@@ -49,6 +49,7 @@ This guide shows two routes: generating a module from a table (recommended), and
    - `-key-mode`, `-read-only`, `-no-soft-delete`, `-children`: the options below.
    - `-spec specs.json`: generates a list of tables in one run. Each entry has the fields of the page's request (`table`, `module`, `resource`, `name`, `moduleTitle`, `parentMenu`, `fields`, `keyMode`, `readOnly`, `softDelete`, `children`); with `-force` the same file regenerates them.
    - `-module-title`: the title of the new module's menu directory.
+   - `-menu-title`, `-menu-sort` (`menuTitle`, `menuSort` in a spec): the page's menu title (default 「<name>管理」, e.g. 「玩家查询」) and its order among its siblings (smaller first, default 1). Menus get their title and sort when first written to the database; later changes are made in 菜单管理, so set them before the first start.
    - `-parent-menu`: attaches the page to an existing directory instead of creating one.
    - `-dsn`: the database URL; defaults to `$ADMIN_DATABASE_URL`.
    - `-force`: overwrites existing files, except the extension files (below).
@@ -61,7 +62,9 @@ This guide shows two routes: generating a module from a table (recommended), and
    - `web/src/views/<module>/<resource>/index.vue` and `components/<Resource>FormDialog.vue`
    - The extension files `<resource>_ext.go` and `components/<Resource>Extension.vue`, written only when they do not exist and never overwritten, not even with `-force`, so hand-written code there survives regeneration:
      - `<resource>Restrict(ctx, q)`: a fixed condition on every query of the resource (list, detail, export, update, delete), e.g. `q.Where("t.is_test = ?", false)`.
-     - `<resource>AfterSave(ctx, tx, row, created)` and `<resource>AfterDelete(ctx, tx, key)`: run inside the write's transaction after the row is written or deleted; an error rolls it back (`fieldError("price", "…")` reaches the form). Read-only resources have only `Restrict`.
+     - `<resource>AfterSave(ctx, tx, row, created)` and `<resource>AfterDelete(ctx, tx, key)`: run inside the write's transaction after the row is written or deleted; an error rolls it back (`fieldError("price", "…")` reaches the form).
+     - `<resource>AfterCommit(ctx, op, key, row)`: runs after the transaction is committed (`op` is `opCreate`, `opUpdate` or `opDelete`; `row` is nil after a delete), so other services see the new data, e.g. to tell a game server to reload its cache. An error is only logged («after-commit hook failed»); the save stands. It runs before the response, with a context that is not cancelled with the request; start a goroutine for slow calls. Extension files from before this hook have no `AfterCommit`; add the method (same signature) to use it.
+     - Read-only resources have only `Restrict`.
      - `<Resource>Extension.vue` renders in the list's toolbar (`place="toolbar"`) and in each row's 操作 column (`place="row"`, with `row`); emit `reload` to refresh the list, and set `hasRowActions = true` when it adds row buttons.
 
    **Tables owned by another service** (a game server's tables, created by its migrations) need no change for the generator; 高级选项 on the page (and the same JSON keys in the CLI) cover them:

@@ -19,6 +19,11 @@ type Spec struct {
 	ModuleTitle string `json:"moduleTitle"`
 	// ParentMenu is the menu the page goes under; default "<module>.root".
 	ParentMenu string `json:"parentMenu"`
+	// MenuTitle is the page's menu title; default "<Name>管理". MenuSort
+	// orders it among its siblings (smaller first); default 1. Menus are
+	// written to the database once, so set them before the first start.
+	MenuTitle string `json:"menuTitle,omitempty"`
+	MenuSort  *int   `json:"menuSort,omitempty"`
 	// NewModule generates module.go and common.go as well.
 	NewModule bool `json:"newModule"`
 	// Fields customizes columns (label, list, form, search); columns not
@@ -54,6 +59,9 @@ func (s Spec) plainColumns() map[string]bool {
 	return plain
 }
 
+// maxMenuSort bounds Spec.MenuSort.
+const maxMenuSort = 9999
+
 // reservedModules are existing core module names.
 var reservedModules = map[string]bool{"auth": true, "iam": true, "devtools": true, "core": true, "app": true}
 
@@ -84,6 +92,12 @@ func (s Spec) Problems() []Problem {
 	}
 	if strings.ContainsAny(s.ModuleTitle, unsafeText) || len([]rune(s.ModuleTitle)) > 20 {
 		add("moduleTitle", "模块标题最长 20 个字符，且不能包含引号、反斜杠、尖括号或花括号")
+	}
+	if t := strings.TrimSpace(s.MenuTitle); s.MenuTitle != "" && (t == "" || strings.ContainsAny(t, unsafeText) || len([]rune(t)) > 20) {
+		add("menuTitle", "菜单标题最长 20 个字符，且不能包含引号、反斜杠、尖括号或花括号")
+	}
+	if s.MenuSort != nil && (*s.MenuSort < 0 || *s.MenuSort > maxMenuSort) {
+		add("menuSort", fmt.Sprintf("菜单排序须在 0 到 %d 之间", maxMenuSort))
 	}
 	if s.ParentMenu != "" && (!strings.HasPrefix(s.ParentMenu, s.Module+".") || strings.ContainsAny(s.ParentMenu, unsafeText)) {
 		add("parentMenu", "上级菜单必须是模块 "+s.Module+" 的菜单编码")

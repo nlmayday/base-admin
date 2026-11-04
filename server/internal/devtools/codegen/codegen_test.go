@@ -425,3 +425,48 @@ func TestCreateKeepsDefaults(t *testing.T) {
 	assert.Equal(t, [3]string{"string", "?", "req.Note"}, got["note"], "? would be a GORM placeholder")
 	assert.Equal(t, [3]string{"string", "?", "req.Title"}, got["title"])
 }
+
+func TestMenuTitleAndSort(t *testing.T) {
+	spec := customerSpec()
+	res, err := Generate(customerTable(), spec)
+	require.NoError(t, err)
+	assert.Contains(t, fileByPath(t, res, "/customer.go").Content, `Title: "客户管理"`)
+	assert.Contains(t, fileByPath(t, res, "/customer.go").Content, "Sort: 1,")
+
+	sort := 30
+	spec.MenuTitle, spec.MenuSort = "客户查询", &sort
+	res, err = Generate(customerTable(), spec)
+	require.NoError(t, err)
+	src := fileByPath(t, res, "/customer.go").Content
+	assert.Contains(t, src, `Title: "客户查询"`)
+	assert.Contains(t, src, "Sort: 30,")
+	page := res.Menus[len(res.Menus)-1]
+	assert.Equal(t, "客户查询", page.Title)
+	assert.Equal(t, 30, page.Sort)
+
+	bad := -1
+	spec.MenuTitle, spec.MenuSort = `客户"`, &bad
+	var fields []string
+	for _, p := range spec.Problems() {
+		fields = append(fields, p.Field)
+	}
+	assert.Equal(t, []string{"menuTitle", "menuSort"}, fields)
+}
+
+func TestAfterCommitHook(t *testing.T) {
+	res, err := Generate(customerTable(), customerSpec())
+	require.NoError(t, err)
+	src := fileByPath(t, res, "/customer.go").Content
+	assert.Contains(t, src, "m.customerCommitted(ctx, opCreate, key, &view)")
+	assert.Contains(t, src, "m.customerCommitted(ctx, opUpdate, key, &view)")
+	assert.Contains(t, src, "m.customerCommitted(ctx, opDelete, key, nil)")
+	assert.Contains(t, src, "h, ok := any(m).(customerCommitter)", "optional: older extension files lack it")
+	assert.Contains(t, fileByPath(t, res, "/customer_ext.go").Content,
+		"func (m *Module) customerAfterCommit(ctx context.Context, op string, key int64, row *customerView) error {")
+	assert.Contains(t, fileByPath(t, res, "/common.go").Content, "func afterCommitFailed(")
+
+	ro, err := Generate(orderLogTable(), Spec{Module: "ledger", Resource: "order-log", Name: "订单流水", NewModule: true, ReadOnly: true})
+	require.NoError(t, err)
+	assert.NotContains(t, fileByPath(t, ro, "/order_log_ext.go").Content, "AfterCommit")
+	assert.NotContains(t, fileByPath(t, ro, "/order_log.go").Content, "Committed")
+}

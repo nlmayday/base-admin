@@ -119,7 +119,7 @@ func TestSpecFile(t *testing.T) {
 	root := fakeRepo(t)
 	specs := filepath.Join(t.TempDir(), "specs.json")
 	require.NoError(t, os.WriteFile(specs, []byte(`[
-		{"table": "biz_widgets", "module": "demo", "resource": "widget", "name": "部件", "moduleTitle": "演示"},
+		{"table": "biz_widgets", "module": "demo", "resource": "widget", "name": "部件", "moduleTitle": "演示", "menuTitle": "部件配置", "menuSort": 5},
 		{"table": "biz_widgets", "module": "demo", "resource": "widget-log", "name": "部件日志", "readOnly": true, "softDelete": false,
 		 "fields": [{"column": "name", "search": "eq"}]}
 	]`), 0o600))
@@ -139,7 +139,10 @@ func TestSpecFile(t *testing.T) {
 	require.NotNil(t, softDelete[1])
 	assert.False(t, *softDelete[1], "softDelete is read from the file")
 	assert.Contains(t, stdout, "== 2/2 biz_widgets → demo/widget-log")
-	assert.FileExists(t, filepath.Join(root, "server", "internal", "modules", "demo", "widget.go"))
+	widget, err := os.ReadFile(filepath.Join(root, "server", "internal", "modules", "demo", "widget.go"))
+	require.NoError(t, err)
+	assert.Contains(t, string(widget), `Title: "部件配置"`, "menuTitle is read from the file")
+	assert.Contains(t, string(widget), "Sort: 5,")
 	log, err := os.ReadFile(filepath.Join(root, "server", "internal", "modules", "demo", "widget_log.go"))
 	require.NoError(t, err)
 	assert.NotContains(t, string(log), "g.POST(", "read-only")

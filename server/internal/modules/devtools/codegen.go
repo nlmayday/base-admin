@@ -43,6 +43,8 @@ type previewRequest struct {
 	Resource    string                `json:"resource" binding:"required,max=40" doc:"资源名（kebab-case），如 order"`
 	Name        string                `json:"name" binding:"required,max=20" doc:"中文名，如 订单"`
 	ModuleTitle string                `json:"moduleTitle" binding:"max=20" doc:"新模块的目录菜单标题"`
+	MenuTitle   string                `json:"menuTitle,omitempty" binding:"max=20" doc:"页面菜单标题，默认「中文名 + 管理」"`
+	MenuSort    *int                  `json:"menuSort,omitempty" doc:"页面菜单排序（0–9999，小的在前），默认 1"`
 	Fields      []codegen.FieldOption `json:"fields" binding:"max=200,dive" doc:"字段配置（中文名、列表、表单、搜索方式）；不传的字段使用默认值"`
 	KeyMode     string                `json:"keyMode,omitempty" binding:"omitempty,oneof=auto generated input" doc:"主键来源：auto 数据库自增，generated 程序生成（雪花 ID），input 新增时填写；不传按列自动判断"`
 	ReadOnly    bool                  `json:"readOnly,omitempty" doc:"只读：只生成列表、详情和导出"`
@@ -271,6 +273,7 @@ func (m *Module) loadTable(c *gin.Context, name string) (codegen.Table, error) {
 // prepare validates a request and generates the files in memory.
 func (m *Module) prepare(c *gin.Context, req previewRequest) (codegen.Result, codegen.Spec, error) {
 	spec := codegen.Spec{Module: req.Module, Resource: req.Resource, Name: req.Name, ModuleTitle: req.ModuleTitle,
+		MenuTitle: req.MenuTitle, MenuSort: req.MenuSort,
 		Fields: req.Fields, KeyMode: req.KeyMode, ReadOnly: req.ReadOnly, SoftDelete: req.SoftDelete, Children: req.Children}
 	if problems := spec.Problems(); len(problems) > 0 {
 		return codegen.Result{}, spec, problemsError(problems)
@@ -465,6 +468,12 @@ func cliCommand(req previewRequest) string {
 		// Labels cannot contain quotes (validated), so single quotes are safe.
 		raw, _ := json.Marshal(req.Fields)
 		parts = append(parts, "-fields '"+string(raw)+"'")
+	}
+	if req.MenuTitle != "" {
+		parts = append(parts, "-menu-title '"+req.MenuTitle+"'")
+	}
+	if req.MenuSort != nil {
+		parts = append(parts, fmt.Sprintf("-menu-sort %d", *req.MenuSort))
 	}
 	if req.KeyMode != "" {
 		parts = append(parts, "-key-mode "+req.KeyMode)

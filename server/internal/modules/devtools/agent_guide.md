@@ -141,6 +141,8 @@
   `server/internal/app/modules.go`，并建一个目录菜单（标题 `moduleTitle`）；已存在的
   模块会加入新资源。不能用 auth、iam、devtools、core、app。建议每个业务领域一个新模块，不要往系统自带模块（system、audit、file、ops、notice）里加。
 - `resource`：kebab-case，如 `product`、`sales-order`，决定接口路径和权限码。
+- `menuTitle`、`menuSort`：可选，页面菜单标题（默认「中文名 + 管理」）和排序（0–9999，小的在前，默认 1）。
+  菜单的标题和排序只在第一次写入数据库时生效，之后在菜单管理里改。
 - `name`：资源中文名，用于菜单标题和提示。
 - `fields`：可选，只写需要改默认值的字段；默认值可用 `GET /fields?table=biz_products` 查看：
   - `label`：中文名（默认取字段注释）
@@ -171,7 +173,8 @@ generate 返回 `files`（写入的文件）、`newModule`、`wired`、`notes`�
 - `web/src/api/<module>/<resource>.ts`、`web/src/views/<module>/<resource>/index.vue`（列表、搜索、新增/编辑、导出）
 - 扩展文件 `<resource>_ext.go`、`components/<Resource>Extension.vue`：只在不存在时写入，`force` 也不覆盖，
   自定义逻辑写在这里：`<resource>Restrict`（所有查询的固定条件）、`<resource>AfterSave` / `<resource>AfterDelete`
-  （写入或删除后在同一事务中执行，返回错误即回滚）；Extension.vue 渲染在列表工具栏和每行「操作」列
+  （写入或删除后在同一事务中执行，返回错误即回滚）、`<resource>AfterCommit`（事务提交后执行，如通知其他服务刷新缓存；
+  出错只记日志，不影响已成功的保存）；Extension.vue 渲染在列表工具栏和每行「操作」列
 
 生成的接口（以 module=shop、resource=product、表 biz_products 为例，路径是资源名的复数，
 不带模块名，均在 `/api/v1` 下，由后台页面用登录会话调用，不能用本接口的密钥调用）：

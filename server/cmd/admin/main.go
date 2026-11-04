@@ -53,6 +53,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	defer func() { _ = logger.Sync() }()
+	// zap.L() is this logger too: generated modules log through it (the
+	// AfterCommit hooks) without a logger in their Deps.
+	defer zap.ReplaceGlobals(logger)()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
