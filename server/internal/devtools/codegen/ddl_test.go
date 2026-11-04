@@ -6,6 +6,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"base-admin/server/internal/platform/database"
 )
 
 func orderSpec() TableSpec {
@@ -31,7 +33,7 @@ func orderSpec() TableSpec {
 func TestTableSpecSQL(t *testing.T) {
 	spec := orderSpec()
 	require.Empty(t, spec.Problems())
-	up, down := spec.MigrationSQL()
+	up, down := spec.MigrationSQL(database.Postgres)
 	for _, want := range []string{
 		"CREATE TABLE biz_orders (",
 		"id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY",
@@ -63,12 +65,54 @@ func TestTableSpecSQL(t *testing.T) {
 	assert.Equal(t, []EnumOption{{"1", "普通"}, {"2", "加急"}}, parseCommentOptions("类型：1=普通,2=加急"))
 }
 
+func TestTableSpecMySQL(t *testing.T) {
+	spec := orderSpec()
+	up, down := spec.MigrationSQL(database.MySQL)
+	for _, want := range []string{
+		"CREATE TABLE biz_orders (",
+		"id bigint NOT NULL AUTO_INCREMENT PRIMARY KEY",
+		"order_no varchar(32) NOT NULL COMMENT '订单号'",
+		"customer_id bigint NOT NULL COMMENT '客户'",
+		"kind integer NOT NULL DEFAULT 1 CHECK (kind IN (1, 2)) COMMENT '类型：1=普通,2=加急'",
+		"amount decimal(12, 2) NOT NULL DEFAULT 0",
+		"paid boolean NOT NULL DEFAULT false",
+		"ordered_at datetime(6) DEFAULT CURRENT_TIMESTAMP(6)",
+		"cover_url varchar(512) NOT NULL DEFAULT ''",
+		"attachments json NOT NULL DEFAULT (JSON_ARRAY()) CHECK (JSON_TYPE(attachments) = 'ARRAY')",
+		"remark text COMMENT '备注'",
+		"channel varchar(8) DEFAULT 'web' CHECK (channel IN ('web', 'app'))",
+		"status smallint NOT NULL DEFAULT 1 COMMENT '状态' CHECK (status IN (1, 2))",
+		"dept_id bigint COMMENT '所属部门'",
+		"created_at datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)",
+		"deleted_at datetime(6),",
+		"UNIQUE KEY biz_orders_order_no_uq ((CASE WHEN deleted_at IS NULL THEN order_no END))",
+		"KEY biz_orders_customer_id_idx (customer_id)",
+		"CONSTRAINT biz_orders_customer_id_fk FOREIGN KEY (customer_id) REFERENCES biz_customers (id)",
+		"CONSTRAINT biz_orders_dept_id_fk FOREIGN KEY (dept_id) REFERENCES sys_departments (id)",
+		") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_as_cs COMMENT='订单';",
+	} {
+		assert.Contains(t, up, want)
+	}
+	assert.Equal(t, 1, strings.Count(up, ";"), "one statement: MySQL DDL is not transactional")
+	assert.Equal(t, "DROP TABLE IF EXISTS biz_orders;\n", down)
+
+	spec = TableSpec{Name: "biz_notes", Label: "笔记", Columns: []ColumnSpec{
+		{Name: "title", Type: ColString, Label: "标题", Default: `it's \n`, Unique: true},
+		{Name: "body", Type: ColText, Label: "正文", Default: "x"},
+	}}
+	require.Empty(t, spec.Problems())
+	up, _ = spec.MigrationSQL(database.MySQL)
+	assert.Contains(t, up, `DEFAULT 'it''s \\n'`, "backslashes are escaped")
+	assert.Contains(t, up, "body text DEFAULT ('x')", "text takes an expression default")
+	assert.Contains(t, up, "UNIQUE KEY biz_notes_title_uq (title)")
+}
+
 func TestTableSpecEscapesText(t *testing.T) {
 	spec := TableSpec{Name: "biz_notes", Label: "笔记", Columns: []ColumnSpec{
 		{Name: "title", Type: ColString, Label: "标题", Default: "it's"},
 	}}
 	require.Empty(t, spec.Problems())
-	up, _ := spec.MigrationSQL()
+	up, _ := spec.MigrationSQL(database.Postgres)
 	assert.Contains(t, up, "DEFAULT 'it''s'")
 }
 

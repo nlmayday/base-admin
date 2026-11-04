@@ -146,8 +146,9 @@ type tmplData struct {
 	StatusSearch, DeptSearch, TextSearch, StatusInTable              bool
 	ScopeDept, ScopeOwner, Order, Columns, StatusEnabled             string
 	InsertCols, InsertVals, SoftDeleteSets                           string
-	InsertArgs                                                       []string
-	FilterInit, FilterQuery                                          string
+	// Columns is a Go expression of the select list (db in scope).
+	InsertArgs              []string
+	FilterInit, FilterQuery string
 
 	serverDir, viewDir string
 	skipped            []string
@@ -331,17 +332,24 @@ func (d *tmplData) hasColumn(name string) bool {
 }
 
 func (d *tmplData) deriveColumns() {
-	cols := make([]string, 0, len(d.Fields)+1)
+	var cols selectList
 	for _, f := range d.Fields {
-		cols = append(cols, f.SelectExpr)
+		switch f.SelectCast {
+		case castText:
+			cols.call("", "database.CastText(db, "+goString(f.SelectExpr)+")", " AS "+f.Quoted)
+		case castDate:
+			cols.call("", "database.FormatDate(db, "+goString(f.SelectExpr)+")", " AS "+f.Quoted)
+		default:
+			cols.add(f.SelectExpr)
+		}
 	}
 	if d.DeptJoin {
-		cols = append(cols, "COALESCE(d.name, '') AS dept_name")
+		cols.add("COALESCE(d.name, '') AS dept_name")
 	}
 	for _, f := range d.Relations {
-		cols = append(cols, fmt.Sprintf("COALESCE(%s.%s::text, '') AS %s", f.RelAlias, f.RelLabelSQL, quoteIdent(f.LabelColumn)))
+		cols.call("COALESCE(", "database.CastText(db, "+goString(f.RelAlias+"."+f.RelLabelSQL)+")", ", '') AS "+quoteIdent(f.LabelColumn))
 	}
-	d.Columns = strings.Join(cols, ", ")
+	d.Columns = cols.goExpr()
 	sets := []string{"deleted_at = CURRENT_TIMESTAMP(6)"}
 	if d.UpdatedBy != nil {
 		sets = append(sets, "updated_by = ?")
@@ -369,7 +377,7 @@ func (d *tmplData) deriveDefaults() {
 		if !f.usesDefault() {
 			continue
 		}
-		f.InsertVal = "COALESCE(?, " + f.colDefault + ")"
+		f.InsertVal = "COALESCE(?, " + f.defaultSQL() + ")"
 		if !f.Nullable {
 			f.ReqType = "*" + f.ReqType
 			f.UpdateArg = "gorm.Expr(" + goString("COALESCE(?, "+f.Quoted+")") + ", " + f.ArgExpr + ")"
@@ -385,7 +393,7 @@ func (f *Field) usesDefault() bool {
 	}
 	// The expression is pasted into a raw string query: no backquote, and
 	// no ? that GORM would take for a placeholder.
-	if strings.ContainsAny(f.colDefault, "`?") {
+	if strings.ContainsAny(f.defaultSQL(), "`?") {
 		return false
 	}
 	if f.Nullable {
@@ -405,6 +413,40 @@ func (f *Field) usesDefault() bool {
 		return n != 0
 	}
 	return true
+}
+
+// defaultSQL writes the column default for the generated INSERT in SQL
+// that PostgreSQL and MySQL both accept: literals of plain kinds, dates
+// and the current time. Other expressions (gen_random_uuid(), a jsonb
+// literal) are kept as the database shows them.
+func (f *Field) defaultSQL() string {
+	lit, ok := parseDefault(f.colDefault)
+	switch {
+	case !ok:
+		if f.Kind == kindTime && currentTime[strings.ToLower(strings.ReplaceAll(f.colDefault, " ", ""))] {
+			return "CURRENT_TIMESTAMP(6)"
+		}
+	case strings.Contains(lit, `\`):
+		// Read as an escape by MySQL only: keep the database's spelling.
+	case f.Kind == kindString:
+		return sqlString(lit)
+	case f.Kind == kindBool, f.Kind.numeric():
+		return lit
+	case f.Kind == kindDecimal:
+		if !strings.Contains(lit, ".") {
+			lit += ".0" // a numeric literal: 0 would make the parameter an integer
+		}
+		return lit
+	case f.Kind == kindDate:
+		return "CAST(" + sqlString(lit) + " AS DATE)"
+	}
+	return f.colDefault
+}
+
+// currentTime are the defaults that mean "now", spaces removed.
+var currentTime = map[string]bool{
+	"now()": true, "current_timestamp": true, "current_timestamp(6)": true, "now(6)": true,
+	"current_timestamp()": true, "localtimestamp": true, "transaction_timestamp()": true,
 }
 
 func (d *tmplData) deriveInsert() {
@@ -596,4 +638,50 @@ func nonEmpty(vals ...string) []string {
 // for its header on one line, at least 90px.
 func fixedWidth(label string) int {
 	return max(90, utf8.RuneCountInString(label)*14+34)
+}
+
+// selectList builds the Go expression of a select list: string literals
+// joined with calls that the database package renders per dialect.
+type selectList struct {
+	segs []string // Go expressions
+	lit  strings.Builder
+	n    int
+}
+
+// add appends a column written in SQL.
+func (l *selectList) add(sql string) { l.call(sql, "", "") }
+
+// call appends prefix + the Go call's result + suffix as one column.
+func (l *selectList) call(prefix, goCall, suffix string) {
+	if l.n > 0 {
+		l.lit.WriteString(", ")
+	}
+	l.n++
+	l.lit.WriteString(prefix)
+	if goCall != "" {
+		l.flush()
+		l.segs = append(l.segs, goCall)
+	}
+	l.lit.WriteString(suffix)
+}
+
+func (l *selectList) flush() {
+	if l.lit.Len() > 0 {
+		lit := l.lit.String()
+		if strings.Contains(lit, "`") {
+			lit = strconv.Quote(lit)
+		} else {
+			lit = "`" + lit + "`"
+		}
+		l.segs = append(l.segs, lit)
+		l.lit.Reset()
+	}
+}
+
+func (l *selectList) goExpr() string {
+	l.flush()
+	if len(l.segs) == 0 {
+		return "``"
+	}
+	return strings.Join(l.segs, " + ")
 }

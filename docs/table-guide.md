@@ -2,6 +2,8 @@
 
 业务表按这份规范建，代码生成器就能直接生成出可用的增删改查、搜索、下拉和数据权限，基本不用手改。
 
+下文按 PostgreSQL 写；用 MySQL 时用 `make new-migration NAME=create_biz_orders DIALECT=mysql`（生成到 `server/migrations/app/mysql`），类型对照见 [mysql.md](mysql.md)。
+
 ## 1. 流程
 
 ```bash

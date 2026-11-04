@@ -95,9 +95,10 @@ func TestTypeMapping(t *testing.T) {
 	meta := newField(Column{Name: "meta", UDT: "jsonb", Default: "'{}'::jsonb"}, typeInfo{kind: kindJSON, goType: "string", castText: true})
 	assert.True(t, meta.Writable)
 	assert.Equal(t, `"{}"`, meta.TSDefault)
-	assert.Equal(t, "t.code::text AS code", uuid.SelectExpr)
+	assert.Equal(t, castText, uuid.SelectCast)
 	date := newField(Column{Name: "order", UDT: "date"}, typeInfo{kind: kindDate, goType: "string", castText: true})
-	assert.Equal(t, `to_char(t."order", 'YYYY-MM-DD') AS "order"`, date.SelectExpr)
+	assert.Equal(t, castDate, date.SelectCast)
+	assert.Equal(t, `t."order"`, date.SelectExpr)
 	for _, role := range []string{"version", "created_at", "created_by", "deleted_at"} {
 		c := Column{Name: role, UDT: map[string]string{"version": "int4", "created_at": "timestamptz", "created_by": "int8", "deleted_at": "timestamptz"}[role], Nullable: role == "deleted_at" || role == "created_by"}
 		ti, _ := mapType(c)
@@ -366,7 +367,7 @@ func TestCreateKeepsDefaults(t *testing.T) {
 		got[f.Column] = [3]string{f.ReqType, f.InsertVal, f.UpdateArg}
 	}
 	assert.Equal(t, [3]string{"*int16", "COALESCE(?, 1)", `gorm.Expr("COALESCE(?, kind)", req.Kind)`}, got["kind"])
-	assert.Equal(t, [3]string{"*string", "COALESCE(?, 'web'::character varying)", "req.Channel"}, got["channel"])
+	assert.Equal(t, [3]string{"*string", "COALESCE(?, 'web')", "req.Channel"}, got["channel"])
 	assert.Equal(t, [3]string{"*bool", "COALESCE(?, true)", `gorm.Expr("COALESCE(?, notify)", req.Notify)`}, got["notify"])
 	assert.Equal(t, [3]string{"bool", "?", "req.Muted"}, got["muted"], "zero value already is the default")
 	assert.Equal(t, [3]string{"string", "?", "req.Note"}, got["note"], "? would be a GORM placeholder")

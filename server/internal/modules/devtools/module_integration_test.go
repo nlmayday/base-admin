@@ -246,15 +246,6 @@ func TestRouteListForTheUI(t *testing.T) {
 	assert.Equal(t, "application/json", byKey["GET /api/v1/devtools/openapi.json"].ResponseType)
 }
 
-// tablesStatus is the status of an authorized table listing: the code
-// generator refuses MySQL databases with 409 (after authorization passed).
-func tablesStatus(t *testing.T) int {
-	if testinfra.IsMySQL(t) {
-		return http.StatusConflict
-	}
-	return http.StatusOK
-}
-
 func TestPermissionLevels(t *testing.T) {
 	h := newHarness(t, config.EnvDev, "")
 	for _, tc := range []struct {
@@ -265,7 +256,7 @@ func TestPermissionLevels(t *testing.T) {
 		{http.MethodGet, "/api/v1/devtools/openapi.json", PermCodegen, http.StatusForbidden},
 		{http.MethodGet, "/api/v1/devtools/routes", PermAPIDoc, http.StatusOK},
 		{http.MethodGet, "/api/v1/devtools/codegen/tables", PermAPIDoc, http.StatusForbidden},
-		{http.MethodGet, "/api/v1/devtools/codegen/tables", PermCodegen, tablesStatus(t)},
+		{http.MethodGet, "/api/v1/devtools/codegen/tables", PermCodegen, http.StatusOK},
 	} {
 		r := h.do(tc.method, tc.path, tc.perms, nil)
 		assert.Equal(t, tc.status, r.status, "%s %s with %q", tc.method, tc.path, tc.perms)
@@ -300,6 +291,31 @@ const gadgetDDL = `CREATE TABLE biz_gadgets (
 COMMENT ON TABLE biz_gadgets IS '小工具';
 CREATE TABLE biz_bad (id integer PRIMARY KEY);`
 
+// mysqlGadgetDDL is gadgetDDL for MySQL.
+const mysqlGadgetDDL = `CREATE TABLE biz_gadgets (
+	id bigint NOT NULL AUTO_INCREMENT PRIMARY KEY,
+	name varchar(64) NOT NULL,
+	dept_id bigint,
+	status smallint NOT NULL DEFAULT 1,
+	version integer NOT NULL DEFAULT 0,
+	created_at datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+	created_by bigint,
+	deleted_at datetime(6)
+) COMMENT='小工具';
+CREATE TABLE biz_bad (id integer PRIMARY KEY);`
+
+// createGadgets creates the gadget tables of the tests.
+func (h *harness) createGadgets() {
+	h.t.Helper()
+	ddl := gadgetDDL
+	if testinfra.IsMySQL(h.t) {
+		ddl = mysqlGadgetDDL
+	}
+	for _, stmt := range strings.Split(ddl, ";\n") {
+		require.NoError(h.t, h.db.Exec(stmt).Error, stmt)
+	}
+}
+
 func fakeRepo(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
@@ -312,10 +328,9 @@ func fakeRepo(t *testing.T) string {
 }
 
 func TestCodegenTablesAndPreview(t *testing.T) {
-	testinfra.SkipOnMySQL(t, "the code generator reads and writes PostgreSQL tables")
 	root := fakeRepo(t)
 	h := newHarness(t, config.EnvDev, root)
-	require.NoError(t, h.db.Exec(gadgetDDL).Error)
+	h.createGadgets()
 
 	r := h.do(http.MethodGet, "/api/v1/devtools/codegen/tables", PermCodegen, nil)
 	require.Equal(t, http.StatusOK, r.status)
@@ -357,9 +372,8 @@ func TestCodegenTablesAndPreview(t *testing.T) {
 }
 
 func TestCodegenPreviewValidation(t *testing.T) {
-	testinfra.SkipOnMySQL(t, "the code generator reads and writes PostgreSQL tables")
 	h := newHarness(t, config.EnvDev, fakeRepo(t))
-	require.NoError(t, h.db.Exec(gadgetDDL).Error)
+	h.createGadgets()
 	cases := []struct {
 		body  map[string]string
 		field string
@@ -387,7 +401,6 @@ func mustJSON(t *testing.T, v any) string {
 }
 
 func TestCodegenFieldsAndGenerate(t *testing.T) {
-	testinfra.SkipOnMySQL(t, "the code generator reads and writes PostgreSQL tables")
 	root := fakeRepo(t)
 	modules := filepath.Join(root, "server", "internal", "app", "modules.go")
 	require.NoError(t, os.MkdirAll(filepath.Dir(modules), 0o750))
@@ -405,7 +418,7 @@ func build() {
 }
 `), 0o600))
 	h := newHarness(t, config.EnvDev, root)
-	require.NoError(t, h.db.Exec(gadgetDDL).Error)
+	h.createGadgets()
 
 	r := h.do(http.MethodGet, "/api/v1/devtools/codegen/fields?table=biz_gadgets", PermCodegen, nil)
 	require.Equal(t, http.StatusOK, r.status, string(r.body))

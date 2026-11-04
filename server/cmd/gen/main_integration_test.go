@@ -16,17 +16,25 @@ import (
 )
 
 func TestGenerateFromRealTable(t *testing.T) {
-	testinfra.SkipOnMySQL(t, "the code generator reads and writes PostgreSQL tables")
 	cfg := migrated.Database(t)
 	sqlDB, err := database.OpenSQL(context.Background(), cfg, "gen-test")
 	require.NoError(t, err)
 	defer func() { _ = sqlDB.Close() }()
-	_, err = sqlDB.Exec(`CREATE TABLE biz_widgets (
+	ddl := `CREATE TABLE biz_widgets (
 		id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
 		name varchar(64) NOT NULL,
 		status smallint NOT NULL DEFAULT 1,
 		version integer NOT NULL DEFAULT 0,
-		created_at timestamptz NOT NULL DEFAULT now())`)
+		created_at timestamptz NOT NULL DEFAULT now())`
+	if testinfra.IsMySQL(t) {
+		ddl = `CREATE TABLE biz_widgets (
+		id bigint NOT NULL AUTO_INCREMENT PRIMARY KEY,
+		name varchar(64) NOT NULL,
+		status smallint NOT NULL DEFAULT 1,
+		version integer NOT NULL DEFAULT 0,
+		created_at datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6))`
+	}
+	_, err = sqlDB.Exec(ddl)
 	require.NoError(t, err)
 
 	root := fakeRepo(t)

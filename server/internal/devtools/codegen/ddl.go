@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"base-admin/server/internal/platform/database"
 )
 
 // Table creation for the AI agent API: a structured description of the
@@ -78,6 +80,8 @@ const (
 	maxColumns    = 60
 	maxLabel      = 20
 	maxString     = 2000
+	// maxUniqueString is the longest indexable varchar of MySQL (utf8mb4).
+	maxUniqueString = 768
 )
 
 var (
@@ -180,6 +184,9 @@ func (c ColumnSpec) problems() []Problem {
 	if c.Unique && !slices.Contains([]string{ColString, ColInt, ColBigint, ColDate, ColRef}, c.Type) {
 		add("unique", "只有 string、int、bigint、date、ref 字段可以唯一")
 	}
+	if c.Unique && c.Type == ColString && c.length() > maxUniqueString {
+		add("length", fmt.Sprintf("唯一字段长度最长 %d（MySQL 索引的上限）", maxUniqueString))
+	}
 	out = append(out, c.optionProblems()...)
 	if c.Default != "" {
 		if msg := c.defaultProblem(); msg != "" {
@@ -272,8 +279,17 @@ func (c ColumnSpec) decimal() (int, int) {
 	return p, s
 }
 
-// MigrationSQL returns the up and down migrations of a valid spec.
-func (s TableSpec) MigrationSQL() (up, down string) {
+// MigrationSQL returns the up and down migrations of a valid spec for the
+// database dialect d.
+func (s TableSpec) MigrationSQL(d database.Dialect) (up, down string) {
+	if d == database.MySQL {
+		return s.mysqlSQL()
+	}
+	return s.postgresSQL()
+}
+
+// postgresSQL is the PostgreSQL migration of a valid spec.
+func (s TableSpec) postgresSQL() (up, down string) {
 	t := quoteIdent(s.Name)
 	var cols, comments, indexes []string
 	cols = append(cols, "id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY")
@@ -281,7 +297,7 @@ func (s TableSpec) MigrationSQL() (up, down string) {
 		comments = append(comments, fmt.Sprintf("COMMENT ON COLUMN %s.%s IS %s;", t, quoteIdent(column), sqlString(text)))
 	}
 	for _, c := range s.Columns {
-		cols = append(cols, c.definition())
+		cols = append(cols, c.definition(database.Postgres))
 		comment(c.Name, c.comment())
 		switch {
 		case c.Unique:
@@ -328,8 +344,11 @@ func (s TableSpec) MigrationSQL() (up, down string) {
 	return b.String(), fmt.Sprintf("DROP TABLE IF EXISTS %s;\n", t)
 }
 
-// definition is the column definition inside CREATE TABLE.
-func (c ColumnSpec) definition() string {
+// definition is the column definition inside CREATE TABLE. On MySQL the
+// foreign key of a ref column is a table constraint (mysqlSQL) and the
+// comment is added by the caller.
+func (c ColumnSpec) definition(d database.Dialect) string {
+	mysql := d == database.MySQL
 	name := quoteIdent(c.Name)
 	notNull := c.Required
 	def := ""
@@ -346,14 +365,17 @@ func (c ColumnSpec) definition() string {
 	case ColDecimal:
 		p, s := c.decimal()
 		typ = fmt.Sprintf("numeric(%d, %d)", p, s)
+		if mysql {
+			typ = fmt.Sprintf("decimal(%d, %d)", p, s)
+		}
 	case ColBool:
 		typ, notNull, def = "boolean", true, "false"
 	case ColDate:
 		typ = "date"
 	case ColDatetime:
-		typ = "timestamptz"
+		typ = pick(mysql, "datetime(6)", "timestamptz")
 	case ColJSON:
-		typ = "jsonb"
+		typ = pick(mysql, "json", "jsonb")
 	case ColImage:
 		typ = "varchar(512)"
 		if !c.Required {
@@ -362,19 +384,25 @@ func (c ColumnSpec) definition() string {
 	case ColAttachments:
 		typ, notNull, def = "jsonb", true, "'[]'"
 		extra = " CHECK (jsonb_typeof(" + name + ") = 'array')"
+		if mysql {
+			typ, def = "json", "(JSON_ARRAY())"
+			extra = " CHECK (JSON_TYPE(" + name + ") = 'ARRAY')"
+		}
 	case ColRef:
 		typ = "bigint"
-		extra = " REFERENCES " + quoteIdent(c.Ref) + " (id)"
+		if !mysql {
+			extra = " REFERENCES " + quoteIdent(c.Ref) + " (id)"
+		}
 	}
 	if c.Default != "" {
-		def = c.defaultSQL()
+		def = c.defaultSQL(d)
 	}
 	if len(c.Options) > 0 {
 		values := make([]string, len(c.Options))
 		for i, o := range c.Options {
 			values[i] = o.Value
 			if c.Type == ColString {
-				values[i] = sqlString(o.Value)
+				values[i] = dialectString(d, o.Value)
 			}
 		}
 		extra += fmt.Sprintf(" CHECK (%s IN (%s))", name, strings.Join(values, ", "))
@@ -389,15 +417,26 @@ func (c ColumnSpec) definition() string {
 	return out + extra
 }
 
-func (c ColumnSpec) defaultSQL() string {
+func (c ColumnSpec) defaultSQL(d database.Dialect) string {
 	switch c.Type {
 	case ColInt, ColBigint, ColDecimal, ColBool:
 		return c.Default
 	case ColDatetime:
-		return "now()"
-	default: // string, text, date
-		return sqlString(c.Default)
+		return pick(d == database.MySQL, "CURRENT_TIMESTAMP(6)", "now()")
+	case ColText:
+		if d == database.MySQL {
+			return "(" + dialectString(d, c.Default) + ")" // text takes expression defaults only
+		}
 	}
+	return dialectString(d, c.Default) // string, text, date
+}
+
+// pick returns a when cond holds, else b.
+func pick(cond bool, a, b string) string {
+	if cond {
+		return a
+	}
+	return b
 }
 
 // comment is the column comment: the label, plus the options written the
@@ -414,9 +453,18 @@ func (c ColumnSpec) comment() string {
 	return label + "：" + strings.Join(items, ",")
 }
 
-// sqlString quotes s as a SQL string literal.
+// sqlString quotes s as a SQL string literal (standard SQL, as PostgreSQL
+// reads it; MySQL also reads it so unless s holds a backslash).
 func sqlString(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+}
+
+// dialectString quotes s for d: MySQL takes a backslash for an escape.
+func dialectString(d database.Dialect, s string) string {
+	if d == database.MySQL {
+		s = strings.ReplaceAll(s, `\`, `\\`)
+	}
+	return sqlString(s)
 }
 
 // MigrationName is the migration file stem for creating table, after the

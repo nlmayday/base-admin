@@ -116,7 +116,11 @@ type [[.Lower]]Row struct {
 [[- end]]
 }
 
-const [[.Lower]]Columns = `[[.Columns]]`
+// [[.Lower]]Columns is the select list; casts are written for the
+// database db runs on (PostgreSQL or MySQL).
+func [[.Lower]]Columns(db *gorm.DB) string {
+	return [[.Columns]]
+}
 
 func (r [[.Lower]]Row) view() [[.Lower]]View {
 	return [[.Lower]]View{
@@ -187,7 +191,7 @@ func (m *Module) list[[.PluralUpper]](c *gin.Context) (any, error) {
 		return nil, err
 	}
 	var rows [][[.Lower]]Row
-	if err := q.Select([[.Lower]]Columns).Order("[[.Order]]").Offset(pq.Offset()).Limit(pq.PageSize).Scan(&rows).Error; err != nil {
+	if err := q.Select([[.Lower]]Columns(q)).Order("[[.Order]]").Offset(pq.Offset()).Limit(pq.PageSize).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	views := make([][[.Lower]]View, len(rows))
@@ -202,7 +206,7 @@ var err[[.Upper]]NotFound = httpx.NotFound("[[.Name]]不存在")
 // load[[.Upper]] reads one visible row; rows outside the data scope are 404.
 func load[[.Upper]](ctx context.Context, db *gorm.DB, id int64) ([[.Lower]]View, error) {
 	var rows [][[.Lower]]Row
-	if err := scoped[[.PluralUpper]](ctx, db).Select([[.Lower]]Columns).Where("t.id = ?", id).Scan(&rows).Error; err != nil {
+	if err := scoped[[.PluralUpper]](ctx, db).Select([[.Lower]]Columns(db)).Where("t.id = ?", id).Scan(&rows).Error; err != nil {
 		return [[.Lower]]View{}, err
 	}
 	if len(rows) == 0 {
@@ -308,10 +312,9 @@ func (m *Module) create[[.Upper]](c *gin.Context) (any, error) {
 [[- end]]
 	var view [[.Lower]]View
 	err := database.RunTx(ctx, m.db, func(tx *gorm.DB) error {
-		var id int64
-		err := tx.Raw(`INSERT INTO [[.Table]] ([[.InsertCols]])
-			VALUES ([[.InsertVals]]) RETURNING id`,
-			[[join .InsertArgs ", "]]).Scan(&id).Error
+		id, err := database.InsertID(tx, `INSERT INTO [[.Table]] ([[.InsertCols]])
+			VALUES ([[.InsertVals]])`,
+			[[join .InsertArgs ", "]])
 		if err != nil {
 			if constraint, ok := database.UniqueConstraint(err); ok {
 				return [[.Lower]]Duplicate(constraint)
@@ -451,7 +454,7 @@ func (m *Module) export[[.PluralUpper]](c *gin.Context) {
 	}
 	q := apply[[.Upper]]Filter(scoped[[.PluralUpper]](c.Request.Context(), m.db), f)
 	var rows [][[.Lower]]Row
-	if err := q.Select([[.Lower]]Columns).Order("[[.Order]]").Limit(max[[.Upper]]ExportRows).Scan(&rows).Error; err != nil {
+	if err := q.Select([[.Lower]]Columns(q)).Order("[[.Order]]").Limit(max[[.Upper]]ExportRows).Scan(&rows).Error; err != nil {
 		httpx.Fail(c, err)
 		return
 	}

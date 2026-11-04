@@ -35,7 +35,7 @@ export type CodegenFieldInfo = {
   dict: string;
   /** 从注释「类型：1=通知,2=公告」解析出的选项 */
   commentOptions: { value: string; label: string }[];
-  /** 上传控件：image 图片（存地址），files 附件列表（jsonb），空为不使用 */
+  /** 上传控件：image 图片（存地址），files 附件列表（JSON 字段），空为不使用 */
   upload: UploadMode;
   /** 该字段可用的上传控件 */
   uploadModes: Exclude<UploadMode, "">[];

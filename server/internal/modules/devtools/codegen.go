@@ -34,8 +34,7 @@ func (m *Module) codegenTables(c *gin.Context) (any, error) {
 	if err := m.requireDev(); err != nil {
 		return nil, err
 	}
-	tables, err := codegen.ListTables(c.Request.Context(), m.deps.DB)
-	return tables, dialectError(err)
+	return codegen.ListTables(c.Request.Context(), m.deps.DB)
 }
 
 type previewRequest struct {
@@ -229,7 +228,7 @@ func (m *Module) loadTable(c *gin.Context, name string) (codegen.Table, error) {
 		return table, tableError("数据表不存在")
 	}
 	if err != nil {
-		return table, dialectError(err)
+		return table, err
 	}
 	if err := codegen.CheckTable(table); err != nil {
 		return table, tableError(err.Error())

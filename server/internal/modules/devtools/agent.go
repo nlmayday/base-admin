@@ -2,7 +2,9 @@ package devtools
 
 import (
 	"context"
+	"crypto/rand"
 	_ "embed"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -118,7 +120,7 @@ type createTableRequest struct {
 }
 
 type createTableView struct {
-	// Migration is the file stem in server/migrations/app.
+	// Migration is the file stem in server/migrations/app (app/mysql on MySQL).
 	Migration string   `json:"migration"`
 	Up        string   `json:"up"`
 	Down      string   `json:"down"`
@@ -127,18 +129,14 @@ type createTableView struct {
 }
 
 // createTable turns a table description into a migration following
-// docs/table-guide.md, writes it to the application track
-// (server/migrations/app) and applies it. The development database must be
+// docs/table-guide.md, writes it to the application track of the database
+// (server/migrations/app, or app/mysql on MySQL) and applies it. The development database must be
 // at the last application migration on disk, so only the
 // new migration runs. Repeating a request that already succeeded (a retry
 // after a lost response) returns the same result.
 func (m *Module) createTable(c *gin.Context) (any, error) {
 	if err := m.requireDev(); err != nil {
 		return nil, err
-	}
-	if database.IsMySQL(m.deps.DB) {
-		return nil, httpx.NewError(http.StatusConflict, CodeDialectUnsupported,
-			"AI 接口建表暂只支持 PostgreSQL；MySQL 请手写 server/migrations/app/mysql 下的迁移")
 	}
 	var req createTableRequest
 	if err := httpx.BindJSON(c, &req); err != nil {
@@ -151,8 +149,10 @@ func (m *Module) createTable(c *gin.Context) (any, error) {
 	if err != nil {
 		return nil, httpx.NewError(http.StatusConflict, CodeCodegenNoRepo, "找不到代码仓库，无法写入迁移文件")
 	}
-	dir := filepath.Join(root, filepath.FromSlash(appMigrationsDir))
-	up, down := req.MigrationSQL()
+	dialect := database.DialectOf(m.deps.DB)
+	rel := appMigrationsDir(dialect)
+	dir := filepath.Join(root, filepath.FromSlash(rel))
+	up, down := req.MigrationSQL(dialect)
 	ctx := c.Request.Context()
 
 	m.migrateMu.Lock()
@@ -166,7 +166,7 @@ func (m *Module) createTable(c *gin.Context) (any, error) {
 		}
 		return nil, problemsError(problems)
 	}
-	if err := m.trySQL(ctx, up); err != nil {
+	if err := m.trySQL(ctx, req.TableSpec, up); err != nil {
 		return nil, err
 	}
 	last, err := lastMigration(dir)
@@ -178,7 +178,7 @@ func (m *Module) createTable(c *gin.Context) (any, error) {
 		view.Notes = append(view.Notes, "dryRun：未写入文件、未执行")
 		return view, nil
 	}
-	if err := m.requireMigrated(ctx, last); err != nil {
+	if err := m.requireMigrated(ctx, rel, last); err != nil {
 		return nil, err
 	}
 	if err := writeMigration(dir, view.Migration, up, down); err != nil {
@@ -186,11 +186,11 @@ func (m *Module) createTable(c *gin.Context) (any, error) {
 	}
 	if err := m.applyMigrations(ctx, dir, last+1); err != nil {
 		return nil, httpx.NewError(http.StatusInternalServerError, httpx.CodeInternal,
-			"迁移文件已写入但执行失败，请人工检查 "+appMigrationsDir+"/"+view.Migration+"："+err.Error()).WithCause(err)
+			"迁移文件已写入但执行失败，请人工检查 "+rel+"/"+view.Migration+"："+err.Error()).WithCause(err)
 	}
 	view.Applied = true
 	view.Notes = append(view.Notes,
-		"已写入 "+appMigrationsDir+"/"+view.Migration+".up.sql / .down.sql 并在开发库执行",
+		"已写入 "+rel+"/"+view.Migration+".up.sql / .down.sql 并在开发库执行",
 		"下一步：POST "+m.deps.APIPrefix+agentPath+"/generate 生成模块")
 	return view, nil
 }
@@ -237,7 +237,7 @@ func (m *Module) schemaVersion(ctx context.Context) (version uint, dirty bool, e
 
 // requireMigrated refuses to add a migration while the database is not at
 // the last one on disk: applying the new one would also run the others.
-func (m *Module) requireMigrated(ctx context.Context, last uint) error {
+func (m *Module) requireMigrated(ctx context.Context, rel string, last uint) error {
 	version, dirty, err := m.schemaVersion(ctx)
 	if err != nil {
 		return err
@@ -249,7 +249,7 @@ func (m *Module) requireMigrated(ctx context.Context, last uint) error {
 		}
 		return httpx.NewError(http.StatusConflict, CodeMigrationState, fmt.Sprintf(
 			"开发库的业务迁移版本是 %s，而 %s 最后一个迁移是 %06d：请先处理（执行 make migrate-up，或删除未执行的迁移文件）后再建表",
-			state, appMigrationsDir, last))
+			state, rel, last))
 	}
 	return nil
 }
@@ -282,25 +282,59 @@ func (m *Module) tableProblems(ctx context.Context, spec codegen.TableSpec) ([]c
 	return out, nil
 }
 
-// appMigrationsDir holds the application track, relative to the repository.
-const appMigrationsDir = "server/migrations/app"
+// appMigrationsDir is the directory of the application track for dialect
+// d, relative to the repository.
+func appMigrationsDir(d database.Dialect) string {
+	if d == database.MySQL {
+		return "server/migrations/app/mysql"
+	}
+	return "server/migrations/app"
+}
 
 // errRollback ends trySQL's transaction.
 var errRollback = errors.New("rollback")
 
-// trySQL runs the migration in a transaction that is rolled back, so a
-// failure never leaves a half-applied (dirty) migration behind.
-func (m *Module) trySQL(ctx context.Context, up string) error {
-	err := m.deps.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Exec(up).Error; err != nil {
-			return err
+// trySQL runs the migration up of spec before it is written, so a failure
+// never leaves a half-applied (dirty) migration behind. PostgreSQL runs it
+// in a transaction that is rolled back; MySQL commits DDL at once, so it
+// creates the table under a scratch name and drops it again.
+func (m *Module) trySQL(ctx context.Context, spec codegen.TableSpec, up string) error {
+	db := m.deps.DB.WithContext(ctx)
+	var err error
+	if database.IsMySQL(db) {
+		err = tryMySQL(db, spec)
+	} else {
+		err = db.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Exec(up).Error; err != nil {
+				return err
+			}
+			return errRollback
+		})
+		if errors.Is(err, errRollback) {
+			err = nil
 		}
-		return errRollback
-	})
-	if errors.Is(err, errRollback) {
-		return nil
 	}
-	return httpx.NewError(http.StatusUnprocessableEntity, httpx.CodeValidation, "建表 SQL 执行失败："+err.Error()).WithCause(err)
+	if err != nil {
+		return httpx.NewError(http.StatusUnprocessableEntity, httpx.CodeValidation, "建表 SQL 执行失败："+err.Error()).WithCause(err)
+	}
+	return nil
+}
+
+// tryMySQL creates spec's table as tmp_try_<random> (its index and
+// constraint names follow the table name, so they are free as well) and
+// drops it.
+func tryMySQL(db *gorm.DB, spec codegen.TableSpec) error {
+	var suffix [4]byte
+	if _, err := rand.Read(suffix[:]); err != nil {
+		return err
+	}
+	spec.Name = "tmp_try_" + hex.EncodeToString(suffix[:])
+	up, down := spec.MigrationSQL(database.MySQL)
+	err := db.Exec(up).Error
+	if err == nil {
+		err = db.Exec(down).Error
+	}
+	return err
 }
 
 func lastMigration(dir string) (uint, error) {

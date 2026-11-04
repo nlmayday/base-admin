@@ -99,19 +99,22 @@
 | `ref` | ref 字段引用的表（须有 bigint id），字段名必须以 `_id` 结尾 |
 | `options` | 固定选项（string、int、bigint），至少 2 个；值为 1–32 位字母数字 `_` `-`，int 字段须为整数。页面生成下拉框，数据库加 CHECK 约束 |
 
-| type | 数据库类型 | 页面控件 |
+| type | 数据库类型（PostgreSQL / MySQL） | 页面控件 |
 | --- | --- | --- |
 | `string` | varchar(length) | 输入框 |
 | `text` | text | 多行文本 |
 | `int` / `bigint` | integer / bigint | 数字输入 |
-| `decimal` | numeric(p, s) | 数字输入（金额等，不要用浮点） |
+| `decimal` | numeric(p, s) / decimal(p, s) | 数字输入（金额等，不要用浮点） |
 | `bool` | boolean，默认 false | 开关 |
 | `date` | date | 日期 |
-| `datetime` | timestamptz | 日期时间 |
-| `json` | jsonb | JSON 文本 |
+| `datetime` | timestamptz / datetime(6) | 日期时间 |
+| `json` | jsonb / json | JSON 文本 |
 | `image` | varchar(512) | 图片上传 |
-| `attachments` | jsonb 数组 | 多文件上传 |
+| `attachments` | jsonb / json 数组 | 多文件上传 |
 | `ref` | bigint 外键 | 远程搜索下拉（显示被引用表的名称字段） |
+
+迁移按开发库的数据库生成：PostgreSQL 写到 `server/migrations/app`，MySQL 写到
+`server/migrations/app/mysql`。唯一字段（`unique`）的 string 长度最长 768。
 
 选项值会出现在很多地方时（多张表共用），不要用 `options`，改为在「系统配置 → 数据字典」
 建字典，字段用 string 或 int，生成时在 `fields` 里绑定 `dict`。

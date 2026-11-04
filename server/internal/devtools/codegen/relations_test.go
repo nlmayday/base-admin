@@ -30,7 +30,7 @@ func TestRelationGenerated(t *testing.T) {
 		`var dealCustomerIDLookup = lookup.Target{Table: "biz_customers", Label: "name", SoftDelete: false}`,
 		`var dealOwnerIDLookup = lookup.Target{Table: "sys_users", Label: "username", SoftDelete: true}`,
 		`q = q.Joins(` + "`" + `LEFT JOIN biz_customers r1 ON r1.id = t.customer_id` + "`" + `)`,
-		`COALESCE(r1.name::text, '') AS customer_name`,
+		"COALESCE(` + database.CastText(db, \"r1.name\") + `, '') AS customer_name",
 		`json:"customerName" doc:"客户名称"`,
 		`g.GET("/options/customerId", access.Perm("crm:deal:view"), handle(m.dealCustomerIDOptions))`,
 		`checkDealRelation(ctx, m.db, dealCustomerIDLookup, "customerId", "客户", int64(req.CustomerID))`,
