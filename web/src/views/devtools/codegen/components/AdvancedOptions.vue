@@ -1,25 +1,10 @@
 <script setup lang="ts">
 import type {
-  CodegenChild,
   CodegenDict,
   CodegenKeyMode,
   CodegenTable
 } from "@/api/devtools/codegen";
-
-/** 手动声明的关联：本表的 bigint 列 → 关联表.显示列（不需要外键约束） */
-export type DeclaredRef = {
-  column: string;
-  refTable: string;
-  refKey: string;
-  relation: string;
-};
-
-export type AdvancedModel = {
-  keyMode: CodegenKeyMode;
-  readOnly: boolean;
-  refs: DeclaredRef[];
-  children: CodegenChild[];
-};
+import type { AdvancedModel } from "./advanced";
 
 defineOptions({ name: "CodegenAdvancedOptions" });
 
@@ -46,7 +31,14 @@ function addChild(): void {
     table: "",
     foreignKey: "",
     keyColumn: "lang",
+    keySource: "dict",
     keyDict: "",
+    keyTable: "",
+    keyValueColumn: "code",
+    keyLabelColumn: "name",
+    keyFilter: "",
+    keySortColumn: "",
+    keyRequiredColumn: "",
     label: "多语言"
   });
 }
@@ -163,7 +155,12 @@ function addChild(): void {
               placeholder="键列，如 lang"
               class="w-[110px]!"
             />
+            <el-select v-model="c.keySource" class="w-[90px]!">
+              <el-option label="键来自字典" value="dict" />
+              <el-option label="键来自表" value="table" />
+            </el-select>
             <el-select
+              v-if="c.keySource === 'dict'"
               v-model="c.keyDict"
               placeholder="键字典"
               filterable
@@ -176,6 +173,47 @@ function addChild(): void {
                 :value="d.code"
               />
             </el-select>
+            <template v-else>
+              <el-select
+                v-model="c.keyTable"
+                placeholder="键表，如 lg_language"
+                filterable
+                allow-create
+                class="w-[160px]!"
+              >
+                <el-option
+                  v-for="t in tables"
+                  :key="t.name"
+                  :label="t.name"
+                  :value="t.name"
+                />
+              </el-select>
+              <el-input
+                v-model="c.keyValueColumn"
+                placeholder="值列 code"
+                class="w-[90px]!"
+              />
+              <el-input
+                v-model="c.keyLabelColumn"
+                placeholder="名称列 name"
+                class="w-[100px]!"
+              />
+              <el-input
+                v-model="c.keyFilter"
+                placeholder="条件，如 enabled = 1"
+                class="w-[150px]!"
+              />
+              <el-input
+                v-model="c.keySortColumn"
+                placeholder="排序列 sort"
+                class="w-[100px]!"
+              />
+              <el-input
+                v-model="c.keyRequiredColumn"
+                placeholder="必填列 required"
+                class="w-[110px]!"
+              />
+            </template>
             <el-input
               v-model="c.label"
               placeholder="标题"
@@ -188,7 +226,7 @@ function addChild(): void {
           </div>
           <el-button link type="primary" @click="addChild">添加子表</el-button>
           <div class="hint ml-0!">
-            子表随主表一起编辑：表单按字典的每一项（如每种语言）列出一组输入，全部为空的不保存
+            子表随主表一起编辑：表单按键（字典的每一项，或键表中符合条件的每一行，如每种语言）列出一组输入，全部为空的不保存；键表有必填列时，必填的键必须填写
           </div>
         </div>
       </el-form-item>

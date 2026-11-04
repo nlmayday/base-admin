@@ -25,9 +25,12 @@ import {
 import CodeBlock from "../shared/CodeBlock.vue";
 import PreviewPanel from "./components/PreviewPanel.vue";
 import FieldConfig from "./components/FieldConfig.vue";
-import AdvancedOptions, {
+import AdvancedOptions from "./components/AdvancedOptions.vue";
+import {
+  childModels,
+  childSpecs,
   type AdvancedModel
-} from "./components/AdvancedOptions.vue";
+} from "./components/advanced";
 
 defineOptions({ name: "DevtoolsCodegen" });
 
@@ -152,7 +155,7 @@ async function restoreLast(): Promise<void> {
         refKey: f.refKey ?? "",
         relation: f.relation ?? ""
       })),
-    children: req.children ?? []
+    children: childModels(req.children ?? [])
   };
   result.value = last.result;
 }
@@ -238,7 +241,7 @@ function allFieldOptions(): CodegenFieldOption[] {
 
 function request(): CodegenRequest {
   const a = advanced.value;
-  const children = a.readOnly ? [] : a.children.filter(c => c.table);
+  const children = a.readOnly ? [] : childSpecs(a.children);
   return {
     ...form,
     name: form.name.trim(),

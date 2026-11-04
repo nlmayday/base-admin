@@ -16,8 +16,9 @@ type ChildTable struct {
 // ChildSpec is a table edited together with each row of the main table,
 // one child row per key: a translation table xxx_i18n (main_id, lang,
 // title, ...) gets one row per language. The keys come from a data
-// dictionary that the business maintains (系统配置 → 数据字典), not from
-// the code.
+// dictionary (KeyDict, 系统配置 → 数据字典) or from a table the business
+// maintains (KeyTable, such as a language registry shared with another
+// service), never from the code.
 type ChildSpec struct {
 	// Table is the child table.
 	Table string `json:"table"`
@@ -27,7 +28,19 @@ type ChildSpec struct {
 	// such as lang.
 	KeyColumn string `json:"keyColumn"`
 	// KeyDict is the data dictionary listing the key values (lang codes).
-	KeyDict string `json:"keyDict"`
+	KeyDict string `json:"keyDict,omitempty"`
+	// KeyTable lists the key values instead of a dictionary:
+	// KeyValueColumn holds the value (code), KeyLabelColumn its name
+	// (default: the value), KeyFilter a SQL condition on the table
+	// ("enabled = 1"), KeySortColumn the order (default: the value) and
+	// KeyRequiredColumn, when set, a boolean column: the rows of those keys
+	// must be filled in.
+	KeyTable          string `json:"keyTable,omitempty"`
+	KeyValueColumn    string `json:"keyValueColumn,omitempty"`
+	KeyLabelColumn    string `json:"keyLabelColumn,omitempty"`
+	KeyFilter         string `json:"keyFilter,omitempty"`
+	KeySortColumn     string `json:"keySortColumn,omitempty"`
+	KeyRequiredColumn string `json:"keyRequiredColumn,omitempty"`
 	// Label names the section in the form, e.g. 多语言.
 	Label string `json:"label,omitempty"`
 }
@@ -53,6 +66,11 @@ type childData struct {
 	InsertArgs                      []string
 	// KeyTSForm is the TypeScript type of the key in the form.
 	KeyTSForm string
+	// KeyFromTable: the keys come from Spec.KeyTable; KeySelect is the Go
+	// select list of the key options (db in scope), KeyOrder their order.
+	KeyFromTable bool
+	KeySelect    string
+	KeyOrder     string
 }
 
 // childStandard are columns a child table keeps without the form.
@@ -65,8 +83,14 @@ func buildChild(ct ChildTable, mainTable string, pk *Field) (*childData, error) 
 	switch {
 	case !identifierPattern.MatchString(s.ForeignKey) || !identifierPattern.MatchString(s.KeyColumn):
 		return nil, fmt.Errorf("子表 %s：foreignKey 和 keyColumn 须为列名", t.Name)
-	case !dictCodePattern.MatchString(s.KeyDict):
+	case (s.KeyDict == "") == (s.KeyTable == ""):
+		return nil, fmt.Errorf("子表 %s：keyDict（数据字典）和 keyTable（键表）须指定且只指定一个", t.Name)
+	case s.KeyDict != "" && !dictCodePattern.MatchString(s.KeyDict):
 		return nil, fmt.Errorf("子表 %s：keyDict 须为数据字典编码", t.Name)
+	case s.KeyTable != "":
+		if msg := keyTableProblem(s); msg != "" {
+			return nil, fmt.Errorf("子表 %s：%s", t.Name, msg)
+		}
 	case strings.ContainsAny(s.Label, unsafeText) || utf8.RuneCountInString(s.Label) > 20:
 		return nil, fmt.Errorf("子表 %s：label 最长 20 个字符，且不能包含引号、反斜杠、尖括号或花括号", t.Name)
 	}
@@ -90,6 +114,27 @@ func buildChild(ct ChildTable, mainTable string, pk *Field) (*childData, error) 
 	d.GoName, d.JSONName = goExported(rest), lowerCamel(rest)
 	if d.Label == "" {
 		d.Label = rest
+	}
+	if s.KeyTable != "" {
+		d.KeyFromTable = true
+		var sel selectList
+		value := quoteIdent(s.KeyValueColumn)
+		sel.call("", "database.CastText(db, "+goString(value)+")", ` AS "value"`)
+		label := value
+		if s.KeyLabelColumn != "" {
+			label = quoteIdent(s.KeyLabelColumn)
+		}
+		sel.call("", "database.CastText(db, "+goString(label)+")", ` AS "label"`)
+		if s.KeyRequiredColumn != "" {
+			sel.add(quoteIdent(s.KeyRequiredColumn) + ` AS "required"`)
+		} else {
+			sel.add(`false AS "required"`)
+		}
+		d.KeySelect = sel.goExpr()
+		d.KeyOrder = value
+		if s.KeySortColumn != "" {
+			d.KeyOrder = quoteIdent(s.KeySortColumn) + ", " + value
+		}
 	}
 	d.FK = newField(fkCol, mustKeyType(fkCol))
 	d.Key = newField(keyCol, kti)
@@ -243,4 +288,40 @@ func (c *childData) KeyFromDict(v string) string {
 		return v
 	}
 	return "Number(" + v + ")"
+}
+
+// keyFilterUnsafe are what a key filter may not contain: it is a fixed
+// condition pasted into the generated query, not a statement.
+var keyFilterUnsafe = []string{";", "?", "`", "--", "/*", "*/", "\\"}
+
+// keyTableProblem checks the key table options; Load checks them against
+// the database.
+func keyTableProblem(s ChildSpec) string {
+	for _, c := range []string{s.KeyTable, s.KeyValueColumn} {
+		if !identifierPattern.MatchString(c) {
+			return "keyTable 和 keyValueColumn 须为表名和列名"
+		}
+	}
+	for _, c := range []string{s.KeyLabelColumn, s.KeySortColumn, s.KeyRequiredColumn} {
+		if c != "" && !identifierPattern.MatchString(c) {
+			return "keyLabelColumn、keySortColumn、keyRequiredColumn 须为列名"
+		}
+	}
+	for _, bad := range keyFilterUnsafe {
+		if strings.Contains(s.KeyFilter, bad) {
+			return "keyFilter 是一个条件（如 enabled = 1），不能包含 " + bad
+		}
+	}
+	if utf8.RuneCountInString(s.KeyFilter) > 200 {
+		return "keyFilter 最长 200 个字符"
+	}
+	return ""
+}
+
+// KeySourceLabel describes where the keys come from, for notes.
+func (c *childData) KeySourceLabel() string {
+	if c.KeyFromTable {
+		return "表 " + c.Spec.KeyTable
+	}
+	return "字典 " + c.Spec.KeyDict
 }

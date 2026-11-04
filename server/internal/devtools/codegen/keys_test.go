@@ -23,9 +23,12 @@ func TestKeyModes(t *testing.T) {
 
 	player := gen(playerTable(), Spec{Module: "game", Resource: "player", Name: "玩家", NewModule: true})
 	assert.Contains(t, player["player.go"], "key := m.NextID()")
-	assert.Contains(t, player["player.go"], "INSERT INTO lg_player (id, nickname, level, user_id)")
+	assert.Contains(t, player["player.go"], "INSERT INTO lg_player (id, nickname, level, price_currency, user_id)")
 	assert.NotContains(t, player["player.go"], "database.InsertID")
 	assert.Contains(t, player["module.go"], "NewID func() int64")
+	// NOT NULL with a default: may be omitted, so the length rule needs omitempty.
+	assert.Contains(t, player["player.go"], "PriceCurrency *string `json:\"priceCurrency\" binding:\"omitempty,max=3\"")
+	assert.Contains(t, player["player.go"], "COALESCE(?, 'USD')")
 	assert.Contains(t, player["notes"], "由程序生成")
 	assert.Contains(t, player["notes"], "表缺少标准字段", "missing standard columns only add a note")
 
@@ -58,6 +61,9 @@ func TestKeyModes(t *testing.T) {
 	assert.NotContains(t, ro["index.vue"], "新增订单流水")
 	assert.Contains(t, ro["index.vue"], "导出 CSV")
 	assert.NotContains(t, ro["order-log.ts"], "createOrderLog")
+	assert.NotContains(t, ro["order-log.ts"], "LookupOption", "the relation is not searched: no options route")
+	vip := gen(vipLevelTable(), Spec{Module: "game", Resource: "vip-level", Name: "VIP 等级"})
+	assert.Contains(t, vip["vip-level.ts"], "export type VipLevelFilter = Record<never, never>;")
 	assert.Contains(t, ro["notes"], "只读模块")
 	assert.NotContains(t, src, `map[int]string{1: "启用", 2: "停用"}`, "a status with comment options keeps its own meaning")
 	assert.Contains(t, src, "var orderLogStatusLabels = map[string]string{")

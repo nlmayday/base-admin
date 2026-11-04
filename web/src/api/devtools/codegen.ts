@@ -80,8 +80,17 @@ export type CodegenChild = {
   foreignKey: string;
   /** 区分同一主表行下各子表行的列，如 lang */
   keyColumn: string;
-  /** 列出键值的数据字典，如 lang */
-  keyDict: string;
+  /** 列出键值的数据字典，如 lang（与 keyTable 二选一） */
+  keyDict?: string;
+  /** 列出键值的表（如与游戏服共用的 lg_language），keyValueColumn 为值，keyLabelColumn 为名称 */
+  keyTable?: string;
+  keyValueColumn?: string;
+  keyLabelColumn?: string;
+  /** 键表的过滤条件，如 enabled = 1 */
+  keyFilter?: string;
+  keySortColumn?: string;
+  /** 键表中表示「必须填写」的列，如 required */
+  keyRequiredColumn?: string;
   /** 表单中的分组标题，如 多语言 */
   label?: string;
 };

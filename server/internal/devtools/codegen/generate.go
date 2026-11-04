@@ -185,6 +185,11 @@ type tmplData struct {
 	// EnumExports are exported columns with comment options, exported as
 	// their labels.
 	EnumExports []*Field
+	// ChildDictKeys: a child's keys come from a dictionary (form import).
+	ChildDictKeys bool
+	// OmittableDefaults: a NOT NULL column with a default may be omitted
+	// on create (tested with the required fields only).
+	OmittableDefaults bool
 
 	DeptJoin, Scope, NeedsActor, NeedsUID, HasRequired, TableHasTime bool
 	StatusSearch, DeptSearch, TextSearch, StatusInTable              bool
@@ -337,6 +342,7 @@ func (d *tmplData) derive() {
 		d.FormDateTime = d.FormDateTime || (f.Writable && f.Widget == "datetime")
 	}
 	for _, c := range d.Children {
+		d.ChildDictKeys = d.ChildDictKeys || !c.KeyFromTable
 		for _, f := range c.Fields {
 			d.FormDateTime = d.FormDateTime || f.Widget == "datetime"
 		}
@@ -490,10 +496,22 @@ func (d *tmplData) deriveDefaults() {
 		}
 		f.InsertVal = "COALESCE(?, " + f.defaultSQL() + ")"
 		if !f.Nullable {
+			d.OmittableDefaults = true
 			f.ReqType = "*" + f.ReqType
 			f.UpdateArg = "gorm.Expr(" + goString("COALESCE(?, "+f.Quoted+")") + ", " + f.ArgExpr + ")"
+			// Omitting the column is allowed now: the other rules (max=3)
+			// apply only to a value.
+			f.Binding = withOmitempty(f.Binding)
 		}
 	}
+}
+
+// withOmitempty makes rules apply only to a given value.
+func withOmitempty(rules string) string {
+	if rules == "" || strings.HasPrefix(rules, "omitempty") || strings.HasPrefix(rules, "required") {
+		return rules
+	}
+	return "omitempty," + rules
 }
 
 // usesDefault reports an optional plain column whose default the INSERT
@@ -725,8 +743,8 @@ func (d *tmplData) notes() []string {
 		notes = append(notes, "主键 "+d.PK.Column+" 在新增时填写，之后不能修改")
 	}
 	for _, c := range d.Children {
-		notes = append(notes, fmt.Sprintf("子表 %s 随%s一起编辑：表单按字典 %s 的每一项列出一行，全部为空的行不保存；详情接口返回 %s",
-			c.Table, d.Name, c.Spec.KeyDict, c.JSONName))
+		notes = append(notes, fmt.Sprintf("子表 %s 随%s一起编辑：表单按%s的每一项列出一行，全部为空的行不保存；详情接口返回 %s",
+			c.Table, d.Name, c.KeySourceLabel(), c.JSONName))
 	}
 	if missing := d.missingStandard(); len(missing) > 0 {
 		notes = append(notes, "表缺少标准字段（见 docs/table-guide.md）："+strings.Join(missing, "；"))

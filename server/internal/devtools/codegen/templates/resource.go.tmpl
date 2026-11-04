@@ -95,6 +95,9 @@ func (m *Module) [[.Lower]]Routes(r *module.Router) {
 	g.PUT("/:id", access.Perm("[[.PermPrefix]]:update"), handle(m.update[[.Upper]])).Doc(module.Doc{Summary: "编辑[[.Name]]", Body: [[.Lower]]Request{}, Response: [[.Lower]]View{}})
 	g.DELETE("/:id", access.Perm("[[.PermPrefix]]:delete"), handle(m.delete[[.Upper]])).Doc(module.Doc{Summary: "删除[[.Name]]"})
 [[- end]]
+[[- range .Children]][[if .KeyFromTable]]
+	g.GET("/options/[[.JSONName]]Keys", access.Perm("[[$.PermPrefix]]:view"), handle(m.[[$.Lower]][[.GoName]]KeyOptions)).Doc(module.Doc{Summary: "[[.Label]]的[[.Key.Label]]列表", Description: "来自 [[.Spec.KeyTable]]；required 为必须填写", Response: [][[$.Lower]][[.GoName]]Key{}})
+[[- end]][[end]]
 [[- range .OptionRelations]]
 	g.GET("/options/[[.JSONName]]", access.Perm("[[$.PermPrefix]]:view"), handle(m.[[$.Lower]][[.GoName]]Options)).Doc(module.Doc{Summary: "[[.Label]]选项", Description: "keyword 按名称搜索，最多 50 条", Response: []lookup.Option{}})
 [[- end]]
@@ -294,6 +297,31 @@ func (r [[$.Lower]][[.GoName]]Row) view() [[$.Lower]][[.GoName]]View {
 	}
 }
 
+[[- if .KeyFromTable]]
+
+// [[$.Lower]][[.GoName]]Key is one [[.Key.Label]] of the [[.Label]] rows, from [[.Spec.KeyTable]].
+type [[$.Lower]][[.GoName]]Key struct {
+	Value    string `json:"value" doc:"[[.Key.Label]]"`
+	Label    string `json:"label" doc:"名称"`
+	Required bool   `json:"required" doc:"该[[.Key.Label]]的行必须填写"`
+}
+
+// load[[$.Upper]][[.GoName]]Keys lists the [[.Key.Label]] values the [[.Label]] rows may use.
+func load[[$.Upper]][[.GoName]]Keys(ctx context.Context, db *gorm.DB) ([][[$.Lower]][[.GoName]]Key, error) {
+	var out [][[$.Lower]][[.GoName]]Key
+	q := db.WithContext(ctx).Table("[[.Spec.KeyTable]]").Select([[.KeySelect]])
+[[- if .Spec.KeyFilter]]
+	q = q.Where([[goString .Spec.KeyFilter]])
+[[- end]]
+	err := q.Order([[goString .KeyOrder]]).Scan(&out).Error
+	return out, err
+}
+
+func (m *Module) [[$.Lower]][[.GoName]]KeyOptions(c *gin.Context) (any, error) {
+	return load[[$.Upper]][[.GoName]]Keys(c.Request.Context(), m.db)
+}
+[[- end]]
+
 // load[[$.Upper]][[.GoName]] reads the [[.Label]] rows of a [[$.Name]].
 func load[[$.Upper]][[.GoName]](ctx context.Context, db *gorm.DB, key [[$.KeyGo]]) ([][[$.Lower]][[.GoName]]View, error) {
 	var rows [][[$.Lower]][[.GoName]]Row
@@ -345,6 +373,37 @@ func (r [[$.Lower]][[.GoName]]Request) empty() bool {
 	return [[range $i, $f := .Fields]][[if $i]] && [[end]][[$f.EmptyExpr]][[end]]
 }
 
+[[- if .KeyFromTable]]
+// save[[$.Upper]][[.GoName]] replaces the [[.Label]] rows of a [[$.Name]] with rows,
+// in the caller's transaction. The keys must be values of [[.Spec.KeyTable]]
+// and appear once; the required ones must be filled in.
+func (m *Module) save[[$.Upper]][[.GoName]](ctx context.Context, tx *gorm.DB, key [[$.KeyGo]], rows [][[$.Lower]][[.GoName]]Request) error {
+	keys, err := load[[$.Upper]][[.GoName]]Keys(ctx, tx)
+	if err != nil {
+		return err
+	}
+	allowed := map[string]bool{}
+	for _, k := range keys {
+		allowed[k.Value] = true
+	}
+	seen, filled := map[string]bool{}, map[string]bool{}
+	for i, r := range rows {
+		field := fmt.Sprintf("[[.JSONName]][%d].[[.Key.JSONName]]", i)
+		k := fmt.Sprint(r.[[.Key.GoName]])
+		switch {
+		case seen[k]:
+			return fieldError(field, "[[.Key.Label]] "+k+" 重复")
+		case !allowed[k]:
+			return fieldError(field, "请选择有效的[[.Key.Label]]")
+		}
+		seen[k], filled[k] = true, !r.empty()
+	}
+	for _, k := range keys {
+		if k.Required && !filled[k.Value] {
+			return fieldError("[[.JSONName]]", k.Label+"的[[.Label]]必须填写")
+		}
+	}
+[[- else]]
 // save[[$.Upper]][[.GoName]] replaces the [[.Label]] rows of a [[$.Name]] with rows,
 // in the caller's transaction. The keys must be items of dictionary
 // [[.Spec.KeyDict]] and appear once.
@@ -361,6 +420,7 @@ func (m *Module) save[[$.Upper]][[.GoName]](ctx context.Context, tx *gorm.DB, ke
 			return err
 		}
 	}
+[[- end]]
 	if err := tx.Exec(`DELETE FROM [[.Table]] WHERE [[.FK.Quoted]] = ?`, key).Error; err != nil {
 		return err
 	}

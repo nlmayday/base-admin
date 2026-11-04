@@ -102,6 +102,7 @@ func playerTable() Table {
 		{Name: "id", UDT: "int8", Primary: true},
 		{Name: "nickname", UDT: "varchar", MaxLength: 32},
 		{Name: "level", UDT: "int4", Default: "1"},
+		{Name: "price_currency", UDT: "bpchar", MaxLength: 3, Default: "'USD'::bpchar", Comment: "币种"},
 		{Name: "user_id", UDT: "int8", Nullable: true, Comment: "账号"},
 		{Name: "created_at", UDT: "timestamptz", Default: "now()"},
 	}}
@@ -131,7 +132,7 @@ func orderLogTable() Table {
 	return Table{Name: "lg_order_log", Comment: "订单流水", Columns: []Column{
 		{Name: "id", UDT: "int8", Primary: true},
 		{Name: "order_no", UDT: "varchar", MaxLength: 32, Comment: "订单号"},
-		{Name: "player_id", UDT: "int8", Comment: "玩家"},
+		{Name: "player_id", UDT: "int8", Comment: "玩家", Ref: &Ref{Table: "lg_player", Labels: []string{"nickname"}}},
 		{Name: "amount", UDT: "numeric", Comment: "金额"},
 		{Name: "status", UDT: "int2", Default: "1", Comment: "状态：1=待支付,2=已支付"},
 		{Name: "paid_at", UDT: "timestamptz", Nullable: true},
@@ -154,6 +155,8 @@ func keyShapes(prefix string) []struct {
 			Fields: []FieldOption{{Column: "cfg_key", Search: SearchEq}}}},
 		{levelTable(), Spec{Module: prefix + "level", Resource: "level", Name: "等级", NewModule: true}},
 		{itemTable(), itemSpec(prefix + "item")},
+		{bannerTable(), Spec{Module: prefix + "banner", Resource: "banner", Name: "公告横幅", NewModule: true, Children: []ChildSpec{bannerChild()}}},
+		{vipLevelTable(), Spec{Module: prefix + "vip", Resource: "vip-level", Name: "VIP 等级", NewModule: true}},
 		{playerTable(), Spec{Module: prefix + "players", Resource: "player", Name: "玩家", NewModule: true, ReadOnly: true}},
 		{orderLogTable(), Spec{Module: prefix + "ledger", Resource: "order-log", Name: "订单流水", NewModule: true, ReadOnly: true,
 			Fields: []FieldOption{{Column: "order_no", Search: SearchEq}, {Column: "paid_at", Search: SearchRange}}}},
@@ -183,4 +186,34 @@ func itemTable() Table {
 func itemSpec(module string) Spec {
 	return Spec{Module: module, Resource: "item", Name: "道具", NewModule: true,
 		Children: []ChildSpec{itemTable().Children[0].Spec}}
+}
+
+// vipLevelTable has no column that is searched by default.
+func vipLevelTable() Table {
+	return Table{Name: "lg_vip_level", Comment: "VIP 等级", Columns: []Column{
+		{Name: "level", UDT: "int4", Primary: true, Comment: "等级"},
+		{Name: "min_exp", UDT: "int8", Comment: "最低经验"},
+		{Name: "daily_bonus", UDT: "int4", Default: "0", Comment: "每日奖励"},
+	}}
+}
+
+// bannerTable has a translation child keyed by a language table that the
+// game server shares (keys with required ones), and its own child id.
+func bannerTable() Table {
+	return Table{Name: "lg_banner", Comment: "公告横幅", Columns: []Column{
+		{Name: "id", UDT: "int8", Primary: true},
+		{Name: "sort", UDT: "int4", Default: "0"},
+	}, Children: []ChildTable{{Spec: bannerChild(), Table: Table{Name: "lg_banner_i18n", Columns: []Column{
+		{Name: "id", UDT: "int8", Identity: true, Primary: true},
+		{Name: "banner_id", UDT: "int8"},
+		{Name: "lang", UDT: "varchar", MaxLength: 8, Comment: "语言"},
+		{Name: "title", UDT: "varchar", MaxLength: 64, Comment: "标题"},
+		{Name: "image_url", UDT: "varchar", MaxLength: 512, Nullable: true, Comment: "图片"},
+	}}}}}
+}
+
+func bannerChild() ChildSpec {
+	return ChildSpec{Table: "lg_banner_i18n", ForeignKey: "banner_id", KeyColumn: "lang", Label: "多语言",
+		KeyTable: "lg_language", KeyValueColumn: "code", KeyLabelColumn: "name", KeyFilter: "enabled = 1",
+		KeySortColumn: "sort", KeyRequiredColumn: "required"}
 }
