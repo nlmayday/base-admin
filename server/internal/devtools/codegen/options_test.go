@@ -114,7 +114,7 @@ func TestNoSearchFields(t *testing.T) {
 	index := fileByPath(t, res, "/note/index.vue").Content
 	assert.NotContains(t, index, "resetFilter")
 	assert.NotContains(t, index, "搜索")
-	assert.Contains(t, fileByPath(t, res, "/api/notes/note.ts").Content, "export type NoteFilter = Record<string, never>;")
+	assert.Contains(t, fileByPath(t, res, "/api/notes/note.ts").Content, "export type NoteFilter = Record<never, never>;")
 }
 
 func mustDescribe(t *testing.T, tbl Table) []FieldInfo {

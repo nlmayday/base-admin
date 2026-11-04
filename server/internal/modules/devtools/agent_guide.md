@@ -155,7 +155,9 @@
 - `readOnly`：可选，`true` 时只生成列表、详情和导出（流水、订单、日志类表）。
 - `children`：可选，随主表一起编辑的子表（多语言表）：
   `[{"table": "lg_item_i18n", "foreignKey": "item_id", "keyColumn": "lang", "keyDict": "lang", "label": "多语言"}]`。
-  表单按字典 `keyDict` 的每一项列出一组输入，详情接口返回这些行。
+  表单按字典 `keyDict` 的每一项列出一组输入，详情接口返回这些行。键也可以来自一张表（与 `keyDict` 二选一）：
+  `"keyTable": "lg_language", "keyValueColumn": "code", "keyLabelColumn": "name", "keyFilter": "enabled = 1", "keySortColumn": "sort", "keyRequiredColumn": "required"`，
+  `keyRequiredColumn` 为真的键必须填写。`keyFilter` 原样写进生成的代码，两种数据库都要用时写 `enabled = TRUE`（`enabled = 1` 只适用于 MySQL）。
   - `relation`：外键字段显示被引用表的哪一列；`""` 改为直接输入 ID
 - `force`（仅 generate）：覆盖已存在的文件。
 

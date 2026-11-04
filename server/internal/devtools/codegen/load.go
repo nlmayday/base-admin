@@ -51,6 +51,11 @@ func Load(ctx context.Context, db *gorm.DB, table string, spec Spec) (Table, err
 		if err != nil {
 			return t, err
 		}
+		if cs.KeyTable != "" {
+			if err := checkKeyTable(ctx, db, cs); err != nil {
+				return t, err
+			}
+		}
 		t.Children = append(t.Children, ChildTable{Spec: cs, Table: child})
 	}
 	return t, nil
@@ -103,4 +108,33 @@ func declareRef(ctx context.Context, db *gorm.DB, t Table, o FieldOption) (Table
 	cols2[i].Ref = r
 	t.Columns = cols2
 	return t, nil
+}
+
+// checkKeyTable verifies that the key table of a child has the named
+// columns and that the filter is a valid condition there.
+func checkKeyTable(ctx context.Context, db *gorm.DB, cs ChildSpec) error {
+	if msg := keyTableProblem(cs); msg != "" {
+		return specError("子表 %s：%s", cs.Table, msg)
+	}
+	kt, err := Introspect(ctx, db, cs.KeyTable)
+	if errors.Is(err, ErrTableNotFound) {
+		return specError("子表 %s 的键表 %s 不存在", cs.Table, cs.KeyTable)
+	}
+	if err != nil {
+		return err
+	}
+	for _, c := range []string{cs.KeyValueColumn, cs.KeyLabelColumn, cs.KeySortColumn, cs.KeyRequiredColumn} {
+		if _, ok := kt.Column(c); c != "" && !ok {
+			return specError("键表 %s 没有列 %s", cs.KeyTable, c)
+		}
+	}
+	q := db.WithContext(ctx).Table(cs.KeyTable).Select(cs.KeyValueColumn).Limit(1)
+	if cs.KeyFilter != "" {
+		q = q.Where(cs.KeyFilter)
+	}
+	rows, err := q.Rows()
+	if err != nil {
+		return specError("键表 %s 的 keyFilter 无法执行：%s", cs.KeyTable, err.Error())
+	}
+	return rows.Close()
 }

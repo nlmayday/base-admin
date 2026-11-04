@@ -2,7 +2,7 @@ import { http } from "@/utils/http";
 import {
   compactParams,
   type Page,
-  type PageQuery[[if .Relations]],
+  type PageQuery[[if .OptionRelations]],
   type LookupOption[[end]][[if .Status]],
   type Status[[end]]
 } from "@/api/types";
@@ -11,6 +11,7 @@ import type { AttachmentRef } from "@/api/file";
 [[- end]]
 
 [[- range $c := .Children]]
+
 /** [[.Label]]（[[.Table]]）的一行，按[[.Key.Label]]区分 */
 export type [[$.TSUpper]][[.GoName]] = {
   /** [[.Key.Label]] */
@@ -20,8 +21,17 @@ export type [[$.TSUpper]][[.GoName]] = {
   [[.JSONName]]: [[.TSType]];
 [[- end]]
 };
+[[- if .KeyFromTable]]
 
-[[ end -]]
+/** [[.Label]]可用的[[.Key.Label]]（来自 [[.Spec.KeyTable]]），required 为必须填写 */
+export type [[$.TSUpper]][[.GoName]]Key = {
+  value: string;
+  label: string;
+  required: boolean;
+};
+[[- end]]
+[[- end]]
+
 /** [[.Name]]（[[.Table]]），由 cmd/gen 生成 */
 export type [[.TSUpper]] = {
 [[- range .Fields]]
@@ -51,7 +61,8 @@ export type [[.TSUpper]]Filter = {
 [[- end]]
 };
 [[- else]]
-export type [[.TSUpper]]Filter = Record<string, never>;
+/** 没有搜索项 */
+export type [[.TSUpper]]Filter = Record<never, never>;
 [[- end]]
 
 [[- if not .ReadOnly]]
@@ -96,6 +107,12 @@ export const delete[[.TSUpper]] = (id: string) =>
 
 export const export[[.TSPluralUpper]] = (filter: [[.TSUpper]]Filter) =>
   http.download("[[.URLPath]]/export", compactParams(filter), "[[.URLName]].csv");
+[[- range .Children]][[if .KeyFromTable]]
+
+/** [[.Label]]可用的[[.Key.Label]] */
+export const list[[$.TSUpper]][[.GoName]]Keys = () =>
+  http.get<[[$.TSUpper]][[.GoName]]Key[]>("/[[$.URLName]]/options/[[.JSONName]]Keys");
+[[- end]][[end]]
 [[- range .OptionRelations]]
 
 /** [[.Label]]选项：按关键字搜索 [[.RelTable]] */

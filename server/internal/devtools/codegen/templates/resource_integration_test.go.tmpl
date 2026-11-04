@@ -103,9 +103,9 @@ func Test[[.Upper]]CRUD(t *testing.T) {
 [[- range .SampleFields]]
 		"[[.JSONName]]": [[.Sample]],
 [[- end]]
-[[- range .Children]]
+[[- range .Children]][[if not .KeyFromTable]]
 		"[[.JSONName]]": []any{map[string]any{"[[.Key.JSONName]]": [[.KeySample]][[range .Fields]], "[[.JSONName]]": [[.SampleValue]][[end]]}},
-[[- end]]
+[[- end]][[end]]
 	}
 
 	status, env := call[[.Upper]](t, h, http.MethodPost, base, payload)
@@ -135,9 +135,9 @@ func Test[[.Upper]]CRUD(t *testing.T) {
 
 	status, env = call[[.Upper]](t, h, http.MethodGet, base+"/"+key, nil)
 	assert.Equal(t, http.StatusOK, status)
-[[- range .Children]]
+[[- range .Children]][[if not .KeyFromTable]]
 	assert.Contains(t, string(env.Data), `"[[.JSONName]]":[{`, "the detail has the [[.Label]] rows")
-[[- end]]
+[[- end]][[end]]
 [[- if .Version]]
 
 	payload["version"] = created.Version
@@ -158,6 +158,21 @@ func Test[[.Upper]]CRUD(t *testing.T) {
 	require.Equal(t, http.StatusOK, status)
 	status, _ = call[[.Upper]](t, h, http.MethodGet, base+"/"+key, nil)
 	assert.Equal(t, http.StatusNotFound, status)
+}
+[[- end]]
+[[- if and .OmittableDefaults (not .ReadOnly)]]
+
+func Test[[.Upper]]CreateWithDefaults(t *testing.T) {
+	h := new[[.Upper]]TestServer(t)
+	// Only the required fields: the columns with a database default are
+	// omitted and get it.
+	payload := map[string]any{
+[[- range .RequiredFields]]
+		"[[.JSONName]]": [[.SampleValue]],
+[[- end]]
+	}
+	status, env := call[[.Upper]](t, h, http.MethodPost, "/api/v1[[.URLPath]]", payload)
+	require.Equal(t, http.StatusOK, status, string(env.Data))
 }
 [[- end]]
 [[- if .HasRequired]]

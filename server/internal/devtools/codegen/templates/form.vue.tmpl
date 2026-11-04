@@ -28,8 +28,8 @@ import type { AttachmentRef } from "@/api/file";
 import ReUtcHint from "@/components/ReUtcHint/index.vue";
 import { toUTC } from "@/utils/timezone";
 [[- end]]
-[[- if .Children]]
-import { getDictOptions, type DictOption } from "@/api/system/dict";
+[[- if .ChildDictKeys]]
+import { getDictOptions } from "@/api/system/dict";
 [[- end]]
 import {
   [[.Lower]]Key,
@@ -44,6 +44,9 @@ import {
   type [[.TSUpper]],
 [[- range .Children]]
   type [[$.TSUpper]][[.GoName]],
+[[- if .KeyFromTable]]
+  list[[$.TSUpper]][[.GoName]]Keys,
+[[- end]]
 [[- end]]
   type [[.TSUpper]]Payload
 } from "@/api/[[.Pkg]]/[[.Resource]]";
@@ -73,8 +76,8 @@ const { fieldErrors, clearFieldErrors, applyFieldErrors } = useFieldErrors();
 const isEdit = computed(() => props.row !== null);
 [[- range $c := .Children]]
 
-/** [[.Label]]：字典 [[.Spec.KeyDict]] 的每一项一行，打开表单时加载 */
-const [[.JSONName]]Keys = ref<DictOption[]>([]);
+/** [[.Label]]：[[$c.KeySourceLabel]]的每一项一行，打开表单时加载 */
+const [[.JSONName]]Keys = ref<{ value: string; label: string; required?: boolean }[]>([]);
 const [[.JSONName]]Rows = ref<[[$.TSUpper]][[.GoName]][]>([]);
 const empty[[.GoName]] = (key: string): [[$.TSUpper]][[.GoName]] => ({
   [[.Key.JSONName]]: [[$c.KeyFromDict "key"]],
@@ -84,10 +87,14 @@ const empty[[.GoName]] = (key: string): [[$.TSUpper]][[.GoName]] => ({
 });
 
 async function load[[.GoName]](): Promise<void> {
-  let keys: DictOption[] = [];
+  let keys: { value: string; label: string; required?: boolean }[] = [];
   let saved: [[$.TSUpper]][[.GoName]][] = [];
   try {
+[[- if .KeyFromTable]]
+    keys = (await list[[$.TSUpper]][[.GoName]]Keys()) ?? [];
+[[- else]]
     keys = (await getDictOptions([[printf "%q" .Spec.KeyDict]])) ?? [];
+[[- end]]
     if (props.row) {
       saved = (await get[[$.TSUpper]]([[$.Lower]]Key(props.row))).[[.JSONName]] ?? [];
     }
@@ -302,7 +309,7 @@ async function submit(): Promise<void> {
         <el-tab-pane
           v-for="(row, i) in [[.JSONName]]Rows"
           :key="String(row.[[.Key.JSONName]])"
-          :label="[[.JSONName]]Keys[i]?.label ?? String(row.[[.Key.JSONName]])"
+          :label="`${[[.JSONName]]Keys[i]?.label ?? row.[[.Key.JSONName]]}${[[.JSONName]]Keys[i]?.required ? ' *' : ''}`"
         >
 [[- range .Fields]]
           <el-form-item
@@ -328,9 +335,15 @@ async function submit(): Promise<void> {
       </el-tabs>
       <el-empty
         v-else
-        description="数据字典 [[.Spec.KeyDict]] 没有启用的项"
+        description="[[$c.KeySourceLabel]] 没有可用的项"
         :image-size="60"
       />
+      <div
+        v-if="fieldErrors.[[.JSONName]]"
+        class="mt-1 text-xs text-[var(--el-color-danger)]"
+      >
+        {{ fieldErrors.[[.JSONName]] }}
+      </div>
 [[- end]]
     </el-form>
     <template #footer>
