@@ -71,6 +71,7 @@ type opRow struct {
 	Route        string
 	Path         string
 	Summary      string
+	Target       string
 	Status       int
 	Code         int
 	Success      bool

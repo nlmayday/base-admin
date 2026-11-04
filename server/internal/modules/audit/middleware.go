@@ -104,6 +104,7 @@ func (m *Module) buildOpRow(c *gin.Context, route module.Route, body string, sta
 		Route:        clean(c.FullPath(), 255),
 		Path:         clean(c.Request.URL.Path, 512),
 		Summary:      clean(route.Doc.Summary, 128),
+		Target:       clean(targetOf(c), maxTargetLength),
 		Status:       status,
 		Code:         code,
 		Success:      status < http.StatusBadRequest && code == 0,

@@ -128,6 +128,18 @@ func (h *harness) buildEngine() *gin.Engine {
 	probe.DELETE("/probe/items/:id", access.Perm("probe:item:delete"), ok).Doc(module.Doc{Summary: "删除条目"})
 	probe.GET("/probe/items", access.Authenticated(), ok).Doc(module.Doc{Summary: "条目列表"})
 	probe.GET("/probe/export", access.Authenticated(), ok).Doc(module.Doc{Summary: "导出条目", Sensitive: true})
+	probe.PUT("/probe/players/:id/ban", access.Authenticated(), func(c *gin.Context) {
+		SetTarget(c, "player:"+c.Param("id"))
+		if c.Query("fail") != "" {
+			httpx.Fail(c, httpx.Conflict("玩家已封禁"))
+			return
+		}
+		httpx.OK(c, nil)
+	}).Doc(module.Doc{Summary: "封禁玩家"})
+	probe.POST("/probe/players/ban", access.Authenticated(), func(c *gin.Context) {
+		SetTarget(c, "player:1", " ", "player:2")
+		httpx.OK(c, nil)
+	}).Doc(module.Doc{Summary: "批量封禁"})
 	return engine
 }
 
