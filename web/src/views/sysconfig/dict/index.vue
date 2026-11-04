@@ -199,7 +199,7 @@ function remove(row: DictItem): void {
               min-width="160"
               show-overflow-tooltip
             />
-            <el-table-column label="创建时间" width="170">
+            <el-table-column label="创建时间" width="215">
               <template #default="{ row }">
                 {{ formatDateTime(row.createdAt) }}
               </template>

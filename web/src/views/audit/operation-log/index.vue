@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ReUtcHint from "@/components/ReUtcHint/index.vue";
 import { onMounted, reactive, ref } from "vue";
 import { usePagedTable } from "@/composables/usePagedTable";
 import { formatDateTime } from "@/utils/format";
@@ -34,6 +35,7 @@ type Filter = {
   method: HttpMethod | "";
   success: "true" | "false" | "";
   path: string;
+  target: string;
   range: [string, string] | null;
 };
 
@@ -43,6 +45,7 @@ const emptyFilter = (): Filter => ({
   method: "",
   success: "",
   path: "",
+  target: "",
   range: null
 });
 
@@ -59,6 +62,7 @@ function queryFilter(): OperationLogFilter {
     method: filter.method,
     success: filter.success,
     path: filter.path.trim(),
+    target: filter.target.trim(),
     ...rangeParams(filter.range)
   };
 }
@@ -183,6 +187,16 @@ onMounted(() => {
             @keyup.enter="search"
           />
         </el-form-item>
+        <el-form-item label="操作对象">
+          <el-input
+            v-model="filter.target"
+            placeholder="如 player:123"
+            clearable
+            class="w-[150px]!"
+            data-testid="operation-log-target"
+            @keyup.enter="search"
+          />
+        </el-form-item>
         <el-form-item label="时间">
           <el-date-picker
             v-model="filter.range"
@@ -195,6 +209,7 @@ onMounted(() => {
             :value-format="DATE_RANGE_FORMAT"
             class="w-[340px]!"
           />
+          <ReUtcHint :value="filter.range" />
         </el-form-item>
         <el-form-item>
           <el-button type="primary" :loading="loading" @click="search">
@@ -224,7 +239,7 @@ onMounted(() => {
         <template #empty>
           <el-empty description="暂无操作记录" :image-size="80" />
         </template>
-        <el-table-column label="时间" width="170">
+        <el-table-column label="时间" width="215">
           <template #default="{ row }">
             {{ formatDateTime(row.createdAt) }}
           </template>
@@ -245,6 +260,11 @@ onMounted(() => {
         </el-table-column>
         <el-table-column label="操作" min-width="130" show-overflow-tooltip>
           <template #default="{ row }">{{ row.summary || "-" }}</template>
+        </el-table-column>
+        <el-table-column label="操作对象" min-width="130" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span class="font-mono text-xs">{{ row.target || "-" }}</span>
+          </template>
         </el-table-column>
         <el-table-column label="方法" width="90" align="center">
           <template #default="{ row }">

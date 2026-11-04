@@ -138,7 +138,9 @@ type tmplData struct {
 	// RelationSearch are relation fields searched in the list page.
 	RelationSearch                                  []*Field
 	HasFiles, NeedsAttachment, FormImage, FormFiles bool
-	DictNumericForm                                 bool
+	// FormDateTime: the form has a date-time picker (UTC hint, toUTC).
+	FormDateTime    bool
+	DictNumericForm bool
 
 	Version, Status, Sort, Dept, CreatedBy, UpdatedBy, CreatedAt, UpdatedAt, SoftDelete *Field
 
@@ -240,6 +242,9 @@ func (d *tmplData) derive() {
 		d.Order = "t.sort, t.id DESC"
 	}
 	d.deriveUploads()
+	for _, f := range d.Fields {
+		d.FormDateTime = d.FormDateTime || (f.Writable && f.Widget == "datetime")
+	}
 	d.deriveRelations()
 	d.deriveColumns()
 	d.deriveDefaults()

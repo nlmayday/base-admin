@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ReUtcHint from "@/components/ReUtcHint/index.vue";
 import {
   computed,
   onBeforeUnmount,
@@ -176,6 +177,7 @@ onMounted(() => {
             :shortcuts="dateShortcuts"
             class="w-[340px]!"
           />
+          <ReUtcHint :value="filter.range" />
         </el-form-item>
         <el-form-item>
           <el-button type="primary" :loading="loading" @click="search">
@@ -253,7 +255,7 @@ onMounted(() => {
             {{ row.attempt }}
           </template>
         </el-table-column>
-        <el-table-column label="开始时间" width="165">
+        <el-table-column label="开始时间" width="215">
           <template #default="{ row }">
             {{ formatDateTime(row.startedAt) }}
           </template>

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import dayjs from "dayjs";
 import { formatBytes, formatDateTime, formatUptime } from "./format";
+import { offsetLabel, setDisplayZone } from "./timezone";
 
 describe("formatBytes", () => {
   it.each([
@@ -37,7 +39,20 @@ describe("formatDateTime", () => {
     expect(formatDateTime("not a date")).toBe("not a date");
   });
 
-  it("formats RFC 3339 times", () => {
-    expect(formatDateTime("2026-10-30T08:09:10")).toBe("2026-10-30 08:09:10");
+  it("formats RFC 3339 times in the browser time zone with its offset", () => {
+    setDisplayZone("local");
+    const at = "2026-10-30T08:09:10Z";
+    const local = dayjs(at);
+    expect(formatDateTime(at)).toBe(
+      `${local.format("YYYY-MM-DD HH:mm:ss")} (${offsetLabel(local.utcOffset())})`
+    );
+  });
+
+  it("formats in UTC when UTC is chosen", () => {
+    setDisplayZone("utc");
+    expect(formatDateTime("2026-10-30T16:09:10+08:00")).toBe(
+      "2026-10-30 08:09:10 (UTC)"
+    );
+    setDisplayZone("local");
   });
 });

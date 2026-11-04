@@ -338,6 +338,11 @@ func (f *Field) tsTypes() {
 	case f.Kind == kindTime:
 		f.Widget, f.RuleTrig = "datetime", "change"
 		f.tsText()
+		// The API takes UTC times (RFC 3339).
+		f.TSSubmit = "toUTC(form." + f.JSONName + ")"
+		if f.Nullable {
+			f.TSSubmit += " || null"
+		}
 	case f.Kind == kindDate:
 		f.Widget, f.RuleTrig = "date", "change"
 		f.tsText()

@@ -241,7 +241,7 @@ onMounted(() => {
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="下次执行" width="165">
+        <el-table-column label="下次执行" width="215">
           <template #default="{ row }">
             <span v-if="row.nextRunAt">{{
               formatDateTime(row.nextRunAt)

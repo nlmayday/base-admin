@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ReUtcHint from "@/components/ReUtcHint/index.vue";
 import { onMounted, reactive, ref } from "vue";
 import { usePagedTable } from "@/composables/usePagedTable";
 import { formatDateTime } from "@/utils/format";
@@ -159,6 +160,7 @@ onMounted(reload);
             :value-format="DATE_RANGE_FORMAT"
             class="w-[340px]!"
           />
+          <ReUtcHint :value="filter.range" />
         </el-form-item>
         <el-form-item>
           <el-button type="primary" :loading="loading" @click="search">
@@ -188,7 +190,7 @@ onMounted(reload);
         <template #empty>
           <el-empty description="暂无登录记录" :image-size="80" />
         </template>
-        <el-table-column label="时间" width="170">
+        <el-table-column label="时间" width="215">
           <template #default="{ row }">
             {{ formatDateTime(row.createdAt) }}
           </template>

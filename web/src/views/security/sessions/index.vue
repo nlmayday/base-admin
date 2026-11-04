@@ -116,7 +116,7 @@ onMounted(reload);
             </el-tooltip>
           </template>
         </el-table-column>
-        <el-table-column label="登录时间" width="170">
+        <el-table-column label="登录时间" width="215">
           <template #default="{ row }">
             {{ formatDateTime(row.createdAt) }}
           </template>
@@ -131,7 +131,7 @@ onMounted(reload);
             </el-tooltip>
           </template>
         </el-table-column>
-        <el-table-column label="最长有效至" width="170">
+        <el-table-column label="最长有效至" width="215">
           <template #default="{ row }">
             {{ formatDateTime(row.absoluteExpiresAt) }}
           </template>

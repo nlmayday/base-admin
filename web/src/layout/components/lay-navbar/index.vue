@@ -2,6 +2,7 @@
 import { useNav } from "@/layout/hooks/useNav";
 import LaySearch from "../lay-search/index.vue";
 import LayNotice from "../lay-notice/index.vue";
+import LayTimezone from "../lay-timezone/index.vue";
 import LayNavMix from "../lay-sidebar/NavMix.vue";
 import LaySidebarFullScreen from "../lay-sidebar/components/SidebarFullScreen.vue";
 import LaySidebarBreadCrumb from "../lay-sidebar/components/SidebarBreadCrumb.vue";
@@ -46,6 +47,8 @@ const {
       <LaySearch id="header-search" />
       <!-- 全屏 -->
       <LaySidebarFullScreen id="full-screen" />
+      <!-- 时间显示时区 -->
+      <LayTimezone />
       <!-- 消息通知 -->
       <LayNotice />
       <!-- 退出登录 -->

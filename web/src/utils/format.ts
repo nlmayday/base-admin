@@ -1,10 +1,14 @@
 import dayjs from "dayjs";
+import { inDisplayZone, zoneLabel } from "./timezone";
 
-/** RFC 3339 时间转本地显示；空值显示 "-" */
+/**
+ * RFC 3339 时间按顶栏选择的时区（浏览器时区或 UTC）显示，并标注时区，
+ * 如 2026-11-04 10:00:00 (GMT+8)；空值显示 "-"。
+ */
 export function formatDateTime(value: string | null | undefined): string {
   if (!value) return "-";
-  const d = dayjs(value);
-  return d.isValid() ? d.format("YYYY-MM-DD HH:mm:ss") : value;
+  if (!dayjs(value).isValid()) return value;
+  return `${inDisplayZone(value).format("YYYY-MM-DD HH:mm:ss")} (${zoneLabel(value)})`;
 }
 
 const BYTE_UNITS = ["B", "KB", "MB", "GB", "TB", "PB"];

@@ -24,6 +24,10 @@ import ReImageUpload from "@/components/ReUpload/ImageUpload.vue";
 import ReFileUpload from "@/components/ReUpload/FileUpload.vue";
 import type { AttachmentRef } from "@/api/file";
 [[- end]]
+[[- if .FormDateTime]]
+import ReUtcHint from "@/components/ReUtcHint/index.vue";
+import { toUTC } from "@/utils/timezone";
+[[- end]]
 import {
   create[[.TSUpper]],
 [[- range .RelationFields]]
@@ -219,6 +223,7 @@ async function submit(): Promise<void> {
           placeholder="选择时间"
           class="w-full!"
         />
+        <ReUtcHint :value="form.[[.JSONName]]" />
 [[- else if eq .Widget "date"]]
         <el-date-picker
           v-model="form.[[.JSONName]]"
