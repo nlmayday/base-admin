@@ -45,3 +45,9 @@ func TestMySQLUDT(t *testing.T) {
 		assert.Equal(t, want, mysqlUDT(in[0], in[1]), in)
 	}
 }
+
+func TestMySQLVisibleUnique(t *testing.T) {
+	m := mysqlVisibleUnique.FindStringSubmatch("(case when (`deleted_at` is null) then `isbn` end)")
+	assert.Equal(t, []string{"(case when (`deleted_at` is null) then `isbn` end)", "isbn"}, m)
+	assert.Nil(t, mysqlVisibleUnique.FindStringSubmatch("(lower(`name`))"))
+}
