@@ -114,7 +114,41 @@ Conventions the reviewers expect:
 - **Login rules:** IP allowlists and login hours are built into 安全中心 → 安全策略. For a rule of your own (a contract expired, a tenant suspended), implement `auth.LoginGuard` and register it with `core.AddLoginGuard(yourModule)` in `internal/app/modules.go`. It runs after the password check and before the session is created; return an `*httpx.Error` (403, a code in your module's range) to refuse with your own message. Refusals are logged with reason `denied`.
 - **Large uploads and downloads:** chain `.MaxBody(n)` and `.Timeout(d)` on the route. Only that route gets the larger body limit and the longer request and connection deadlines.
 - **Settings and dictionaries:** read runtime settings through the system module (`GetString`, `GetInt`) and validate dictionary values with `HasDictValue`. Take them as small interfaces in your `Deps` instead of importing the system package.
+- **Operation log target:** call `audit.SetTarget(c, "player:"+id)` (`internal/modules/audit`) in a handler to record what the request acted on. 日志审计 → 操作日志 shows it and filters by it exactly, the export includes it. Write it `<kind>:<id>`; a batch call takes several (`SetTarget(c, "player:1", "player:2")`, stored comma-separated). Call it before returning an error too, so failed attempts on the object are found.
 - **Integration tests:** use the `integration` build tag with `testinfra/migrated.Database(t)` and `testinfra.RedisDB(t)`, which leases a Redis logical database for the test. To simulate Redis data loss mid-test use `testinfra.FlushRedis(t, client)`, not `FLUSHDB`, which would drop the lease.
+
+### Configuration and extra databases of business modules
+
+The scaffold's configuration is strict (an unknown key stops the start), but it leaves two places to business modules, so they need no change to the core:
+
+- **`biz` section:** anything under `biz:` in the config file is handed to the modules as `cfg.Biz` (`config.Biz`). A module decodes its part, strictly, into its own struct:
+
+  ```yaml
+  biz:
+    game:
+      grpc_addr: game-server:9000
+      timeout: 3s
+  ```
+
+  ```go
+  var gc struct {
+      GRPCAddr   string        `mapstructure:"grpc_addr"`
+      InnerToken string        `mapstructure:"inner_token"`
+      Timeout    time.Duration `mapstructure:"timeout"`
+  }
+  err := cfg.Biz.Decode("game", &gc)
+  ```
+
+  Secrets come from the environment: `ADMIN_BIZ_<KEY>` sets `biz.<key>`, a double underscore separates levels (`ADMIN_BIZ_GAME__INNER_TOKEN` → `biz.game.inner_token`), and environment values override the file. Keys named `password`, `secret` or `token`, or ending with `_password`, `_secret` or `_token`, are refused in the file.
+- **Extra databases:** `ADMIN_DATABASE_EXTRA_<NAME>_URL` (postgres:// or mysql://) declares the database `<name>`; pool settings go in the file under `database.extra.<name>` (`max_open_conns` 10, `max_idle_conns` 5, `conn_max_lifetime` 30m, `conn_max_idle_time` 5m, `connect_timeout` 5s, `required` false). Each has its own pool and metrics (`db_name="extra_<name>"`). The connection keeps the server's session defaults: none of the main database's settings (UTC, sql_mode, isolation level) apply, and MySQL URL parameters (`loc`, `tls`, ...) go to the driver; `parseTime=true` is added unless the URL sets it. With `required: true` the API does not start, and `/health/ready` fails, while the database is unreachable; otherwise it starts without it and the module sees the errors. Write that database's own SQL there: the shared-SQL helpers of `internal/platform/database` are for the main database.
+
+Both reach a module in `server/internal/app/modules.go`, where business modules are listed:
+
+```go
+game.New(game.Deps{DB: d.db, GameDB: d.extraDB("game"), Biz: cfg.Biz}),
+```
+
+A module that asks for an extra database that is not configured stops the start with the variable to set.
 
 ## 3. Frontend pages
 
@@ -124,6 +158,7 @@ Conventions the reviewers expect:
 - **Menu icons:** pick them in 菜单管理 (about 100 Remix icons, bundled for offline use). To offer more, add names to `web/scripts/gen-menu-icons.mjs`, run it, and format the output. Other Iconify names typed by hand load from the Iconify API.
 - **Images and attachments in forms:** `<ReImageUpload v-model="form.coverUrl" />` (one image; store the URL in a `varchar(512)` column) and `<ReFileUpload v-model="form.attachments" :limit="5" />` (a list of `{name, url, size}`; store it in a `jsonb NOT NULL DEFAULT '[]'` column), from `@/components/ReUpload/`. They upload to `POST /files/attachments`, which any signed-in user may call under the upload rules of 基础设置. The returned URL contains a random key and opens for signed-in users only, without the media library permission. On the backend, validate what the client sends with `internal/core/attachment` (`attachment.ValidURL` for one URL, `attachment.Validate` for a list), so only attachment URLs are stored. The notice module is a complete example.
 - **Element Plus components:** only the components the project uses are registered, in `web/src/plugins/elementPlus.ts`; `pnpm lint` (`scripts/check-el-components.mjs`) fails when a page or a codegen template uses an `<el-*>` tag that is not registered. Production builds resolve `import { ... } from "element-plus"` to `web/src/plugins/element-plus-entry.ts`, which re-exports from per-component paths (the package's main entry would bundle every component); a value missing there fails the build with "is not exported", so add it there too.
+- **Times:** show them with `formatDateTime`. It uses the time zone chosen in the header (the browser's, labelled like `GMT+8`, or UTC; kept in the browser) and appends the label. Send times as UTC RFC 3339 (`toUTC` from `@/utils/timezone`), and put `<ReUtcHint :value="..." />` under date-time pickers to show the UTC of the picked local time.
 - **Keep IDs as strings,** send `version` back on update, and set `:validate-on-rule-change="false"` on forms whose rules change.
 
 ## 4. Removing a module
