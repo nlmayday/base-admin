@@ -23,6 +23,7 @@ type opLogView struct {
 	Route        string    `json:"route"`
 	Path         string    `json:"path"`
 	Summary      string    `json:"summary"`
+	Target       string    `json:"target"`
 	Status       int       `json:"status"`
 	Code         int       `json:"code"`
 	Success      bool      `json:"success"`
@@ -50,6 +51,7 @@ type opLogRow struct {
 	Route        string
 	Path         string
 	Summary      string
+	Target       string
 	Status       int
 	Code         int
 	Success      bool
@@ -65,7 +67,7 @@ type opLogRow struct {
 // The user is joined for display only; logs keep the id so they survive
 // renamed or deleted users.
 const opLogColumns = `o.id, o.user_id, COALESCE(u.username, '') AS username, COALESCE(u.nickname, '') AS nickname,
-	o.module, o.method, o.route, o.path, o.summary, o.status, o.code, o.success, o.duration_ms,
+	o.module, o.method, o.route, o.path, o.summary, o.target, o.status, o.code, o.success, o.duration_ms,
 	o.ip, o.user_agent, o.request_id, o.error_message, o.created_at`
 
 type opFilter struct {
@@ -77,6 +79,8 @@ type opFilter struct {
 	Success string `form:"success" json:"success"`
 	// Path matches the request path or the operation summary.
 	Path string `form:"path" json:"path" binding:"max=128"`
+	// Target is the operation's object, matched exactly (player:123).
+	Target string `form:"target" json:"target" binding:"max=255"`
 	timeRange
 }
 
@@ -107,6 +111,9 @@ func applyOpFilter(q *gorm.DB, f opFilter) (*gorm.DB, error) {
 	if v := strings.TrimSpace(f.Path); v != "" {
 		like := "%" + escapeLike(v) + "%"
 		q = q.Where("(LOWER(o.path) LIKE LOWER(?) OR LOWER(o.summary) LIKE LOWER(?))", like, like)
+	}
+	if v := strings.TrimSpace(f.Target); v != "" {
+		q = q.Where("o.target = ?", v)
 	}
 	success, err := parseSuccess(f.Success)
 	if err != nil {
@@ -162,7 +169,7 @@ func (m *Module) getOperationLog(c *gin.Context) (any, error) {
 func toOpLogView(r opLogRow) opLogView {
 	return opLogView{
 		ID: ids.ID(r.ID), UserID: optionalID(r.UserID), Username: r.Username, Nickname: r.Nickname,
-		Module: r.Module, Method: r.Method, Route: r.Route, Path: r.Path, Summary: r.Summary,
+		Module: r.Module, Method: r.Method, Route: r.Route, Path: r.Path, Summary: r.Summary, Target: r.Target,
 		Status: r.Status, Code: r.Code, Success: r.Success, DurationMs: r.DurationMs, IP: r.IP,
 		UserAgent: r.UserAgent, RequestID: r.RequestID, ErrorMessage: r.ErrorMessage, CreatedAt: r.CreatedAt,
 	}
@@ -180,13 +187,13 @@ func (m *Module) exportOperationLogs(c *gin.Context) {
 		httpx.Fail(c, err)
 		return
 	}
-	header := []string{"ID", "时间", "用户名", "昵称", "模块", "操作", "方法", "路径", "HTTP 状态",
+	header := []string{"ID", "时间", "用户名", "昵称", "模块", "操作", "操作对象", "方法", "路径", "HTTP 状态",
 		"业务码", "结果", "耗时(ms)", "IP", "请求ID", "错误信息"}
 	writeCSV(c, "operation-logs", header, len(rows), func(i int) []string {
 		r := rows[i]
 		return []string{
 			itoa(r.ID), r.CreatedAt.Format(time.RFC3339), csvCell(r.Username), csvCell(r.Nickname),
-			csvCell(r.Module), csvCell(r.Summary), r.Method, csvCell(r.Path), strconv.Itoa(r.Status),
+			csvCell(r.Module), csvCell(r.Summary), csvCell(r.Target), r.Method, csvCell(r.Path), strconv.Itoa(r.Status),
 			strconv.Itoa(r.Code), boolLabel(r.Success), strconv.Itoa(r.DurationMs), csvCell(r.IP),
 			csvCell(r.RequestID), csvCell(r.ErrorMessage),
 		}

@@ -102,6 +102,11 @@ async function copyBody(): Promise<void> {
           <el-descriptions-item label="时间">
             {{ formatDateTime(detail.createdAt) }}
           </el-descriptions-item>
+          <el-descriptions-item label="操作对象" :span="2">
+            <span class="font-mono text-xs break-all">{{
+              detail.target || "-"
+            }}</span>
+          </el-descriptions-item>
           <el-descriptions-item label="请求路径" :span="2">
             <span class="font-mono text-xs break-all">{{ detail.path }}</span>
           </el-descriptions-item>

@@ -16,6 +16,8 @@ export type OperationLog = {
   path: string;
   /** 操作名称（接口文档中的 Summary） */
   summary: string;
+  /** 操作对象，如 player:123；业务接口用 audit.SetTarget 写入，未写入时为空 */
+  target: string;
   /** HTTP 状态码 */
   status: number;
   /** 业务错误码，0 表示成功 */
@@ -42,6 +44,8 @@ export type OperationLogFilter = {
   success?: "true" | "false" | "";
   /** 路径或操作名称 */
   path?: string;
+  /** 操作对象，精确匹配，如 player:123 */
+  target?: string;
   startTime?: string;
   endTime?: string;
 };

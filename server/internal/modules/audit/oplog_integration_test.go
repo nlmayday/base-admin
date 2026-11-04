@@ -228,3 +228,35 @@ func TestOperationLogModuleNames(t *testing.T) {
 	r := h.call(http.MethodGet, "/api/v1/audit/operation-logs/modules", "", alice)
 	assert.Equal(t, http.StatusForbidden, r.Status)
 }
+
+func TestOperationLogTarget(t *testing.T) {
+	h := newHarness(t)
+	alice := h.createUser("alice", "爱丽丝")
+	require.Equal(t, http.StatusOK, h.call(http.MethodPut, "/api/v1/probe/players/123/ban", "", alice).Status)
+	require.Equal(t, http.StatusConflict, h.call(http.MethodPut, "/api/v1/probe/players/123/ban?fail=1", "", alice).Status)
+	require.Equal(t, http.StatusOK, h.call(http.MethodPut, "/api/v1/probe/players/1234/ban", "", alice).Status)
+	require.Equal(t, http.StatusOK, h.call(http.MethodPost, "/api/v1/probe/players/ban", "{}", alice).Status)
+	require.Equal(t, http.StatusOK, h.call(http.MethodPost, "/api/v1/probe/items", `{"name":"pen"}`, alice).Status)
+	h.waitCount(tableOperationLogs, "TRUE", 5)
+
+	var list httpx.Page[opLogView]
+	h.decode(h.call(http.MethodGet, "/api/v1/audit/operation-logs?target="+url.QueryEscape("player:123"), "", alice, allViewPerms...), &list)
+	require.EqualValues(t, 2, list.Total, "exact match, failed attempts included")
+	for _, v := range list.List {
+		assert.Equal(t, "player:123", v.Target)
+		assert.Equal(t, "封禁玩家", v.Summary)
+	}
+	h.decode(h.call(http.MethodGet, "/api/v1/audit/operation-logs?pageSize=100", "", alice, allViewPerms...), &list)
+	targets := map[string]bool{}
+	for _, v := range list.List {
+		targets[v.Target] = true
+	}
+	assert.True(t, targets["player:1,player:2"], "batch targets are joined")
+	assert.True(t, targets[""], "requests without a target")
+
+	export := h.call(http.MethodGet, "/api/v1/audit/operation-logs/export?target="+url.QueryEscape("player:1234"), "", alice, allViewPerms...)
+	require.Equal(t, http.StatusOK, export.Status)
+	assert.Contains(t, export.Body, "操作对象")
+	assert.Contains(t, export.Body, "player:1234")
+	assert.NotContains(t, export.Body, "player:123,")
+}
