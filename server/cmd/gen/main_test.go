@@ -25,7 +25,7 @@ func fakeRepo(t *testing.T) string {
 }
 
 func fakeLoader(t codegen.Table, err error) loader {
-	return func(context.Context, string, string) (codegen.Table, error) { return t, err }
+	return func(context.Context, string, string, codegen.Spec) (codegen.Table, error) { return t, err }
 }
 
 func widgetTable() codegen.Table {
@@ -109,8 +109,47 @@ func TestLoaderAndGeneratorErrors(t *testing.T) {
 	assert.Contains(t, stderr, "boom")
 
 	bad := widgetTable()
-	bad.Columns[0].Identity = false
+	bad.Columns[1].Primary = true
 	code, _, stderr = runGen(t, baseArgs(root), fakeLoader(bad, nil))
 	assert.Equal(t, 1, code)
-	assert.Contains(t, stderr, "IDENTITY")
+	assert.Contains(t, stderr, "复合主键")
+}
+
+func TestSpecFile(t *testing.T) {
+	root := fakeRepo(t)
+	specs := filepath.Join(t.TempDir(), "specs.json")
+	require.NoError(t, os.WriteFile(specs, []byte(`[
+		{"table": "biz_widgets", "module": "demo", "resource": "widget", "name": "部件", "moduleTitle": "演示"},
+		{"table": "biz_widgets", "module": "demo", "resource": "widget-log", "name": "部件日志", "readOnly": true,
+		 "fields": [{"column": "name", "search": "eq"}]}
+	]`), 0o600))
+	var tables []string
+	load := func(_ context.Context, _, table string, spec codegen.Spec) (codegen.Table, error) {
+		tables = append(tables, table+":"+spec.Resource)
+		return widgetTable(), nil
+	}
+	args := []string{"-spec", specs, "-root", root, "-dsn", "postgres://unused", "-no-format"}
+	code, stdout, stderr := runGen(t, args, load)
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, []string{"biz_widgets:widget", "biz_widgets:widget-log"}, tables, "in order")
+	assert.Contains(t, stdout, "== 2/2 biz_widgets → demo/widget-log")
+	assert.FileExists(t, filepath.Join(root, "server", "internal", "modules", "demo", "widget.go"))
+	log, err := os.ReadFile(filepath.Join(root, "server", "internal", "modules", "demo", "widget_log.go"))
+	require.NoError(t, err)
+	assert.NotContains(t, string(log), "g.POST(", "read-only")
+	assert.NoFileExists(t, filepath.Join(root, "web", "src", "views", "demo", "widget-log", "components", "WidgetLogFormDialog.vue"))
+
+	code, _, stderr = runGen(t, args, load)
+	assert.Equal(t, 1, code, "existing files are kept without -force")
+	assert.Contains(t, stderr, "biz_widgets")
+	code, _, stderr = runGen(t, append(args, "-force"), load)
+	assert.Equal(t, 0, code, "regenerated with -force: %s", stderr)
+
+	require.NoError(t, os.WriteFile(specs, []byte(`[{"table": "x", "module": "demo"}]`), 0o600))
+	code, _, stderr = runGen(t, args, load)
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "required")
+	code, _, stderr = runGen(t, append(args, "-table", "x"), load)
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "-spec replaces")
 }

@@ -11,6 +11,7 @@ import (
 	"base-admin/server/internal/core/menu"
 	"base-admin/server/internal/core/module"
 	"base-admin/server/internal/core/perm"
+	"base-admin/server/internal/platform/ids"
 )
 
 // Name is the module name and permission prefix.
@@ -22,20 +23,32 @@ type Deps struct {
 	// Dict checks dictionary-backed fields (the system module implements
 	// it); nil skips the check.
 	Dict DictLookup
+	// NewID assigns the ids of tables whose id the database does not
+	// generate (snowflake ids); nil uses ids.Next. Pass the generator of the
+	// service that shares the tables.
+	NewID func() int64
 }
 
 // Module is the [[.ModuleTitle]] module.
 type Module struct {
-	db   *gorm.DB
-	dict DictLookup
+	db    *gorm.DB
+	dict  DictLookup
+	newID func() int64
 }
 
 var _ module.Module = (*Module)(nil)
 
 // New creates the module.
 func New(deps Deps) *Module {
-	return &Module{db: deps.DB, dict: deps.Dict}
+	m := &Module{db: deps.DB, dict: deps.Dict, newID: deps.NewID}
+	if m.newID == nil {
+		m.newID = ids.Next
+	}
+	return m
 }
+
+// NextID returns a new id for a row whose id the module assigns.
+func (m *Module) NextID() int64 { return m.newID() }
 
 var rootMenus = []menu.Def{
 	{Code: "[[.ParentMenu]]", Type: menu.TypeDir, Title: "[[.ModuleTitle]]", Path: "/[[.Pkg]]", Icon: "ri:apps-2-line", Sort: 100},

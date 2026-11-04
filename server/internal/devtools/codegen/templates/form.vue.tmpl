@@ -28,13 +28,23 @@ import type { AttachmentRef } from "@/api/file";
 import ReUtcHint from "@/components/ReUtcHint/index.vue";
 import { toUTC } from "@/utils/timezone";
 [[- end]]
+[[- if .Children]]
+import { getDictOptions, type DictOption } from "@/api/system/dict";
+[[- end]]
 import {
+  [[.Lower]]Key,
   create[[.TSUpper]],
+[[- if .Children]]
+  get[[.TSUpper]],
+[[- end]]
 [[- range .RelationFields]]
   [[.RelOptionsTS]],
 [[- end]]
   update[[.TSUpper]],
   type [[.TSUpper]],
+[[- range .Children]]
+  type [[$.TSUpper]][[.GoName]],
+[[- end]]
   type [[.TSUpper]]Payload
 } from "@/api/[[.Pkg]]/[[.Resource]]";
 
@@ -61,6 +71,36 @@ const saving = ref(false);
 const form = reactive<[[.TSUpper]]Form>(emptyForm());
 const { fieldErrors, clearFieldErrors, applyFieldErrors } = useFieldErrors();
 const isEdit = computed(() => props.row !== null);
+[[- range $c := .Children]]
+
+/** [[.Label]]：字典 [[.Spec.KeyDict]] 的每一项一行，打开表单时加载 */
+const [[.JSONName]]Keys = ref<DictOption[]>([]);
+const [[.JSONName]]Rows = ref<[[$.TSUpper]][[.GoName]][]>([]);
+const empty[[.GoName]] = (key: string): [[$.TSUpper]][[.GoName]] => ({
+  [[.Key.JSONName]]: [[$c.KeyFromDict "key"]],
+[[- range .Fields]]
+  [[.JSONName]]: [[.ChildTSDefault]],
+[[- end]]
+});
+
+async function load[[.GoName]](): Promise<void> {
+  let keys: DictOption[] = [];
+  let saved: [[$.TSUpper]][[.GoName]][] = [];
+  try {
+    keys = (await getDictOptions([[printf "%q" .Spec.KeyDict]])) ?? [];
+    if (props.row) {
+      saved = (await get[[$.TSUpper]]([[$.Lower]]Key(props.row))).[[.JSONName]] ?? [];
+    }
+  } catch {
+    // 错误提示已由 http 拦截器处理
+  }
+  [[.JSONName]]Keys.value = keys;
+  [[.JSONName]]Rows.value = keys.map(k => ({
+    ...empty[[.GoName]](k.value),
+    ...saved.find(r => String(r.[[.Key.JSONName]]) === k.value)
+  }));
+}
+[[- end]]
 [[- range .DictFields]]
 const { items: [[.JSONName]]Options } = [[.DictSource]];
 [[- end]]
@@ -90,6 +130,9 @@ watch(visible, open => {
 [[- if .Dept]]
   loadDeptTree();
 [[- end]]
+[[- range .Children]]
+  void load[[.GoName]]();
+[[- end]]
   const r = props.row;
   Object.assign(
     form,
@@ -107,7 +150,15 @@ watch(visible, open => {
 function toPayload(): [[.TSUpper]]Payload {
   return {
 [[- range $i, $f := .Writable]]
-    [[$f.JSONName]]: [[$f.TSSubmit]][[if ne (inc $i) (len $.Writable)]],[[end]]
+    [[$f.JSONName]]: [[$f.TSSubmit]][[if or (ne (inc $i) (len $.Writable)) $.Children]],[[end]]
+[[- end]]
+[[- range $i, $c := .Children]]
+    [[.JSONName]]: [[.JSONName]]Rows.value.map(r => ({
+      [[.Key.JSONName]]: r.[[.Key.JSONName]],
+[[- range $j, $f := .Fields]]
+      [[$f.JSONName]]: [[$f.ChildTSSubmit]][[if ne (inc $j) (len $c.Fields)]],[[end]]
+[[- end]]
+    }))[[if ne (inc $i) (len $.Children)]],[[end]]
 [[- end]]
   };
 }
@@ -120,12 +171,12 @@ async function submit(): Promise<void> {
   try {
     if (props.row) {
 [[- if .Version]]
-      await update[[.TSUpper]](props.row.id, {
+      await update[[.TSUpper]]([[.Lower]]Key(props.row), {
         ...toPayload(),
         version: props.row.version
       });
 [[- else]]
-      await update[[.TSUpper]](props.row.id, toPayload());
+      await update[[.TSUpper]]([[.Lower]]Key(props.row), toPayload());
 [[- end]]
     } else {
       await create[[.TSUpper]](toPayload());
@@ -212,7 +263,7 @@ async function submit(): Promise<void> {
 [[- else if eq .Widget "files"]]
         <ReFileUpload v-model="form.[[.JSONName]]" />
 [[- else if eq .Widget "number"]]
-        <el-input-number v-model="form.[[.JSONName]]" class="w-[200px]!" />
+        <el-input-number v-model="form.[[.JSONName]]"[[if .CreateOnly]] :disabled="isEdit"[[end]] class="w-[200px]!" />
 [[- else if eq .Widget "switch"]]
         <el-switch v-model="form.[[.JSONName]]" />
 [[- else if eq .Widget "datetime"]]
@@ -237,12 +288,49 @@ async function submit(): Promise<void> {
           v-model="form.[[.JSONName]]"
           type="textarea"
           :rows="3"[[if .MaxLen]]
-          maxlength="[[.MaxLen]]"[[end]]
+          maxlength="[[.MaxLen]]"[[end]][[if .CreateOnly]]
+          :disabled="isEdit"[[end]]
         />
 [[- else]]
-        <el-input v-model="form.[[.JSONName]]"[[if .MaxLen]] maxlength="[[.MaxLen]]"[[end]] />
+        <el-input v-model="form.[[.JSONName]]"[[if .MaxLen]] maxlength="[[.MaxLen]]"[[end]][[if .CreateOnly]] :disabled="isEdit"[[end]] />
 [[- end]]
       </el-form-item>
+[[- end]]
+[[- range $c := .Children]]
+      <el-divider content-position="left">[[.Label]]</el-divider>
+      <el-tabs v-if="[[.JSONName]]Rows.length" type="border-card">
+        <el-tab-pane
+          v-for="(row, i) in [[.JSONName]]Rows"
+          :key="String(row.[[.Key.JSONName]])"
+          :label="[[.JSONName]]Keys[i]?.label ?? String(row.[[.Key.JSONName]])"
+        >
+[[- range .Fields]]
+          <el-form-item
+            label="[[.Label]]"
+            :error="fieldErrors[`[[$c.JSONName]][${i}].[[.JSONName]]`]"
+          >
+[[- if eq .Widget "textarea"]]
+            <el-input v-model="row.[[.JSONName]]" type="textarea" :rows="2"[[if .MaxLen]] maxlength="[[.MaxLen]]"[[end]] />
+[[- else if eq .Widget "number"]]
+            <el-input-number v-model="row.[[.JSONName]]" class="w-[200px]!" />
+[[- else if eq .Widget "switch"]]
+            <el-switch v-model="row.[[.JSONName]]" />
+[[- else if eq .Widget "date"]]
+            <el-date-picker v-model="row.[[.JSONName]]" type="date" value-format="YYYY-MM-DD" class="w-full!" />
+[[- else if eq .Widget "datetime"]]
+            <el-date-picker v-model="row.[[.JSONName]]" type="datetime" value-format="YYYY-MM-DDTHH:mm:ssZ" class="w-full!" />
+[[- else]]
+            <el-input v-model="row.[[.JSONName]]"[[if .MaxLen]] maxlength="[[.MaxLen]]"[[end]] />
+[[- end]]
+          </el-form-item>
+[[- end]]
+        </el-tab-pane>
+      </el-tabs>
+      <el-empty
+        v-else
+        description="数据字典 [[.Spec.KeyDict]] 没有启用的项"
+        :image-size="60"
+      />
 [[- end]]
     </el-form>
     <template #footer>

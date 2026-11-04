@@ -3,6 +3,7 @@ package codegen
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -23,6 +24,14 @@ type Spec struct {
 	// Fields customizes columns (label, list, form, search); columns not
 	// listed keep the defaults.
 	Fields []FieldOption `json:"fields,omitempty"`
+	// KeyMode is how rows get their primary key (KeyAuto, KeyGenerated,
+	// KeyInput); "" picks it from the column (keys.go).
+	KeyMode string `json:"keyMode,omitempty"`
+	// ReadOnly generates the list, detail and export only: no form, no
+	// create, update or delete (logs, orders, ledgers).
+	ReadOnly bool `json:"readOnly,omitempty"`
+	// Children are tables edited together with each row (children.go).
+	Children []ChildSpec `json:"children,omitempty"`
 }
 
 // reservedModules are existing core module names.
@@ -59,6 +68,12 @@ func (s Spec) Problems() []Problem {
 	if s.ParentMenu != "" && (!strings.HasPrefix(s.ParentMenu, s.Module+".") || strings.ContainsAny(s.ParentMenu, unsafeText)) {
 		add("parentMenu", "上级菜单必须是模块 "+s.Module+" 的菜单编码")
 	}
+	if s.KeyMode != "" && !slices.Contains(keyModes, s.KeyMode) {
+		add("keyMode", "keyMode 须为 "+strings.Join(keyModes, "、")+" 之一")
+	}
+	if s.ReadOnly && len(s.Children) > 0 {
+		add("children", "只读模块不能编辑子表")
+	}
 	return out
 }
 
@@ -87,7 +102,7 @@ const (
 
 func columnRole(c Column, k kind) string {
 	switch {
-	case c.Name == "id":
+	case c.Primary:
 		return roleID
 	case c.Name == "version" && (k == kindInt || k == kindInt16 || k == kindInt64) && !c.Nullable:
 		return roleVersion
@@ -97,7 +112,9 @@ func columnRole(c Column, k kind) string {
 		return c.Name
 	case c.Name == "deleted_at" && k == kindTime && c.Nullable:
 		return roleDeletedAt
-	case c.Name == "status" && (k == kindInt16 || k == kindInt) && !c.Nullable:
+	case c.Name == "status" && (k == kindInt16 || k == kindInt) && !c.Nullable && len(parseCommentOptions(c.Comment)) == 0:
+		// Options in the comment (状态：1=待支付,2=已支付) give the column its
+		// own meaning; otherwise it is the standard 1 启用 / 2 停用.
 		return roleStatus
 	case c.Name == "sort" && (k == kindInt16 || k == kindInt):
 		return roleSort
@@ -145,6 +162,7 @@ type Field struct {
 	// join alias, quoted names, the label field and the lookup variable.
 	Relation                                string
 	RelAlias, RelTable, RelLabelSQL, RelVar string
+	RelKey                                  string
 	RelTarget, RelOptionsTS                 string
 	LabelColumn, LabelGo, LabelJSON         string
 	// DictSource is the TypeScript expression that yields the options
@@ -205,6 +223,8 @@ type Field struct {
 	// NULL without a default, so the form must include it.
 	canWrite, mustWrite bool
 	listOverride        *bool
+	// CreateOnly: set on create, never changed (a typed-in primary key).
+	CreateOnly bool
 }
 
 func newField(c Column, ti typeInfo) *Field {
@@ -377,6 +397,9 @@ func (f *Field) tsText() {
 
 // sample returns a Go literal accepted by the request binding.
 func (f *Field) sample() string {
+	if f.CreateOnly && f.Kind == kindString {
+		return goString("k1") // a path segment in the test
+	}
 	switch f.Upload {
 	case UploadImage:
 		return goString(sampleAttachmentURL)

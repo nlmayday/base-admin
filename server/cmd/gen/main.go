@@ -24,6 +24,12 @@ import (
 )
 
 const usage = `usage: go run ./cmd/gen -table <table> -module <module> -resource <resource> -name <中文名> [flags]
+       go run ./cmd/gen -spec <specs.json> [flags]
+
+-spec reads one spec or a list of them, each with the fields of the codegen
+page ("table", "module", "resource", "name", "moduleTitle", "parentMenu",
+"fields", "keyMode", "readOnly", "children"), and generates them in order:
+the way to generate many tables, and to generate them again with -force.
 
 Generates server/internal/modules/<module>/<resource>.go (plus module.go and
 common.go for a new module), an integration test skeleton, and the frontend
@@ -35,14 +41,41 @@ flags:
 
 // options are the parsed command-line flags.
 type options struct {
-	table, dsn, root string
-	spec             codegen.Spec
+	dsn, root        string
+	jobs             []job
 	force, dryRun    bool
 	noFormat, noWire bool
 }
 
-// loader reads a table definition.
-type loader func(ctx context.Context, dsn, table string) (codegen.Table, error)
+// job is one table to generate.
+type job struct {
+	table string
+	spec  codegen.Spec
+}
+
+// specEntry is one spec of a -spec file, with the JSON names of the codegen
+// page's request.
+type specEntry struct {
+	Table       string                `json:"table"`
+	Module      string                `json:"module"`
+	Resource    string                `json:"resource"`
+	Name        string                `json:"name"`
+	ModuleTitle string                `json:"moduleTitle,omitempty"`
+	ParentMenu  string                `json:"parentMenu,omitempty"`
+	Fields      []codegen.FieldOption `json:"fields,omitempty"`
+	KeyMode     string                `json:"keyMode,omitempty"`
+	ReadOnly    bool                  `json:"readOnly,omitempty"`
+	Children    []codegen.ChildSpec   `json:"children,omitempty"`
+}
+
+func (e specEntry) job() job {
+	return job{table: e.Table, spec: codegen.Spec{Module: e.Module, Resource: e.Resource, Name: e.Name,
+		ModuleTitle: e.ModuleTitle, ParentMenu: e.ParentMenu, Fields: e.Fields, KeyMode: e.KeyMode,
+		ReadOnly: e.ReadOnly, Children: e.Children}}
+}
+
+// loader reads a table definition with the tables the spec refers to.
+type loader func(ctx context.Context, dsn, table string, spec codegen.Spec) (codegen.Table, error)
 
 func main() {
 	os.Exit(run(context.Background(), os.Args[1:], os.Stdout, os.Stderr, loadTable))
@@ -50,18 +83,23 @@ func main() {
 
 func parseFlags(args []string, stderr io.Writer) (options, error) {
 	var o options
+	var one specEntry
 	fs := flag.NewFlagSet("gen", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() {
 		_, _ = fmt.Fprint(stderr, usage)
 		fs.PrintDefaults()
 	}
-	fs.StringVar(&o.table, "table", "", "source table in the current schema (required)")
-	fs.StringVar(&o.spec.Module, "module", "", "module / Go package name, e.g. example (required)")
-	fs.StringVar(&o.spec.Resource, "resource", "", "kebab-case resource name, e.g. customer (required)")
-	fs.StringVar(&o.spec.Name, "name", "", "Chinese display name, e.g. 客户 (required)")
-	fs.StringVar(&o.spec.ModuleTitle, "module-title", "", "directory menu title when the module is new (default: module name)")
-	fs.StringVar(&o.spec.ParentMenu, "parent-menu", "", "parent menu code (default: <module>.root)")
+	fs.StringVar(&one.Table, "table", "", "source table in the current schema (required without -spec)")
+	fs.StringVar(&one.Module, "module", "", "module / Go package name, e.g. example (required without -spec)")
+	fs.StringVar(&one.Resource, "resource", "", "kebab-case resource name, e.g. customer (required without -spec)")
+	fs.StringVar(&one.Name, "name", "", "Chinese display name, e.g. 客户 (required without -spec)")
+	fs.StringVar(&one.ModuleTitle, "module-title", "", "directory menu title when the module is new (default: module name)")
+	fs.StringVar(&one.ParentMenu, "parent-menu", "", "parent menu code (default: <module>.root)")
+	fs.StringVar(&one.KeyMode, "key-mode", "", "how rows get their primary key: auto, generated (snowflake, Deps.NewID) or input (default: from the column)")
+	fs.BoolVar(&one.ReadOnly, "read-only", false, "generate the list, detail and export only")
+	specFile := fs.String("spec", "", "JSON file with one spec or a list of specs (see above)")
+	children := fs.String("children", "", `child tables as JSON, e.g. '[{"table":"lg_item_i18n","foreignKey":"item_id","keyColumn":"lang","keyDict":"lang"}]'`)
 	fs.StringVar(&o.root, "root", "", "repository root (default: found from the working directory)")
 	fs.StringVar(&o.dsn, "dsn", os.Getenv("ADMIN_DATABASE_URL"), "database URL, postgres:// or mysql:// (default: $ADMIN_DATABASE_URL)")
 	fs.BoolVar(&o.force, "force", false, "overwrite existing files")
@@ -75,21 +113,41 @@ func parseFlags(args []string, stderr io.Writer) (options, error) {
 	if fs.NArg() > 0 {
 		return o, fmt.Errorf("unexpected arguments: %s", strings.Join(fs.Args(), " "))
 	}
-	if *fields != "" {
-		dec := json.NewDecoder(strings.NewReader(*fields))
+	for flagName, raw := range map[string]struct {
+		text string
+		dst  any
+	}{"-fields": {*fields, &one.Fields}, "-children": {*children, &one.Children}} {
+		if raw.text == "" {
+			continue
+		}
+		dec := json.NewDecoder(strings.NewReader(raw.text))
 		dec.DisallowUnknownFields()
-		if err := dec.Decode(&o.spec.Fields); err != nil {
-			return o, fmt.Errorf("invalid -fields JSON: %w", err)
+		if err := dec.Decode(raw.dst); err != nil {
+			return o, fmt.Errorf("invalid %s JSON: %w", flagName, err)
 		}
 	}
-	var missing []string
-	for name, v := range map[string]string{"-table": o.table, "-module": o.spec.Module, "-resource": o.spec.Resource, "-name": o.spec.Name} {
-		if v == "" {
-			missing = append(missing, name)
+	if *specFile != "" {
+		if one.Table != "" || one.Module != "" {
+			return o, errors.New("-spec replaces -table, -module, -resource and -name")
 		}
-	}
-	if len(missing) > 0 {
-		return o, fmt.Errorf("missing required flags: %s", strings.Join(slices.Sorted(slices.Values(missing)), ", "))
+		entries, err := readSpecs(*specFile)
+		if err != nil {
+			return o, err
+		}
+		for _, e := range entries {
+			o.jobs = append(o.jobs, e.job())
+		}
+	} else {
+		var missing []string
+		for name, v := range map[string]string{"-table": one.Table, "-module": one.Module, "-resource": one.Resource, "-name": one.Name} {
+			if v == "" {
+				missing = append(missing, name)
+			}
+		}
+		if len(missing) > 0 {
+			return o, fmt.Errorf("missing required flags: %s", strings.Join(slices.Sorted(slices.Values(missing)), ", "))
+		}
+		o.jobs = []job{one.job()}
 	}
 	if o.dsn == "" {
 		return o, errors.New("no database: set ADMIN_DATABASE_URL or pass -dsn")
@@ -113,6 +171,39 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, load load
 	return 0
 }
 
+// readSpecs reads a -spec file: one spec or a list of them.
+func readSpecs(path string) ([]specEntry, error) {
+	raw, err := os.ReadFile(path) //nolint:gosec // G304: a file the developer names
+	if err != nil {
+		return nil, fmt.Errorf("read -spec: %w", err)
+	}
+	decode := func(dst any) error {
+		dec := json.NewDecoder(strings.NewReader(string(raw)))
+		dec.DisallowUnknownFields()
+		return dec.Decode(dst)
+	}
+	var list []specEntry
+	if strings.HasPrefix(strings.TrimSpace(string(raw)), "[") {
+		err = decode(&list)
+	} else {
+		var one specEntry
+		err = decode(&one)
+		list = []specEntry{one}
+	}
+	if err != nil {
+		return nil, fmt.Errorf("invalid -spec JSON: %w", err)
+	}
+	if len(list) == 0 {
+		return nil, errors.New("-spec lists no table")
+	}
+	for i, e := range list {
+		if e.Table == "" || e.Module == "" || e.Resource == "" || e.Name == "" {
+			return nil, fmt.Errorf("-spec entry %d: table, module, resource and name are required", i+1)
+		}
+	}
+	return list, nil
+}
+
 func generate(ctx context.Context, o options, stdout io.Writer, load loader) error {
 	root := o.root
 	if root == "" {
@@ -124,18 +215,30 @@ func generate(ctx context.Context, o options, stdout io.Writer, load loader) err
 			return err
 		}
 	}
-	table, err := load(ctx, o.dsn, o.table)
+	for i, j := range o.jobs {
+		if len(o.jobs) > 1 {
+			_, _ = fmt.Fprintf(stdout, "\n== %d/%d %s → %s/%s\n", i+1, len(o.jobs), j.table, j.spec.Module, j.spec.Resource)
+		}
+		if err := generateOne(ctx, o, j, root, stdout, load); err != nil {
+			return fmt.Errorf("%s: %w", j.table, err)
+		}
+	}
+	return nil
+}
+
+func generateOne(ctx context.Context, o options, j job, root string, stdout io.Writer, load loader) error {
+	table, err := load(ctx, o.dsn, j.table, j.spec)
 	if err != nil {
 		return err
 	}
-	o.spec.NewModule = !codegen.ModuleExists(root, o.spec.Module)
-	res, err := codegen.Generate(table, o.spec)
+	j.spec.NewModule = !codegen.ModuleExists(root, j.spec.Module)
+	res, err := codegen.Generate(table, j.spec)
 	if err != nil {
 		return err
 	}
 	if o.dryRun {
 		printFiles(stdout, res)
-		printSummary(stdout, res, o.spec, false)
+		printSummary(stdout, res, j.spec, false)
 		return nil
 	}
 	if err := codegen.Write(root, res.Files, o.force); err != nil {
@@ -152,20 +255,20 @@ func generate(ctx context.Context, o options, stdout io.Writer, load loader) err
 	wired := false
 	switch {
 	case o.noWire:
-	case o.spec.NewModule:
-		if wired, err = codegen.Wire(root, o.spec.Module); err != nil {
+	case j.spec.NewModule:
+		if wired, err = codegen.Wire(root, j.spec.Module); err != nil {
 			_, _ = fmt.Fprintln(stdout, "note: 模块未能自动接入：", err)
 		} else if wired {
 			_, _ = fmt.Fprintln(stdout, "registered the module in server/internal/app/modules.go")
 		}
 	default:
-		if wired, err = codegen.WireResource(root, o.spec); err != nil {
+		if wired, err = codegen.WireResource(root, j.spec); err != nil {
 			_, _ = fmt.Fprintln(stdout, "note: 新资源未能自动注册：", err, "；", res.ManualWiring)
 		} else if wired {
-			_, _ = fmt.Fprintf(stdout, "registered the resource in server/internal/modules/%s/module.go\n", o.spec.Module)
+			_, _ = fmt.Fprintf(stdout, "registered the resource in server/internal/modules/%s/module.go\n", j.spec.Module)
 		}
 	}
-	printSummary(stdout, res, o.spec, wired)
+	printSummary(stdout, res, j.spec, wired)
 	return nil
 }
 
@@ -199,8 +302,9 @@ func indent(s string) string {
 	return "  " + strings.ReplaceAll(s, "\n", "\n  ")
 }
 
-// loadTable reads the table definition from PostgreSQL.
-func loadTable(ctx context.Context, dsn, table string) (codegen.Table, error) {
+// loadTable reads the table definition, and the tables the spec refers to,
+// from the database.
+func loadTable(ctx context.Context, dsn, table string, spec codegen.Spec) (codegen.Table, error) {
 	cfg := config.DatabaseConfig{
 		URL: dsn, MaxOpenConns: 2, MaxIdleConns: 1, ConnMaxLifetime: time.Minute, ConnMaxIdleTime: time.Minute,
 		ConnectTimeout: 5 * time.Second, StatementTimeout: 30 * time.Second, SlowQueryThreshold: time.Second,
@@ -214,5 +318,9 @@ func loadTable(ctx context.Context, dsn, table string) (codegen.Table, error) {
 	if err != nil {
 		return codegen.Table{}, err
 	}
-	return codegen.Introspect(ctx, db, table)
+	table2, err := codegen.Load(ctx, db, table, spec)
+	if errors.Is(err, codegen.ErrSpec) {
+		return table2, errors.New(codegen.SpecMessage(err))
+	}
+	return table2, err
 }

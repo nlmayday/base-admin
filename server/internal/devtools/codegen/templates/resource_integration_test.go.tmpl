@@ -52,6 +52,10 @@ func new[[.Upper]]TestServer(t *testing.T) http.Handler {
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	db, err := database.NewGorm(sqlDB, cfg, zap.NewNop())
 	require.NoError(t, err)
+	if !db.Migrator().HasTable([[.Lower]]Table) {
+		t.Skip([[.Lower]]Table + " is not created by this project's migrations (another service owns it): " +
+			"create it in the test to run these tests")
+	}
 	engine := gin.New()
 	m := New(Deps{DB: db})
 	m.[[.Lower]]Routes(module.NewRouter(engine.Group("/api/v1"), Name, [[.Lower]]TestGuard{}, module.NewRegistry()))
@@ -75,6 +79,22 @@ func call[[.Upper]](t *testing.T, h http.Handler, method, path string, body any)
 	return rec.Code, env
 }
 
+[[- if .ReadOnly]]
+
+func Test[[.Upper]]ReadOnly(t *testing.T) {
+	h := new[[.Upper]]TestServer(t)
+	const base = "/api/v1[[.URLPath]]"
+	status, env := call[[.Upper]](t, h, http.MethodGet, base+"?page=1&pageSize=10", nil)
+	require.Equal(t, http.StatusOK, status, string(env.Data))
+	status, _ = call[[.Upper]](t, h, http.MethodGet, base+"/export", nil)
+	assert.Equal(t, http.StatusOK, status)
+	status, _ = call[[.Upper]](t, h, http.MethodGet, base+"/[[.MissingKey]]", nil)
+	assert.Equal(t, http.StatusNotFound, status)
+	status, _ = call[[.Upper]](t, h, http.MethodPost, base, map[string]any{})
+	assert.Equal(t, http.StatusNotFound, status, "a read-only module has no create route")
+}
+[[- else]]
+
 func Test[[.Upper]]CRUD(t *testing.T) {
 	h := new[[.Upper]]TestServer(t)
 	const base = "/api/v1[[.URLPath]]"
@@ -83,16 +103,20 @@ func Test[[.Upper]]CRUD(t *testing.T) {
 [[- range .SampleFields]]
 		"[[.JSONName]]": [[.Sample]],
 [[- end]]
+[[- range .Children]]
+		"[[.JSONName]]": []any{map[string]any{"[[.Key.JSONName]]": [[.KeySample]][[range .Fields]], "[[.JSONName]]": [[.SampleValue]][[end]]}},
+[[- end]]
 	}
 
 	status, env := call[[.Upper]](t, h, http.MethodPost, base, payload)
 	require.Equal(t, http.StatusOK, status, string(env.Data))
 	var created struct {
-		ID      string `json:"id"`
-		Version int    `json:"version"`
+		Key     json.RawMessage `json:"[[.PK.JSONName]]"`
+		Version int             `json:"version"`
 	}
 	require.NoError(t, json.Unmarshal(env.Data, &created))
-	require.NotEmpty(t, created.ID)
+	key := strings.Trim(string(created.Key), `"`)
+	require.NotEmpty(t, key)
 [[- if .UniqueFields]]
 
 	// The same unique value again is a field error, not a 409.
@@ -109,29 +133,33 @@ func Test[[.Upper]]CRUD(t *testing.T) {
 	require.NoError(t, json.Unmarshal(env.Data, &page))
 	assert.Equal(t, int64(1), page.Total)
 
-	status, _ = call[[.Upper]](t, h, http.MethodGet, base+"/"+created.ID, nil)
+	status, env = call[[.Upper]](t, h, http.MethodGet, base+"/"+key, nil)
 	assert.Equal(t, http.StatusOK, status)
+[[- range .Children]]
+	assert.Contains(t, string(env.Data), `"[[.JSONName]]":[{`, "the detail has the [[.Label]] rows")
+[[- end]]
 [[- if .Version]]
 
 	payload["version"] = created.Version
-	status, env = call[[.Upper]](t, h, http.MethodPut, base+"/"+created.ID, payload)
+	status, env = call[[.Upper]](t, h, http.MethodPut, base+"/"+key, payload)
 	require.Equal(t, http.StatusOK, status, string(env.Data))
-	status, _ = call[[.Upper]](t, h, http.MethodPut, base+"/"+created.ID, payload)
+	status, _ = call[[.Upper]](t, h, http.MethodPut, base+"/"+key, payload)
 	assert.Equal(t, http.StatusConflict, status, "a stale version is rejected")
 [[- else]]
 
-	status, env = call[[.Upper]](t, h, http.MethodPut, base+"/"+created.ID, payload)
+	status, env = call[[.Upper]](t, h, http.MethodPut, base+"/"+key, payload)
 	require.Equal(t, http.StatusOK, status, string(env.Data))
 [[- end]]
 
 	status, _ = call[[.Upper]](t, h, http.MethodGet, base+"/export", nil)
 	assert.Equal(t, http.StatusOK, status)
 
-	status, _ = call[[.Upper]](t, h, http.MethodDelete, base+"/"+created.ID, nil)
+	status, _ = call[[.Upper]](t, h, http.MethodDelete, base+"/"+key, nil)
 	require.Equal(t, http.StatusOK, status)
-	status, _ = call[[.Upper]](t, h, http.MethodGet, base+"/"+created.ID, nil)
+	status, _ = call[[.Upper]](t, h, http.MethodGet, base+"/"+key, nil)
 	assert.Equal(t, http.StatusNotFound, status)
 }
+[[- end]]
 [[- if .HasRequired]]
 
 func Test[[.Upper]]Validation(t *testing.T) {

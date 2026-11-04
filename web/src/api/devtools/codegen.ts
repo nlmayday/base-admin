@@ -65,6 +65,25 @@ export type CodegenFieldOption = {
   dict?: string;
   upload?: UploadMode;
   relation?: string;
+  /** 不依赖外键声明的关联：本列（bigint）指向 refTable.refKey（默认 id），relation 为显示列 */
+  refTable?: string;
+  refKey?: string;
+};
+
+/** 主键来源：auto 数据库自增，generated 程序生成（雪花 ID），input 新增时填写；空为按列自动判断 */
+export type CodegenKeyMode = "" | "auto" | "generated" | "input";
+
+/** 随主表一起编辑的子表（如多语言表），每个键（如语言）一行 */
+export type CodegenChild = {
+  table: string;
+  /** 子表中指向主表主键的列 */
+  foreignKey: string;
+  /** 区分同一主表行下各子表行的列，如 lang */
+  keyColumn: string;
+  /** 列出键值的数据字典，如 lang */
+  keyDict: string;
+  /** 表单中的分组标题，如 多语言 */
+  label?: string;
 };
 
 export type CodegenTable = {
@@ -83,6 +102,10 @@ export type CodegenRequest = {
   name: string;
   moduleTitle: string;
   fields?: CodegenFieldOption[];
+  keyMode?: CodegenKeyMode;
+  /** 只读：只生成列表、详情和导出 */
+  readOnly?: boolean;
+  children?: CodegenChild[];
 };
 
 export type CodegenGenerateResult = {

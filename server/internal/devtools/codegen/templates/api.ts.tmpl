@@ -10,6 +10,18 @@ import {
 import type { AttachmentRef } from "@/api/file";
 [[- end]]
 
+[[- range $c := .Children]]
+/** [[.Label]]（[[.Table]]）的一行，按[[.Key.Label]]区分 */
+export type [[$.TSUpper]][[.GoName]] = {
+  /** [[.Key.Label]] */
+  [[.Key.JSONName]]: [[.Key.TSType]];
+[[- range .Fields]]
+  /** [[.Label]] */
+  [[.JSONName]]: [[.TSType]];
+[[- end]]
+};
+
+[[ end -]]
 /** [[.Name]]（[[.Table]]），由 cmd/gen 生成 */
 export type [[.TSUpper]] = {
 [[- range .Fields]]
@@ -23,6 +35,10 @@ export type [[.TSUpper]] = {
 [[- range .Relations]]
   /** [[.Label]]名称 */
   [[.LabelJSON]]: string;
+[[- end]]
+[[- range .Children]]
+  /** [[.Label]]：详情接口返回，列表不返回 */
+  [[.JSONName]]?: [[$.TSUpper]][[.GoName]][];
 [[- end]]
 };
 
@@ -38,14 +54,20 @@ export type [[.TSUpper]]Filter = {
 export type [[.TSUpper]]Filter = Record<string, never>;
 [[- end]]
 
+[[- if not .ReadOnly]]
+
 export type [[.TSUpper]]Payload = {
 [[- range .Writable]]
   [[.JSONName]]: [[.TSReqType]];
+[[- end]]
+[[- range .Children]]
+  [[.JSONName]]: [[$.TSUpper]][[.GoName]][];
 [[- end]]
 };
 [[- if .Version]]
 
 export type [[.TSUpper]]UpdatePayload = [[.TSUpper]]Payload & { version: number };
+[[- end]]
 [[- end]]
 
 const enc = encodeURIComponent;
@@ -53,8 +75,12 @@ const enc = encodeURIComponent;
 export const list[[.TSPluralUpper]] = (query: PageQuery & [[.TSUpper]]Filter) =>
   http.get<Page<[[.TSUpper]]>>("[[.URLPath]]", compactParams(query));
 
+/** 行的主键（[[.PK.Column]]），用于详情、编辑、删除的路径 */
+export const [[.Lower]]Key = (row: [[.TSUpper]]): string => String(row.[[.PK.JSONName]]);
+
 export const get[[.TSUpper]] = (id: string) =>
   http.get<[[.TSUpper]]>(`[[.URLPath]]/${enc(id)}`);
+[[- if not .ReadOnly]]
 
 export const create[[.TSUpper]] = (data: [[.TSUpper]]Payload) =>
   http.post<[[.TSUpper]]>("[[.URLPath]]", data);
@@ -66,10 +92,11 @@ export const update[[.TSUpper]] = (
 
 export const delete[[.TSUpper]] = (id: string) =>
   http.delete<null>(`[[.URLPath]]/${enc(id)}`);
+[[- end]]
 
 export const export[[.TSPluralUpper]] = (filter: [[.TSUpper]]Filter) =>
   http.download("[[.URLPath]]/export", compactParams(filter), "[[.URLName]].csv");
-[[- range .Relations]]
+[[- range .OptionRelations]]
 
 /** [[.Label]]选项：按关键字搜索 [[.RelTable]] */
 export const [[.RelOptionsTS]] = (keyword: string) =>

@@ -289,7 +289,7 @@ const gadgetDDL = `CREATE TABLE biz_gadgets (
 	deleted_at timestamptz
 );
 COMMENT ON TABLE biz_gadgets IS '小工具';
-CREATE TABLE biz_bad (id integer PRIMARY KEY);`
+CREATE TABLE biz_bad (code varchar(8));`
 
 // mysqlGadgetDDL is gadgetDDL for MySQL.
 const mysqlGadgetDDL = `CREATE TABLE biz_gadgets (
@@ -302,7 +302,7 @@ const mysqlGadgetDDL = `CREATE TABLE biz_gadgets (
 	created_by bigint,
 	deleted_at datetime(6)
 ) COMMENT='小工具';
-CREATE TABLE biz_bad (id integer PRIMARY KEY);`
+CREATE TABLE biz_bad (code varchar(8));`
 
 // createGadgets creates the gadget tables of the tests.
 func (h *harness) createGadgets() {

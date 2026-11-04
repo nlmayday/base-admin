@@ -34,7 +34,7 @@ func (m *Module) codegenTables(c *gin.Context) (any, error) {
 	if err := m.requireDev(); err != nil {
 		return nil, err
 	}
-	return codegen.ListTables(c.Request.Context(), m.deps.DB)
+	return codegen.ListTables(c.Request.Context(), m.deps.DB, m.deps.Database.MigrationsTable, m.deps.Database.AppMigrationsTable)
 }
 
 type previewRequest struct {
@@ -44,6 +44,9 @@ type previewRequest struct {
 	Name        string                `json:"name" binding:"required,max=20" doc:"中文名，如 订单"`
 	ModuleTitle string                `json:"moduleTitle" binding:"max=20" doc:"新模块的目录菜单标题"`
 	Fields      []codegen.FieldOption `json:"fields" binding:"max=200,dive" doc:"字段配置（中文名、列表、表单、搜索方式）；不传的字段使用默认值"`
+	KeyMode     string                `json:"keyMode,omitempty" binding:"omitempty,oneof=auto generated input" doc:"主键来源：auto 数据库自增，generated 程序生成（雪花 ID），input 新增时填写；不传按列自动判断"`
+	ReadOnly    bool                  `json:"readOnly,omitempty" doc:"只读：只生成列表、详情和导出"`
+	Children    []codegen.ChildSpec   `json:"children,omitempty" binding:"max=5" doc:"随主表一起编辑的子表（如多语言表），每个键（如语言）一行"`
 }
 
 type generateRequest struct {
@@ -167,11 +170,16 @@ func (m *Module) codegenDicts(c *gin.Context) (any, error) {
 }
 
 // missingDicts returns the field problems for dictionaries that do not exist.
-func (m *Module) missingDicts(c *gin.Context, fields []codegen.FieldOption) ([]codegen.Problem, error) {
+func (m *Module) missingDicts(c *gin.Context, fields []codegen.FieldOption, children []codegen.ChildSpec) ([]codegen.Problem, error) {
 	var codes []string
 	for _, f := range fields {
 		if code := dictCode(f); code != "" {
 			codes = append(codes, code)
+		}
+	}
+	for _, ch := range children {
+		if ch.KeyDict != "" {
+			codes = append(codes, ch.KeyDict)
 		}
 	}
 	if len(codes) == 0 {
@@ -186,6 +194,11 @@ func (m *Module) missingDicts(c *gin.Context, fields []codegen.FieldOption) ([]c
 	for _, f := range fields {
 		if code := dictCode(f); code != "" && !slices.Contains(found, code) {
 			out = append(out, codegen.Problem{Field: "fields", Message: "字段 " + f.Column + " 绑定的字典 " + code + " 不存在，请先在「数据字典」中创建"})
+		}
+	}
+	for _, ch := range children {
+		if ch.KeyDict != "" && !slices.Contains(found, ch.KeyDict) {
+			out = append(out, codegen.Problem{Field: "children", Message: "子表 " + ch.Table + " 的键字典 " + ch.KeyDict + " 不存在，请先在「数据字典」中创建"})
 		}
 	}
 	return out, nil
@@ -221,6 +234,24 @@ func (m *Module) codegenFields(c *gin.Context) (any, error) {
 	return codegen.Describe(table)
 }
 
+// loadSpecTable is loadTable with the tables the spec refers to (declared
+// relations, child tables).
+func (m *Module) loadSpecTable(c *gin.Context, name string, spec codegen.Spec) (codegen.Table, error) {
+	table, err := codegen.Load(c.Request.Context(), m.deps.DB, name, spec)
+	switch {
+	case errors.Is(err, codegen.ErrTableNotFound):
+		return table, tableError("数据表不存在")
+	case errors.Is(err, codegen.ErrSpec):
+		return table, httpx.Validation([]httpx.FieldError{{Field: "fields", Message: codegen.SpecMessage(err)}})
+	case err != nil:
+		return table, err
+	}
+	if err := codegen.CheckTable(table); err != nil {
+		return table, tableError(err.Error())
+	}
+	return table, nil
+}
+
 // loadTable introspects and checks a table, mapping problems to field errors.
 func (m *Module) loadTable(c *gin.Context, name string) (codegen.Table, error) {
 	table, err := codegen.Introspect(c.Request.Context(), m.deps.DB, name)
@@ -238,16 +269,17 @@ func (m *Module) loadTable(c *gin.Context, name string) (codegen.Table, error) {
 
 // prepare validates a request and generates the files in memory.
 func (m *Module) prepare(c *gin.Context, req previewRequest) (codegen.Result, codegen.Spec, error) {
-	spec := codegen.Spec{Module: req.Module, Resource: req.Resource, Name: req.Name, ModuleTitle: req.ModuleTitle, Fields: req.Fields}
+	spec := codegen.Spec{Module: req.Module, Resource: req.Resource, Name: req.Name, ModuleTitle: req.ModuleTitle,
+		Fields: req.Fields, KeyMode: req.KeyMode, ReadOnly: req.ReadOnly, Children: req.Children}
 	if problems := spec.Problems(); len(problems) > 0 {
 		return codegen.Result{}, spec, problemsError(problems)
 	}
-	table, err := m.loadTable(c, req.Table)
+	table, err := m.loadSpecTable(c, req.Table, spec)
 	if err != nil {
 		return codegen.Result{}, spec, err
 	}
 	problems := spec.FieldProblems(table)
-	missing, err := m.missingDicts(c, spec.Fields)
+	missing, err := m.missingDicts(c, spec.Fields, spec.Children)
 	if err != nil {
 		return codegen.Result{}, spec, err
 	}
@@ -415,6 +447,16 @@ func cliCommand(req previewRequest) string {
 		// Labels cannot contain quotes (validated), so single quotes are safe.
 		raw, _ := json.Marshal(req.Fields)
 		parts = append(parts, "-fields '"+string(raw)+"'")
+	}
+	if req.KeyMode != "" {
+		parts = append(parts, "-key-mode "+req.KeyMode)
+	}
+	if req.ReadOnly {
+		parts = append(parts, "-read-only")
+	}
+	if len(req.Children) > 0 {
+		raw, _ := json.Marshal(req.Children)
+		parts = append(parts, "-children '"+string(raw)+"'")
 	}
 	return strings.Join(parts, " ")
 }

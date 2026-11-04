@@ -94,3 +94,93 @@ func dealTable() Table {
 		{Name: "created_at", UDT: "timestamptz", Default: "now()"},
 	}}
 }
+
+// playerTable is a table of another service: a snowflake bigint id the
+// program assigns, no standard columns.
+func playerTable() Table {
+	return Table{Name: "lg_player", Comment: "玩家", Columns: []Column{
+		{Name: "id", UDT: "int8", Primary: true},
+		{Name: "nickname", UDT: "varchar", MaxLength: 32},
+		{Name: "level", UDT: "int4", Default: "1"},
+		{Name: "user_id", UDT: "int8", Nullable: true, Comment: "账号"},
+		{Name: "created_at", UDT: "timestamptz", Default: "now()"},
+	}}
+}
+
+// configTable has a text natural key.
+func configTable() Table {
+	return Table{Name: "cfg_game", Comment: "游戏配置", Columns: []Column{
+		{Name: "cfg_key", UDT: "varchar", MaxLength: 64, Primary: true, Comment: "配置键"},
+		{Name: "cfg_value", UDT: "text", Comment: "配置值"},
+		{Name: "remark", UDT: "varchar", MaxLength: 255, Nullable: true},
+		{Name: "version", UDT: "int4", Default: "0"},
+	}}
+}
+
+// levelTable has an integer natural key.
+func levelTable() Table {
+	return Table{Name: "cfg_level", Comment: "等级", Columns: []Column{
+		{Name: "level", UDT: "int4", Primary: true, Comment: "等级"},
+		{Name: "exp", UDT: "int8", Comment: "所需经验"},
+		{Name: "title", UDT: "varchar", MaxLength: 32},
+	}}
+}
+
+// orderLogTable is a ledger, generated read-only.
+func orderLogTable() Table {
+	return Table{Name: "lg_order_log", Comment: "订单流水", Columns: []Column{
+		{Name: "id", UDT: "int8", Primary: true},
+		{Name: "order_no", UDT: "varchar", MaxLength: 32, Comment: "订单号"},
+		{Name: "player_id", UDT: "int8", Comment: "玩家"},
+		{Name: "amount", UDT: "numeric", Comment: "金额"},
+		{Name: "status", UDT: "int2", Default: "1", Comment: "状态：1=待支付,2=已支付"},
+		{Name: "paid_at", UDT: "timestamptz", Nullable: true},
+		{Name: "updated_by", UDT: "int8", Nullable: true},
+		{Name: "created_at", UDT: "timestamptz", Default: "now()"},
+	}}
+}
+
+// keyShapes are the key and read-only cases of the compile and web checks.
+func keyShapes(prefix string) []struct {
+	table Table
+	spec  Spec
+} {
+	return []struct {
+		table Table
+		spec  Spec
+	}{
+		{playerTable(), Spec{Module: prefix + "player", Resource: "player", Name: "玩家", NewModule: true}},
+		{configTable(), Spec{Module: prefix + "cfg", Resource: "game-config", Name: "游戏配置", NewModule: true,
+			Fields: []FieldOption{{Column: "cfg_key", Search: SearchEq}}}},
+		{levelTable(), Spec{Module: prefix + "level", Resource: "level", Name: "等级", NewModule: true}},
+		{itemTable(), itemSpec(prefix + "item")},
+		{playerTable(), Spec{Module: prefix + "players", Resource: "player", Name: "玩家", NewModule: true, ReadOnly: true}},
+		{orderLogTable(), Spec{Module: prefix + "ledger", Resource: "order-log", Name: "订单流水", NewModule: true, ReadOnly: true,
+			Fields: []FieldOption{{Column: "order_no", Search: SearchEq}, {Column: "paid_at", Search: SearchRange}}}},
+	}
+}
+
+// itemTable is a main table with a translation child table keyed by
+// (item_id, lang).
+func itemTable() Table {
+	return Table{Name: "lg_item", Comment: "道具", Columns: []Column{
+		{Name: "id", UDT: "int8", Primary: true},
+		{Name: "code", UDT: "varchar", MaxLength: 32, Unique: true, Comment: "编码"},
+		{Name: "price", UDT: "int4", Default: "0", Comment: "价格"},
+	}, Children: []ChildTable{{
+		Spec: ChildSpec{Table: "lg_item_i18n", ForeignKey: "item_id", KeyColumn: "lang", KeyDict: "lang", Label: "多语言"},
+		Table: Table{Name: "lg_item_i18n", Columns: []Column{
+			{Name: "item_id", UDT: "int8", Primary: true},
+			{Name: "lang", UDT: "varchar", MaxLength: 8, Primary: true, Comment: "语言"},
+			{Name: "name", UDT: "varchar", MaxLength: 64, Comment: "名称"},
+			{Name: "description", UDT: "text", Nullable: true, Comment: "描述"},
+			{Name: "updated_at", UDT: "timestamptz", Default: "now()"},
+		}},
+	}}}
+}
+
+// itemSpec generates itemTable with its child.
+func itemSpec(module string) Spec {
+	return Spec{Module: module, Resource: "item", Name: "道具", NewModule: true,
+		Children: []ChildSpec{itemTable().Children[0].Spec}}
+}

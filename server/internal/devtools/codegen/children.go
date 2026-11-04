@@ -1,0 +1,246 @@
+package codegen
+
+import (
+	"fmt"
+	"slices"
+	"strings"
+	"unicode/utf8"
+)
+
+// ChildTable is a child table of a spec, as Load read it.
+type ChildTable struct {
+	Spec  ChildSpec
+	Table Table
+}
+
+// ChildSpec is a table edited together with each row of the main table,
+// one child row per key: a translation table xxx_i18n (main_id, lang,
+// title, ...) gets one row per language. The keys come from a data
+// dictionary that the business maintains (系统配置 → 数据字典), not from
+// the code.
+type ChildSpec struct {
+	// Table is the child table.
+	Table string `json:"table"`
+	// ForeignKey is the child column holding the main row's key.
+	ForeignKey string `json:"foreignKey"`
+	// KeyColumn is the child column that tells rows of one main row apart,
+	// such as lang.
+	KeyColumn string `json:"keyColumn"`
+	// KeyDict is the data dictionary listing the key values (lang codes).
+	KeyDict string `json:"keyDict"`
+	// Label names the section in the form, e.g. 多语言.
+	Label string `json:"label,omitempty"`
+}
+
+// childData is the template model of a child table.
+type childData struct {
+	Spec  ChildSpec
+	Table string // quoted table name
+	// GoName, JSONName and TSName name the child list in the main view and
+	// request (I18n, i18n) and its types.
+	GoName, JSONName, Label string
+	// FK and Key are the foreign key and key columns; Fields the edited
+	// columns.
+	FK, Key *Field
+	Fields  []*Field
+	// IDGenerated: the child has its own bigint id that the module assigns
+	// (otherwise its key is (FK, Key) or a database id).
+	IDGenerated bool
+	IDColumn    string
+	// Columns is the Go select list (db in scope); InsertCols, InsertVals
+	// and InsertArgs the INSERT of one row r for main key "key".
+	Columns, InsertCols, InsertVals string
+	InsertArgs                      []string
+	// KeyTSForm is the TypeScript type of the key in the form.
+	KeyTSForm string
+}
+
+// childStandard are columns a child table keeps without the form.
+var childStandard = []string{"created_at", "updated_at", "created_by", "updated_by", "version", "deleted_at"}
+
+// buildChild checks a child table against the main key and builds its
+// template model; the error is Chinese.
+func buildChild(ct ChildTable, mainTable string, pk *Field) (*childData, error) {
+	s, t := ct.Spec, ct.Table
+	switch {
+	case !identifierPattern.MatchString(s.ForeignKey) || !identifierPattern.MatchString(s.KeyColumn):
+		return nil, fmt.Errorf("子表 %s：foreignKey 和 keyColumn 须为列名", t.Name)
+	case !dictCodePattern.MatchString(s.KeyDict):
+		return nil, fmt.Errorf("子表 %s：keyDict 须为数据字典编码", t.Name)
+	case strings.ContainsAny(s.Label, unsafeText) || utf8.RuneCountInString(s.Label) > 20:
+		return nil, fmt.Errorf("子表 %s：label 最长 20 个字符，且不能包含引号、反斜杠、尖括号或花括号", t.Name)
+	}
+	fkCol, ok := t.Column(s.ForeignKey)
+	if !ok {
+		return nil, fmt.Errorf("子表 %s 没有列 %s", t.Name, s.ForeignKey)
+	}
+	if fti, ok := keyType(fkCol); !ok || fti.kind != pk.Kind {
+		return nil, fmt.Errorf("子表 %s 的 %s（%s）与主表主键 %s 的类型不一致", t.Name, s.ForeignKey, fkCol.UDT, pk.Column)
+	}
+	keyCol, ok := t.Column(s.KeyColumn)
+	if !ok {
+		return nil, fmt.Errorf("子表 %s 没有列 %s", t.Name, s.KeyColumn)
+	}
+	kti, ok := keyType(keyCol)
+	if !ok || kti.kind == kindID {
+		return nil, fmt.Errorf("子表 %s 的 %s 须为文本或整数（如 lang）", t.Name, s.KeyColumn)
+	}
+	d := &childData{Spec: s, Table: quoteIdent(t.Name), Label: strings.TrimSpace(s.Label)}
+	rest := strings.TrimPrefix(t.Name, mainTable+"_")
+	d.GoName, d.JSONName = goExported(rest), lowerCamel(rest)
+	if d.Label == "" {
+		d.Label = rest
+	}
+	d.FK = newField(fkCol, mustKeyType(fkCol))
+	d.Key = newField(keyCol, kti)
+	d.KeyTSForm = kti.kind.tsType()
+
+	var pkCols []Column
+	for _, c := range t.Columns {
+		if c.Primary {
+			pkCols = append(pkCols, c)
+		}
+	}
+	switch {
+	case len(pkCols) == 2 && slices.ContainsFunc(pkCols, func(c Column) bool { return c.Name == s.ForeignKey }) &&
+		slices.ContainsFunc(pkCols, func(c Column) bool { return c.Name == s.KeyColumn }):
+	case len(pkCols) == 1 && (pkCols[0].Name == s.ForeignKey || pkCols[0].Name == s.KeyColumn):
+		return nil, fmt.Errorf("子表 %s 的主键须为 (%s, %s)，或一个自增 / bigint 的 id", t.Name, s.ForeignKey, s.KeyColumn)
+	case len(pkCols) == 1 && autoKey(pkCols[0]):
+		d.IDColumn = pkCols[0].Name
+	case len(pkCols) == 1 && pkCols[0].UDT == "int8":
+		d.IDColumn, d.IDGenerated = pkCols[0].Name, true
+	default:
+		return nil, fmt.Errorf("子表 %s 的主键须为 (%s, %s)，或一个自增 / bigint 的 id", t.Name, s.ForeignKey, s.KeyColumn)
+	}
+	for _, c := range t.Columns {
+		switch {
+		case c.Name == s.ForeignKey || c.Name == s.KeyColumn || c.Name == d.IDColumn || slices.Contains(childStandard, c.Name):
+			continue
+		case sensitiveColumn(c.Name):
+			continue
+		}
+		ti, ok := mapType(c)
+		f := newField(c, ti)
+		switch {
+		case !ok || !f.Writable:
+			if !c.Nullable && !c.HasDefault() {
+				return nil, fmt.Errorf("子表 %s 的列 %s 不能为空且没有默认值，生成器无法填写", t.Name, c.Name)
+			}
+			continue
+		}
+		f.ArgExpr = strings.Replace(f.ArgExpr, "req.", "r.", 1)
+		if !slices.Contains([]string{"input", "textarea", "number", "switch", "date", "datetime"}, f.Widget) {
+			f.Widget = "input" // roles and pickers of the main form do not apply here
+		}
+		f.Binding = strings.TrimPrefix(strings.TrimPrefix(f.Binding, "required"), ",")
+		d.Fields = append(d.Fields, f)
+	}
+	if len(d.Fields) == 0 {
+		return nil, fmt.Errorf("子表 %s 没有可编辑的列", t.Name)
+	}
+	var cols selectList
+	cols.add(d.Key.SelectExpr)
+	for _, f := range d.Fields {
+		switch f.SelectCast {
+		case castText:
+			cols.call("", "database.CastText(db, "+goString(f.SelectExpr)+")", " AS "+f.Quoted)
+		case castDate:
+			cols.call("", "database.FormatDate(db, "+goString(f.SelectExpr)+")", " AS "+f.Quoted)
+		default:
+			cols.add(f.SelectExpr)
+		}
+	}
+	d.Columns = cols.goExpr()
+	insertCols := []string{d.FK.Quoted, d.Key.Quoted}
+	d.InsertArgs = []string{"key", "r." + d.Key.GoName}
+	if d.IDGenerated {
+		insertCols = append([]string{quoteIdent(d.IDColumn)}, insertCols...)
+		d.InsertArgs = append([]string{"m.NextID()"}, d.InsertArgs...)
+	}
+	for _, f := range d.Fields {
+		insertCols = append(insertCols, f.Quoted)
+		d.InsertArgs = append(d.InsertArgs, f.ArgExpr)
+	}
+	d.InsertCols = strings.Join(insertCols, ", ")
+	d.InsertVals = strings.TrimSuffix(strings.Repeat("?, ", len(insertCols)), ", ")
+	return d, nil
+}
+
+func mustKeyType(c Column) typeInfo {
+	ti, _ := keyType(c)
+	return ti
+}
+
+// EmptyExpr is the Go condition that field f of child request r is empty.
+func (f *Field) EmptyExpr() string {
+	v := "r." + f.GoName
+	switch {
+	case strings.HasPrefix(f.ReqType, "*"):
+		return v + " == nil"
+	case f.ReqType == "string":
+		return v + ` == ""`
+	case f.ReqType == "bool":
+		return "!" + v
+	case f.ReqType == "time.Time":
+		return v + ".IsZero()"
+	default:
+		return v + " == 0"
+	}
+}
+
+// SampleValue is a Go literal the request binding accepts (tests).
+func (f *Field) SampleValue() string { return f.sample() }
+
+// ChildTSDefault is the TypeScript value of an empty child row field.
+func (f *Field) ChildTSDefault() string {
+	switch {
+	case f.Nullable:
+		return "null"
+	case f.Kind.numeric():
+		if f.DefaultLit != "" {
+			return f.DefaultLit
+		}
+		return "0"
+	case f.Kind == kindBool:
+		if f.DefaultLit == "true" {
+			return "true"
+		}
+		return "false"
+	case f.DefaultLit != "" && (f.Kind == kindString || f.Kind == kindDecimal):
+		return tsString(f.DefaultLit)
+	}
+	return `""`
+}
+
+// ChildTSSubmit is the TypeScript value sent for child row field r.x: an
+// empty text of a nullable column is null, a time is UTC.
+func (f *Field) ChildTSSubmit() string {
+	v := "r." + f.JSONName
+	switch {
+	case f.Kind == kindTime:
+		v = "toUTC(" + v + ")"
+		if f.Nullable {
+			v += " || null"
+		}
+	case f.Nullable && f.Kind.tsType() == "string":
+		v += " || null"
+	}
+	return v
+}
+
+// KeySample is a key value of the child sample row (tests).
+func (c *childData) KeySample() string {
+	if c.Key.Kind == kindString {
+		return `"en"`
+	}
+	return "1"
+}
+
+// KeyFromDict converts a dictionary value (a string) to the key's type.
+func (c *childData) KeyFromDict(v string) string {
+	if c.Key.Kind == kindString {
+		return v
+	}
+	return "Number(" + v + ")"
+}

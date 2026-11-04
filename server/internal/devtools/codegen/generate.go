@@ -3,6 +3,7 @@ package codegen
 import (
 	"bytes"
 	"embed"
+	"errors"
 	"fmt"
 	"go/format"
 	"strconv"
@@ -52,6 +53,11 @@ func Generate(t Table, spec Spec) (Result, error) {
 	if err := CheckTable(t); err != nil {
 		return Result{}, err
 	}
+	if pk, _ := primaryKey(t); spec.KeyMode != "" {
+		if msg := keyModeProblem(pk, spec.KeyMode); msg != "" {
+			return Result{}, fmt.Errorf("keyMode: %s", msg)
+		}
+	}
 	if problems := spec.FieldProblems(t); len(problems) > 0 {
 		msgs := make([]string, len(problems))
 		for i, p := range problems {
@@ -60,13 +66,21 @@ func Generate(t Table, spec Spec) (Result, error) {
 		return Result{}, fmt.Errorf("fields: %s", strings.Join(msgs, "；"))
 	}
 	d := buildData(t, spec)
+	if d.childErr != nil {
+		return Result{}, fmt.Errorf("children: %w", d.childErr)
+	}
+	if len(spec.Children) != len(t.Children) {
+		return Result{}, errors.New("children: 子表未加载（用 codegen.Load 读取表结构）")
+	}
 	var res Result
 	jobs := []struct{ tmpl, path, lang string }{
 		{"resource.go.tmpl", d.serverDir + "/" + d.FileBase + ".go", "go"},
 		{"resource_integration_test.go.tmpl", d.serverDir + "/" + d.FileBase + "_integration_test.go", "go"},
 		{"api.ts.tmpl", "web/src/api/" + d.Pkg + "/" + d.Resource + ".ts", "typescript"},
 		{"index.vue.tmpl", d.viewDir + "/index.vue", "vue"},
-		{"form.vue.tmpl", d.viewDir + "/components/" + d.TSUpper + "FormDialog.vue", "vue"},
+	}
+	if !spec.ReadOnly {
+		jobs = append(jobs, struct{ tmpl, path, lang string }{"form.vue.tmpl", d.viewDir + "/components/" + d.TSUpper + "FormDialog.vue", "vue"})
 	}
 	if spec.NewModule {
 		jobs = append([]struct{ tmpl, path, lang string }{
@@ -144,6 +158,34 @@ type tmplData struct {
 
 	Version, Status, Sort, Dept, CreatedBy, UpdatedBy, CreatedAt, UpdatedAt, SoftDelete *Field
 
+	// PK is the primary key field; KeyMode how rows get it (keys.go);
+	// KeyGo, KeyBits and KeyZero its Go type, strconv bit size and zero.
+	PK             *Field
+	KeyMode, KeyGo string
+	KeyZero        string
+	KeyBits        int
+	KeyAuto        bool
+	KeyGenerated   bool
+	KeyInput       bool
+	// UpdateFields are the written fields an update sets (no create-only
+	// key).
+	UpdateFields []*Field
+	// Children are the child tables edited with each row (children.go).
+	Children []*childData
+	childErr error
+	// MissingKey is a key value no test row has (read-only test).
+	MissingKey string
+	// OptionRelations are the relations with an options route: all of them,
+	// or only the searched ones of a read-only module. NeedsIDs: the code
+	// uses ids.ID.
+	OptionRelations []*Field
+	NeedsIDs        bool
+	// NeedsDatabase: the code calls the database package (writes, casts).
+	NeedsDatabase bool
+	// EnumExports are exported columns with comment options, exported as
+	// their labels.
+	EnumExports []*Field
+
 	DeptJoin, Scope, NeedsActor, NeedsUID, HasRequired, TableHasTime bool
 	StatusSearch, DeptSearch, TextSearch, StatusInTable              bool
 	ScopeDept, ScopeOwner, Order, Columns, StatusEnabled             string
@@ -179,6 +221,14 @@ func buildData(t Table, spec Spec) *tmplData {
 		d.ModuleTitle = spec.Module
 	}
 	d.collectFields(t)
+	for _, ct := range t.Children {
+		c, err := buildChild(ct, t.Name, d.PK)
+		if err != nil {
+			d.childErr = err
+			continue
+		}
+		d.Children = append(d.Children, c)
+	}
 	d.defaultSearch()
 	d.defaultChoices()
 	d.defaultUploads()
@@ -191,6 +241,12 @@ func buildData(t Table, spec Spec) *tmplData {
 func (d *tmplData) collectFields(t Table) {
 	for _, c := range t.Columns {
 		ti, ok := mapType(c)
+		switch {
+		case c.Primary:
+			ti, ok = keyType(c)
+		case c.Ref != nil && c.UDT == "int8":
+			ti = typeInfo{kind: kindID, goType: "int64"} // a declared relation, whatever the name
+		}
 		switch {
 		case !ok:
 			d.skipped = append(d.skipped, fmt.Sprintf("列 %s（%s）类型不受支持，已跳过", c.Name, c.UDT))
@@ -206,6 +262,20 @@ func (d *tmplData) collectFields(t Table) {
 		d.assignRole(f)
 		if f.Role == roleDeletedAt {
 			continue // always NULL for visible rows
+		}
+		if c.Primary {
+			d.PK = f
+			d.KeyMode = d.Spec.KeyMode
+			if d.KeyMode == "" {
+				d.KeyMode = defaultKeyMode(c)
+			}
+			if d.KeyMode == KeyInput {
+				// Typed in on create, never changed; duplicates are field
+				// errors like other unique values.
+				f.Writable, f.canWrite, f.mustWrite, f.CreateOnly, f.Required, f.unique = true, true, true, true, true, true
+				f.binding(c)
+				f.Binding = strings.TrimPrefix(strings.TrimPrefix(f.Binding, "required"), ",")
+			}
 		}
 		d.Fields = append(d.Fields, f)
 	}
@@ -223,6 +293,21 @@ func (d *tmplData) assignRole(f *Field) {
 }
 
 func (d *tmplData) derive() {
+	d.KeyGo, d.KeyBits = d.keyGo()
+	d.KeyZero = d.keyZero()
+	d.MissingKey = "999999999"
+	switch d.KeyGo {
+	case "string":
+		d.MissingKey = "no-such-key"
+	case "int16":
+		d.MissingKey = "32000"
+	}
+	d.KeyAuto, d.KeyGenerated, d.KeyInput = d.KeyMode == KeyAuto, d.KeyMode == KeyGenerated, d.KeyMode == KeyInput
+	for _, f := range d.Writable {
+		if !f.CreateOnly {
+			d.UpdateFields = append(d.UpdateFields, f)
+		}
+	}
 	d.DeptJoin = d.Dept != nil && !d.hasColumn("dept_name")
 	if d.Dept != nil {
 		d.ScopeDept = "t.dept_id"
@@ -233,17 +318,28 @@ func (d *tmplData) derive() {
 	d.Scope = d.ScopeDept != "" || d.ScopeOwner != ""
 	d.NeedsUID = d.CreatedBy != nil || d.UpdatedBy != nil
 	d.NeedsActor = d.Scope || d.NeedsUID || d.Dept != nil || d.Status != nil
+	if d.ReadOnly {
+		d.NeedsActor = d.Scope // the user id and defaults are for writes
+	}
+	for _, f := range d.Fields {
+		d.NeedsIDs = d.NeedsIDs || f.Kind == kindID
+	}
 	d.StatusEnabled = "actor.StatusEnabled"
 	if d.Status != nil && d.Status.Kind != kindInt16 {
 		d.StatusEnabled = "int(actor.StatusEnabled)"
 	}
-	d.Order = "t.id DESC"
+	d.Order = "t." + d.PK.Quoted + " DESC"
 	if d.Sort != nil {
-		d.Order = "t.sort, t.id DESC"
+		d.Order = "t.sort, t." + d.PK.Quoted + " DESC"
 	}
 	d.deriveUploads()
 	for _, f := range d.Fields {
 		d.FormDateTime = d.FormDateTime || (f.Writable && f.Widget == "datetime")
+	}
+	for _, c := range d.Children {
+		for _, f := range c.Fields {
+			d.FormDateTime = d.FormDateTime || f.Widget == "datetime"
+		}
 	}
 	d.deriveRelations()
 	d.deriveColumns()
@@ -252,6 +348,16 @@ func (d *tmplData) derive() {
 	d.deriveLists()
 	d.deriveSearch()
 	d.relationSearch()
+	d.OptionRelations = d.Relations
+	if d.ReadOnly {
+		d.OptionRelations = d.RelationSearch
+	}
+	d.NeedsDatabase = !d.ReadOnly || strings.Contains(d.Columns, "database.")
+	for _, f := range d.ExportFields {
+		if f.Enum != nil && f.Role != roleStatus && f.Relation == "" && (f.Role != roleDept || !d.DeptJoin) {
+			d.EnumExports = append(d.EnumExports, f)
+		}
+	}
 	d.deriveDisplay()
 	for _, f := range d.Fields {
 		if f.Dict == "" {
@@ -456,6 +562,10 @@ var currentTime = map[string]bool{
 
 func (d *tmplData) deriveInsert() {
 	var cols, vals []string
+	if d.KeyGenerated {
+		cols, vals = append(cols, d.PK.Quoted), append(vals, "?")
+		d.InsertArgs = append(d.InsertArgs, "key")
+	}
 	for _, f := range d.Writable {
 		cols, vals = append(cols, f.Quoted), append(vals, f.InsertVal)
 		d.InsertArgs = append(d.InsertArgs, f.ArgExpr)
@@ -501,7 +611,7 @@ func (d *tmplData) deriveLists() {
 		}
 		f.InTable = tableColumn(f) && shown < 8
 		if f.listOverride != nil {
-			f.InTable = *f.listOverride && f.Role != roleID
+			f.InTable = *f.listOverride && (f.Role != roleID || f.CreateOnly)
 		}
 		if f.InTable {
 			shown++
@@ -521,6 +631,9 @@ func (d *tmplData) deriveLists() {
 }
 
 func tableColumn(f *Field) bool {
+	if f.CreateOnly {
+		return true // a typed-in key names the row
+	}
 	switch f.Role {
 	case roleID, roleVersion, roleCreatedBy, roleUpdatedBy, roleDeletedAt, roleUpdatedAt, roleCreatedAt:
 		return false
@@ -562,9 +675,13 @@ func (d *tmplData) deriveDisplay() {
 
 func (d *tmplData) permissions() []perm.Def {
 	out := make([]perm.Def, 0, 5)
-	for _, a := range []struct{ action, verb string }{
+	actions := []struct{ action, verb string }{
 		{"view", "查看"}, {"create", "新增"}, {"update", "编辑"}, {"delete", "删除"}, {"export", "导出"},
-	} {
+	}
+	if d.ReadOnly {
+		actions = []struct{ action, verb string }{{"view", "查看"}, {"export", "导出"}}
+	}
+	for _, a := range actions {
 		out = append(out, perm.Def{Code: d.PermPrefix + ":" + a.action, Name: a.verb + d.Name, Menu: d.MenuCode})
 	}
 	return out
@@ -597,6 +714,19 @@ func (d *tmplData) notes() []string {
 	)
 	if d.Scope {
 		notes = append(notes, "已按数据权限过滤（"+strings.Join(nonEmpty(d.ScopeDept, d.ScopeOwner), "、")+"）")
+	}
+	switch {
+	case d.ReadOnly:
+		notes = append(notes, "只读模块：只生成列表、详情和导出，没有表单和新增、编辑、删除接口")
+	case d.KeyGenerated:
+		notes = append(notes, "主键 "+d.PK.Column+" 由程序生成：新增时调用模块的 NextID（Deps.NewID，默认 ids.Next 雪花 ID）；"+
+			"与其他服务共用该表时，在 modules.go 里传入同一个 ID 生成器")
+	case d.KeyInput:
+		notes = append(notes, "主键 "+d.PK.Column+" 在新增时填写，之后不能修改")
+	}
+	for _, c := range d.Children {
+		notes = append(notes, fmt.Sprintf("子表 %s 随%s一起编辑：表单按字典 %s 的每一项列出一行，全部为空的行不保存；详情接口返回 %s",
+			c.Table, d.Name, c.Spec.KeyDict, c.JSONName))
 	}
 	if missing := d.missingStandard(); len(missing) > 0 {
 		notes = append(notes, "表缺少标准字段（见 docs/table-guide.md）："+strings.Join(missing, "；"))
