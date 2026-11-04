@@ -56,7 +56,7 @@ This guide shows two routes: generating a module from a table (recommended), and
    - `-no-wire`: skips the registration in `modules.go` or `module.go`.
 
    The generator writes:
-   - `server/internal/modules/<module>/module.go` and `common.go` (only for a new module), `<resource>.go` and `<resource>_integration_test.go`. The test covers create/read/update/delete, optimistic locking, duplicates on unique columns, validation and every search parameter.
+   - `server/internal/modules/<module>/module.go` (only for a new module), `common.go` (the helpers the generated resources share; rewritten on every generation into the module, so do not edit it), `<resource>.go` and `<resource>_integration_test.go`. The test covers create/read/update/delete, optimistic locking, duplicates on unique columns, validation and every search parameter.
    - `web/src/api/<module>/<resource>.ts`
    - `web/src/views/<module>/<resource>/index.vue` and `components/<Resource>FormDialog.vue`
    - The extension files `<resource>_ext.go` and `components/<Resource>Extension.vue`, written only when they do not exist and never overwritten, not even with `-force`, so hand-written code there survives regeneration:

@@ -32,6 +32,10 @@ type File struct {
 	// Keep marks a file written once for hand-written code (the extension
 	// points of a resource): it is never overwritten, not even with force.
 	Keep bool `json:"keep,omitempty"`
+	// Refresh marks generated helpers shared by the module's resources
+	// (common.go): always written, so resources generated later find the
+	// helpers they call; never a conflict.
+	Refresh bool `json:"refresh,omitempty"`
 }
 
 // Result is the output of Generate.
@@ -79,30 +83,29 @@ func Generate(t Table, spec Spec) (Result, error) {
 	type job struct {
 		tmpl, path, lang string
 		keep             bool // extension points: written once (File.Keep)
+		refresh          bool // shared helpers: always written (File.Refresh)
 	}
 	jobs := []job{
-		{"resource.go.tmpl", d.serverDir + "/" + d.FileBase + ".go", "go", false},
-		{"resource_ext.go.tmpl", d.serverDir + "/" + d.FileBase + "_ext.go", "go", true},
-		{"resource_integration_test.go.tmpl", d.serverDir + "/" + d.FileBase + "_integration_test.go", "go", false},
-		{"api.ts.tmpl", "web/src/api/" + d.Pkg + "/" + d.Resource + ".ts", "typescript", false},
-		{"index.vue.tmpl", d.viewDir + "/index.vue", "vue", false},
-		{"extension.vue.tmpl", d.viewDir + "/components/" + d.TSUpper + "Extension.vue", "vue", true},
+		{"common.go.tmpl", d.serverDir + "/common.go", "go", false, true},
+		{"resource.go.tmpl", d.serverDir + "/" + d.FileBase + ".go", "go", false, false},
+		{"resource_ext.go.tmpl", d.serverDir + "/" + d.FileBase + "_ext.go", "go", true, false},
+		{"resource_integration_test.go.tmpl", d.serverDir + "/" + d.FileBase + "_integration_test.go", "go", false, false},
+		{"api.ts.tmpl", "web/src/api/" + d.Pkg + "/" + d.Resource + ".ts", "typescript", false, false},
+		{"index.vue.tmpl", d.viewDir + "/index.vue", "vue", false, false},
+		{"extension.vue.tmpl", d.viewDir + "/components/" + d.TSUpper + "Extension.vue", "vue", true, false},
 	}
 	if !spec.ReadOnly {
-		jobs = append(jobs, job{"form.vue.tmpl", d.viewDir + "/components/" + d.TSUpper + "FormDialog.vue", "vue", false})
+		jobs = append(jobs, job{"form.vue.tmpl", d.viewDir + "/components/" + d.TSUpper + "FormDialog.vue", "vue", false, false})
 	}
 	if spec.NewModule {
-		jobs = append([]job{
-			{"module.go.tmpl", d.serverDir + "/module.go", "go", false},
-			{"common.go.tmpl", d.serverDir + "/common.go", "go", false},
-		}, jobs...)
+		jobs = append([]job{{"module.go.tmpl", d.serverDir + "/module.go", "go", false, false}}, jobs...)
 	}
 	for _, j := range jobs {
 		content, err := render(j.tmpl, d, j.lang == "go")
 		if err != nil {
 			return Result{}, err
 		}
-		res.Files = append(res.Files, File{Path: j.path, Language: j.lang, Content: content, Keep: j.keep})
+		res.Files = append(res.Files, File{Path: j.path, Language: j.lang, Content: content, Keep: j.keep, Refresh: j.refresh})
 	}
 	res.Permissions, res.Menus = d.permissions(), d.menus()
 	res.Wiring = d.wiring()

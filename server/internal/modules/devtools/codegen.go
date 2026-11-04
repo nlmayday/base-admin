@@ -440,7 +440,7 @@ func buildPreview(res codegen.Result, spec codegen.Spec, req previewRequest, roo
 	}
 	for i, f := range res.Files {
 		v.Files[i] = previewFile{Path: f.Path, Language: f.Language, Content: f.Content,
-			Exists: existing[f.Path] && !f.Keep, Keep: f.Keep, Kept: existing[f.Path] && f.Keep}
+			Exists: existing[f.Path] && !f.Keep && !f.Refresh, Keep: f.Keep, Kept: existing[f.Path] && f.Keep}
 	}
 	for i, p := range res.Permissions {
 		v.Permissions[i] = permissionView{Code: p.Code, Name: p.Name}
