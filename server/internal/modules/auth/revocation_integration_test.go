@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -184,23 +185,40 @@ func TestB2B3_FailedCommitThenRetry(t *testing.T) {
 }
 
 func TestB4_CommitFailureIsReportedAsOutcomeUnknown(t *testing.T) {
-	// RunTx's COMMIT handling is the same on both databases; only
-	// PostgreSQL has deferred constraints to make a COMMIT fail on demand.
-	testinfra.SkipOnMySQL(t, "needs a deferred constraint")
 	h := newHarness(t)
 	uid := h.createUser("grace")
 	c := h.newClient()
 	c.mustLogin("grace")
-	// A deferred constraint fails only at COMMIT, after fn succeeded.
-	require.NoError(t, h.db.Exec(`CREATE TABLE commit_bomb (
-		ref bigint REFERENCES sys_users (id) DEFERRABLE INITIALLY DEFERRED)`).Error)
+	// Make the COMMIT fail after fn succeeded. PostgreSQL: a deferred
+	// constraint, checked only at COMMIT. MySQL has none: once fn's last
+	// statement (Bump's SELECT) has run, a callback kills the transaction's
+	// connection from another one, so the COMMIT cannot complete and the
+	// server rolls the transaction back.
+	breakCommit := func(tx *gorm.DB) error { return tx.Exec("INSERT INTO commit_bomb (ref) VALUES (-1)").Error }
+	if testinfra.IsMySQL(t) {
+		var conn int64
+		breakCommit = func(tx *gorm.DB) error {
+			return tx.Raw("SELECT CONNECTION_ID()").Scan(&conn).Error
+		}
+		require.NoError(t, h.db.Callback().Row().After("gorm:row").Register("test:kill_before_commit", func(db *gorm.DB) {
+			if conn != 0 && strings.HasPrefix(db.Statement.SQL.String(), "SELECT version FROM sys_auth_version") {
+				killed := conn
+				conn = 0
+				require.NoError(t, h.db.Exec("KILL CONNECTION ?", killed).Error)
+			}
+		}))
+		t.Cleanup(func() { _ = h.db.Callback().Row().Remove("test:kill_before_commit") })
+	} else {
+		require.NoError(t, h.db.Exec(`CREATE TABLE commit_bomb (
+			ref bigint REFERENCES sys_users (id) DEFERRABLE INITIALLY DEFERRED)`).Error)
+	}
 
 	_, err := h.core.Revoker.Revoke(context.Background(), uid, RevokeSpec{
 		Apply: func(tx *gorm.DB, _ int64) error {
 			if err := tx.Exec("UPDATE sys_users SET status = 2 WHERE id = ?", uid).Error; err != nil {
 				return err
 			}
-			return tx.Exec("INSERT INTO commit_bomb (ref) VALUES (-1)").Error
+			return breakCommit(tx)
 		},
 	})
 	require.Error(t, err)

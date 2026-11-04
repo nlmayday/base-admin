@@ -102,7 +102,7 @@
 | type | 数据库类型（PostgreSQL / MySQL） | 页面控件 |
 | --- | --- | --- |
 | `string` | varchar(length) | 输入框 |
-| `text` | text | 多行文本 |
+| `text` | text / mediumtext | 多行文本 |
 | `int` / `bigint` | integer / bigint | 数字输入 |
 | `decimal` | numeric(p, s) / decimal(p, s) | 数字输入（金额等，不要用浮点） |
 | `bool` | boolean，默认 false | 开关 |

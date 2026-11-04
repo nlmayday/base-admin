@@ -29,6 +29,8 @@ make test-integration-mysql   # 全部后端测试在 MySQL 上跑一遍
 
 ## 部署要求
 
+用 Docker 部署时直接用 `deploy/docker/compose.prod.mysql.yaml`（MySQL 8.4、Redis、迁移、后端、nginx），下面几条它都已经设置好。数据库密码会拼进连接地址，只用字母、数字和 `-_.~`，其他字符要做 URL 编码（`@` 写成 `%40`）。
+
 - MySQL 8.4 及以上（用到 CHECK 约束、函数索引、表达式默认值、`INSERT … AS excluded` 行别名）。
 - 数据库建议 `CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_as_cs`。迁移建的每张表都显式指定了这个排序规则，数据库默认值不同也不影响。
 - 迁移会创建一个触发器（`sys_users_session_gen_monotonic`，保证会话代数只增不减）。开启 binlog 时，执行迁移的账号需要 `TRIGGER` 权限，并且要么有 `SUPER`，要么服务器设置了 `log_bin_trust_function_creators=1`。
@@ -88,6 +90,8 @@ make test-integration-mysql   # 全部后端测试在 MySQL 上跑一遍
 - 主键要求和 PostgreSQL 一样：`id bigint NOT NULL AUTO_INCREMENT PRIMARY KEY`。
 - 生成的后端代码两种数据库都能运行：需要转换的列（`decimal`、`date`、`json`、关联名称）通过 `database.CastText` / `database.FormatDate` 读取，插入用 `database.InsertID`。只有列默认值是数据库专有的表达式（例如 `gen_random_uuid()`）时，插入语句才会按生成时的数据库写。
 - AI 接口建的 MySQL 表是一条 `CREATE TABLE`，注释、索引、外键都写在里面，失败不会留下半个迁移。执行前先用临时表名（`tmp_try_…`）建一次再删除，检查 SQL 能否执行。
+- 同时维护 `server/migrations/app` 和 `server/migrations/app/mysql`（两边最后一个迁移编号相同）时，AI 接口建表会把另一种数据库的迁移也写进去（不执行），项目换数据库时生成的模块照样能用。
+- `text` 字段在 MySQL 上建成 `mediumtext`（16 MB）。手写的 `text` 列最多 64 KB，超出时生成的接口返回 422「内容超过字段允许的长度」，不会报 500。
 - 软删除表的唯一字段用函数索引 `((CASE WHEN deleted_at IS NULL THEN col END))`，等价于 PostgreSQL 的部分唯一索引。唯一的 string 字段最长 768（MySQL 索引的上限）。
 
 ## 写 MySQL 迁移

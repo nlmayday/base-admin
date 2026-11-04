@@ -224,6 +224,14 @@ func TestAgentCreateTable(t *testing.T) {
 	assert.Regexp(t, `^\d{6}_create_biz_categories$`, view.Migration)
 	assert.FileExists(t, filepath.Join(dir, view.Migration+".up.sql"))
 	assert.FileExists(t, filepath.Join(dir, view.Migration+".down.sql"))
+	// The other database's track is kept in step (written, not applied).
+	twinDir := filepath.Join(root, filepath.FromSlash(appMigrationsDir(otherDialect(database.DialectOf(h.db)))))
+	twin, err := os.ReadFile(filepath.Join(twinDir, view.Migration+".up.sql"))
+	require.NoError(t, err)
+	assert.Contains(t, string(twin), "CREATE TABLE biz_categories")
+	assert.NotEqual(t, view.Up, string(twin), "written for the other database")
+	assert.FileExists(t, filepath.Join(twinDir, view.Migration+".down.sql"))
+	assert.Contains(t, strings.Join(view.Notes, "\n"), "同时写入了")
 	assert.True(t, h.tableExists("biz_categories"))
 
 	// A retry of the same request (lost response) succeeds without changes;

@@ -19,7 +19,7 @@ import (
 // Column types of a TableSpec.
 const (
 	ColString      = "string"      // varchar(length), length 1–2000, default 64
-	ColText        = "text"        // text
+	ColText        = "text"        // text (mediumtext on MySQL)
 	ColInt         = "int"         // integer
 	ColBigint      = "bigint"      // bigint
 	ColDecimal     = "decimal"     // numeric(precision, scale), default 12, 2
@@ -357,7 +357,7 @@ func (c ColumnSpec) definition(d database.Dialect) string {
 	case ColString:
 		typ = fmt.Sprintf("varchar(%d)", c.length())
 	case ColText:
-		typ = "text"
+		typ = pick(mysql, "mediumtext", "text") // MySQL text holds 64 KB only
 	case ColInt:
 		typ = "integer"
 	case ColBigint:
