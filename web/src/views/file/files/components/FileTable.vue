@@ -65,7 +65,7 @@ const emit = defineEmits<{
       min-width="100"
       show-overflow-tooltip
     />
-    <el-table-column label="上传时间" width="170">
+    <el-table-column label="上传时间" width="215">
       <template #default="{ row }">{{
         formatDateTime(row.createdAt)
       }}</template>

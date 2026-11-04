@@ -278,7 +278,7 @@ onMounted(() => {
           min-width="160"
           show-overflow-tooltip
         />
-        <el-table-column label="更新时间" width="170">
+        <el-table-column label="更新时间" width="215">
           <template #default="{ row }">
             {{ formatDateTime(row.updatedAt) }}
           </template>

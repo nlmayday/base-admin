@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/stdlib"
 	"go.uber.org/zap"
 	gormmysql "gorm.io/driver/mysql"
@@ -92,7 +93,14 @@ func openPostgres(cfg config.DatabaseConfig, appName string) (*sql.DB, error) {
 	if cfg.StatementTimeout > 0 {
 		pgCfg.RuntimeParams["statement_timeout"] = strconv.FormatInt(cfg.StatementTimeout.Milliseconds(), 10)
 	}
-	return stdlib.OpenDB(*pgCfg), nil
+	// timestamptz values are read in UTC (pgx uses the process time zone
+	// otherwise), so the API sends UTC times on both databases.
+	return stdlib.OpenDB(*pgCfg, stdlib.OptionAfterConnect(func(_ context.Context, conn *pgx.Conn) error {
+		conn.TypeMap().RegisterType(&pgtype.Type{
+			Name: "timestamptz", OID: pgtype.TimestamptzOID, Codec: &pgtype.TimestamptzCodec{ScanLocation: time.UTC},
+		})
+		return nil
+	})), nil
 }
 
 // NewGorm wraps a pool opened by OpenSQL with GORM, using the dialector of

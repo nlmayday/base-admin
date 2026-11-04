@@ -356,7 +356,7 @@ onMounted(async () => {
           <template #default="{ row }">{{ row.deptName || "-" }}</template>
         </el-table-column>
 [[- else if eq .Kind "time"]]
-        <el-table-column label="[[.Label]]" width="170">
+        <el-table-column label="[[.Label]]" width="215">
           <template #default="{ row }">
             {{ formatDateTime(row.[[.JSONName]]) }}
           </template>

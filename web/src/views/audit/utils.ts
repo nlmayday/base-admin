@@ -1,6 +1,7 @@
 import dayjs from "dayjs";
 import { ref } from "vue";
 import { listOperationLogModules } from "@/api/audit/operationLog";
+import { toUTC } from "@/utils/timezone";
 
 export type TagType = "success" | "primary" | "warning" | "danger" | "info";
 
@@ -35,7 +36,8 @@ export function rangeParams(range: [string, string] | null | undefined): {
   endTime?: string;
 } {
   if (!range || range.length !== 2) return {};
-  return { startTime: range[0], endTime: range[1] };
+  // 接口一律收发 UTC 的 RFC 3339 时间
+  return { startTime: toUTC(range[0]), endTime: toUTC(range[1]) };
 }
 
 export const SUCCESS_OPTIONS: ReadonlyArray<{

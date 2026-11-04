@@ -133,7 +133,7 @@ onMounted(async () => {
               </template>
             </el-table-column>
             <el-table-column prop="publisher" label="发布人" width="140" />
-            <el-table-column label="发布时间" width="170">
+            <el-table-column label="发布时间" width="215">
               <template #default="{ row }">
                 {{ formatDateTime(row.publishedAt) }}
               </template>

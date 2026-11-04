@@ -9,6 +9,7 @@ import { usePermissionStoreHook } from "@/store/modules/permission";
 import LaySidebarExtraIcon from "../lay-sidebar/components/SidebarExtraIcon.vue";
 import LaySidebarFullScreen from "../lay-sidebar/components/SidebarFullScreen.vue";
 import LayNotice from "../lay-notice/index.vue";
+import LayTimezone from "../lay-timezone/index.vue";
 
 import LogoutCircleRLine from "~icons/ri/logout-circle-r-line";
 import UserSettingsLine from "~icons/ri/user-settings-line";
@@ -97,6 +98,7 @@ watch(
       <LaySearch id="header-search" />
       <!-- 全屏 -->
       <LaySidebarFullScreen id="full-screen" />
+      <LayTimezone />
       <LayNotice />
       <!-- 退出登录 -->
       <el-dropdown trigger="click">

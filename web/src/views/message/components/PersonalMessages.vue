@@ -118,7 +118,7 @@ onMounted(async () => {
         min-width="260"
         show-overflow-tooltip
       />
-      <el-table-column label="时间" width="170">
+      <el-table-column label="时间" width="215">
         <template #default="{ row }">
           {{ formatDateTime(row.createdAt) }}
         </template>

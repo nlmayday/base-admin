@@ -250,7 +250,7 @@ onMounted(() => {
               <ReStatusTag :status="row.status" />
             </template>
           </el-table-column>
-          <el-table-column label="最后登录" width="170">
+          <el-table-column label="最后登录" width="215">
             <template #default="{ row }">
               {{ formatDateTime(row.lastLoginAt) }}
             </template>

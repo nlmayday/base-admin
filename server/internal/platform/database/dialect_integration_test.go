@@ -153,6 +153,7 @@ func TestSharedSQLConventions(t *testing.T) {
 	var now time.Time
 	require.NoError(t, db.Raw(`SELECT CURRENT_TIMESTAMP(6)`).Scan(&now).Error)
 	assert.WithinDuration(t, time.Now(), now, time.Minute, "the database clock is read as UTC")
+	assert.Equal(t, time.UTC, now.Location(), "times come back in UTC on both databases, so the API sends UTC")
 }
 
 func TestLockTxSerializesTransactions(t *testing.T) {
