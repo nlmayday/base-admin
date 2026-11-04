@@ -93,6 +93,13 @@ cp deploy/docker/prod.env.example deploy/docker/prod.env   # 填好每一项
 docker compose -f deploy/docker/compose.prod.yaml --env-file deploy/docker/prod.env up -d --build
 ```
 
+用 MySQL 部署时换成 `deploy/docker/compose.prod.mysql.yaml` 和 `prod.mysql.env.example`，其余相同：
+
+```bash
+cp deploy/docker/prod.mysql.env.example deploy/docker/prod.mysql.env   # 填好每一项
+docker compose -f deploy/docker/compose.prod.mysql.yaml --env-file deploy/docker/prod.mysql.env up -d --build
+```
+
 本地存储的上传文件保存在 `files` 卷中。部署多个后端副本时请用 `file.driver=s3`；定时任务在多实例下本来就只执行一次。
 
 上线检查清单：

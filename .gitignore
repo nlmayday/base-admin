@@ -21,6 +21,7 @@ web/dist/
 
 # Deployment secrets
 deploy/docker/prod.env
+deploy/docker/prod.mysql.env
 
 # Local file storage (file.driver=local)
 server/data/

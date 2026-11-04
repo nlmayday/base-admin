@@ -123,12 +123,27 @@ jobs:
         run: git diff --exit-code
 
   e2e:
-    # Playwright against a real API on a fresh database: the admin starts
-    # with the bootstrap password and global-setup changes it first.
+    # Playwright against a real API on a fresh database, once per database:
+    # the admin starts with the bootstrap password and global-setup changes
+    # it first.
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        db: [postgres, mysql]
 
     services:
+      mysql:
+        image: mysql:8.4.13
+        env:
+          MYSQL_ROOT_PASSWORD: admin
+          MYSQL_DATABASE: base_admin
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -padmin --silent"
+          --health-interval 2s --health-timeout 3s --health-retries 60
       postgres:
         image: postgres:17.11-alpine
         env:
@@ -149,7 +164,7 @@ jobs:
           --health-interval 2s --health-timeout 3s --health-retries 30
 
     env:
-      ADMIN_DATABASE_URL: postgres://admin:admin@127.0.0.1:5432/base_admin?sslmode=disable
+      ADMIN_DATABASE_URL: ${{ matrix.db == 'mysql' && 'mysql://root:admin@127.0.0.1:3306/base_admin' || 'postgres://admin:admin@127.0.0.1:5432/base_admin?sslmode=disable' }}
       ADMIN_REDIS_ADDR: 127.0.0.1:6379
       ADMIN_HTTP_ADDR: 127.0.0.1:8080
       ADMIN_METRICS_ADDR: 127.0.0.1:9090
@@ -212,7 +227,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: e2e-report
+          name: e2e-report-${{ matrix.db }}
           path: |
             web/tests/e2e/playwright-report/
             web/tests/e2e/test-results/

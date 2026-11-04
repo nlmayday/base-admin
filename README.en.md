@@ -93,6 +93,13 @@ cp deploy/docker/prod.env.example deploy/docker/prod.env   # fill in every value
 docker compose -f deploy/docker/compose.prod.yaml --env-file deploy/docker/prod.env up -d --build
 ```
 
+For MySQL, use `deploy/docker/compose.prod.mysql.yaml` with `prod.mysql.env.example` instead; the rest is the same:
+
+```bash
+cp deploy/docker/prod.mysql.env.example deploy/docker/prod.mysql.env   # fill in every value
+docker compose -f deploy/docker/compose.prod.mysql.yaml --env-file deploy/docker/prod.mysql.env up -d --build
+```
+
 Uploaded files (local driver) are kept in the `files` volume. For several API replicas, use `file.driver=s3`: scheduled jobs already run once per fire across instances.
 
 Production checklist:

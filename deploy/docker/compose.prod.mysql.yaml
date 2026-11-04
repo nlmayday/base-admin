@@ -1,0 +1,130 @@
+# Production-style stack on MySQL 8.4: compose.prod.yaml with MySQL in place
+# of PostgreSQL (Redis, a one-shot migration job, the API and the web/nginx
+# front end). Copy deploy/docker/prod.mysql.env.example to
+# deploy/docker/prod.mysql.env and fill in the secrets first.
+#
+#   docker compose -f deploy/docker/compose.prod.mysql.yaml --env-file deploy/docker/prod.mysql.env up -d --build
+#
+# TLS: terminate HTTPS in front of the `web` service (load balancer, ingress,
+# or a reverse proxy). Session cookies are Secure in prod and need HTTPS.
+name: base-admin
+
+x-api-env: &api-env
+  ADMIN_APP_ENV: prod
+  # The password is pasted into a URL: see prod.mysql.env.example.
+  ADMIN_DATABASE_URL: mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}
+  ADMIN_REDIS_ADDR: redis:6379
+  ADMIN_REDIS_PASSWORD: ${REDIS_PASSWORD}
+  ADMIN_HTTP_ADDR: ":8080"
+  ADMIN_HTTP_DRAIN_DELAY: 5s
+  # Only the nginx container (on this subnet) may set X-Forwarded-For.
+  ADMIN_HTTP_TRUSTED_PROXIES: 172.30.0.0/24
+  ADMIN_METRICS_ADDR: "0.0.0.0:9090"
+  ADMIN_AUTH_COOKIE_NAME: __Host-sid
+  ADMIN_AUTH_ALLOWED_ORIGINS: ${PUBLIC_ORIGIN}
+  ADMIN_BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD}
+  ADMIN_FILE_DRIVER: local
+  ADMIN_FILE_LOCAL_DIR: /data/files
+  ADMIN_FILE_SIGNING_KEY: ${FILE_SIGNING_KEY}
+
+services:
+  mysql:
+    image: mysql:8.4.13
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_as_cs
+      # Lets the application user (no SUPER) create the trigger of the
+      # migrations while binary logging is on.
+      - --log-bin-trust-function-creators=1
+    volumes: [mysqldata:/var/lib/mysql]
+    # Over TCP: the first-start initialization runs a server without
+    # networking, which must not count as healthy.
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u$${MYSQL_USER} -p$${MYSQL_PASSWORD} --silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+    networks: [backend]
+
+  redis:
+    image: redis:7.4.12-alpine
+    restart: unless-stopped
+    # Design doc 6.5.6: AOF on; keys without TTL are never evicted.
+    command: >-
+      redis-server --appendonly yes --appendfsync everysec
+      --maxmemory-policy noeviction --requirepass ${REDIS_PASSWORD}
+    volumes: [redisdata:/data]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a $${REDIS_PASSWORD} --no-auth-warning ping | grep PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    networks: [backend]
+
+  migrate:
+    build:
+      context: ../../server
+      args:
+        VERSION: ${APP_VERSION:-dev}
+    image: base-admin-api:latest
+    command: ["migrate", "up"]
+    environment: *api-env
+    depends_on:
+      mysql: {condition: service_healthy}
+    networks: [backend]
+    restart: "no"
+
+  api:
+    image: base-admin-api:latest
+    restart: unless-stopped
+    environment: *api-env
+    volumes: [files:/data/files]
+    # /health/ready checks MySQL and Redis; the distroless image has no
+    # shell, so the binary probes itself.
+    healthcheck:
+      test: ["CMD", "/admin", "health", "ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    read_only: true
+    tmpfs: [/tmp]            # large multipart forms spill here
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+    networks: [backend]
+
+  web:
+    build: ../../web
+    restart: unless-stopped
+    environment:
+      API_UPSTREAM: api:8080
+    ports: ["${WEB_PORT:-80}:80"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    depends_on:
+      api: {condition: service_healthy}
+    networks: [backend]
+
+volumes:
+  mysqldata:
+  redisdata:
+  files:
+
+networks:
+  backend:
+    ipam:
+      config: [{subnet: 172.30.0.0/24}]
