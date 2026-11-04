@@ -22,6 +22,10 @@ type deps struct {
 	sqlDB *sql.DB
 	db    *gorm.DB
 	redis *redis.Client
+	// extra are the databases of the business modules (extra_db.go);
+	// missingExtra the names modules asked for that are not configured.
+	extra        map[string]*extraDB
+	missingExtra []string
 }
 
 func openDeps(ctx context.Context, cfg config.Config, logger *zap.Logger) (*deps, error) {
@@ -39,7 +43,13 @@ func openDeps(ctx context.Context, cfg config.Config, logger *zap.Logger) (*deps
 		_ = sqlDB.Close()
 		return nil, err
 	}
-	return &deps{sqlDB: sqlDB, db: gdb, redis: rdb}, nil
+	extra, err := openExtraDBs(ctx, cfg, logger)
+	if err != nil {
+		_ = rdb.Close()
+		_ = sqlDB.Close()
+		return nil, err
+	}
+	return &deps{sqlDB: sqlDB, db: gdb, redis: rdb, extra: extra}, nil
 }
 
 func (d *deps) close() error {
@@ -50,5 +60,6 @@ func (d *deps) close() error {
 	if err := d.sqlDB.Close(); err != nil {
 		errs = append(errs, fmt.Errorf("close database: %w", err))
 	}
+	errs = append(errs, closeExtraDBs(d.extra))
 	return errors.Join(errs...)
 }

@@ -87,7 +87,14 @@ func buildApplication(ctx context.Context, cfg config.Config, logger *zap.Logger
 			APIPrefix: APIPrefix, SessionCookie: cfg.Auth.CookieName, Database: cfg.Database,
 		}),
 		noticeModule,
+		// Business modules go here. Their configuration is cfg.Biz (biz in
+		// the config file, secrets from ADMIN_BIZ_*), their extra databases
+		// d.extraDB("<name>") (database.extra.<name>, URL from
+		// ADMIN_DATABASE_EXTRA_<NAME>_URL); see docs/module-guide.md.
 		// codegen:modules — 代码生成器在此行之上加入新模块
+	}
+	if err := d.missingExtraError(); err != nil {
+		return nil, err
 	}
 	store, err := storage.New(cfg.File)
 	if err != nil {

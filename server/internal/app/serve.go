@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"go.uber.org/zap"
 
@@ -36,13 +37,17 @@ func Serve(ctx context.Context, cfg config.Config, logger *zap.Logger) (err erro
 	defer func() { err = errors.Join(err, d.close()) }()
 
 	metrics := observability.NewMetrics()
-	if err := metrics.Register(collectors.NewDBStatsCollector(d.sqlDB, string(database.SQLDialect(d.sqlDB)))); err != nil {
+	dbMetrics := append([]prometheus.Collector{collectors.NewDBStatsCollector(d.sqlDB, string(database.SQLDialect(d.sqlDB)))},
+		d.extraMetrics()...)
+	if err := metrics.Register(dbMetrics...); err != nil {
 		return fmt.Errorf("register database metrics: %w", err)
 	}
-	health := observability.NewHealth(logger, readinessOptions,
+	// Extra databases count only when required (database.extra.<name>.required).
+	checks := append([]observability.Checker{
 		observability.NewCheck(string(database.SQLDialect(d.sqlDB)), d.sqlDB.PingContext),
 		observability.NewCheck("redis", func(ctx context.Context) error { return d.redis.Ping(ctx).Err() }),
-	)
+	}, d.extraChecks()...)
+	health := observability.NewHealth(logger, readinessOptions, checks...)
 
 	application, err := buildApplication(ctx, cfg, logger, d, metrics, health, password.Default)
 	if err != nil {

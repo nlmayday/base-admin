@@ -72,6 +72,12 @@ func OpenSQL(ctx context.Context, cfg config.DatabaseConfig, appName string, opt
 		_ = db.Close()
 		return nil, fmt.Errorf("ping database: %w", err)
 	}
+	if dialect == MySQL {
+		if err := checkMySQLVersion(pingCtx, db); err != nil {
+			_ = db.Close()
+			return nil, err
+		}
+	}
 	return db, nil
 }
 
@@ -104,8 +110,11 @@ func NewGorm(db *sql.DB, cfg config.DatabaseConfig, logger *zap.Logger) (*gorm.D
 			IgnoreRecordNotFoundError: true,
 			ParameterizedQueries:      true,
 		}),
-		NowFunc:        func() time.Time { return time.Now().UTC() },
-		TranslateError: true,
+		NowFunc: func() time.Time { return time.Now().UTC() },
+		// OpenSQL already pinged the main database; an extra database that
+		// is not required may be down at startup (app/extra_db.go).
+		DisableAutomaticPing: true,
+		TranslateError:       true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("open gorm: %w", err)

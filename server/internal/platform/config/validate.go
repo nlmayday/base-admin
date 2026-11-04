@@ -162,6 +162,7 @@ func (d DatabaseConfig) validate() error {
 	if d.StatementTimeout < 0 {
 		errs = append(errs, errors.New("database.statement_timeout must not be negative"))
 	}
+	errs = append(errs, validateExtra(d.Extra))
 	return errors.Join(errs...)
 }
 

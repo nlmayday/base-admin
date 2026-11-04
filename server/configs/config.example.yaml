@@ -36,6 +36,12 @@ database:
   connect_timeout: 5s
   statement_timeout: 15s    # 0 disables; migrations always run without it
   slow_query_threshold: 200ms
+  # Extra databases of business modules (docs/module-guide.md): the URL comes
+  # from ADMIN_DATABASE_EXTRA_<NAME>_URL; optional pool settings here, e.g.
+  # extra:
+  #   game:
+  #     max_open_conns: 10
+  #     required: false        # true: no start and not ready while unreachable
 
 redis:
   addr: 127.0.0.1:6379
@@ -94,3 +100,10 @@ file:
   # Secrets, environment only:
   #   ADMIN_FILE_SIGNING_KEY   at least 32 bytes; required in prod
   #   ADMIN_FILE_S3_ACCESS_KEY / ADMIN_FILE_S3_SECRET_KEY  (omit both to use the AWS/MinIO env or instance role)
+
+# Configuration of business modules, decoded by each module with
+# cfg.Biz.Decode (docs/module-guide.md). Secrets come from ADMIN_BIZ_<KEY>,
+# levels separated by a double underscore: ADMIN_BIZ_GAME__INNER_TOKEN.
+# biz:
+#   game:
+#     grpc_addr: game-server:9000
