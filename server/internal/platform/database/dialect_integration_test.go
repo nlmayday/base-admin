@@ -4,6 +4,7 @@ package database
 
 import (
 	"context"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -98,6 +99,11 @@ func TestErrorClassification(t *testing.T) {
 
 	err = db.Exec(`INSERT INTO t_child (parent_id) VALUES (999)`).Error
 	assert.True(t, IsForeignKeyViolation(err), "%v", err)
+	assert.False(t, IsUniqueViolation(err))
+	assert.False(t, IsValueTooLong(err))
+
+	err = db.Exec(`INSERT INTO t_parent (code, tags) VALUES (?, ?)`, strings.Repeat("长", 33), TextArray{}).Error
+	assert.True(t, IsValueTooLong(err), "%v", err)
 	assert.False(t, IsUniqueViolation(err))
 }
 

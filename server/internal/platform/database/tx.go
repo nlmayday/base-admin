@@ -19,6 +19,7 @@ const (
 	pgUniqueViolation  = "23505"
 	pgForeignKey       = "23503"
 	pgLockNotAvailable = "55P03"
+	pgValueTooLong     = "22001" // string_data_right_truncation
 )
 
 // MySQL error numbers with the same meaning.
@@ -28,6 +29,7 @@ const (
 	myNoReferencedRow = 1452
 	myLockWaitTimeout = 1205
 	myLockNowait      = 3572
+	myDataTooLong     = 1406
 )
 
 type fnError struct{ err error }
@@ -182,6 +184,12 @@ func IsForeignKeyViolation(err error) bool {
 	n := mysqlNumber(err)
 	return pgCode(err) == pgForeignKey || n == myRowIsReferenced || n == myNoReferencedRow ||
 		errors.Is(err, gorm.ErrForeignKeyViolated)
+}
+
+// IsValueTooLong reports a value longer than its column, such as more than
+// 64 KB in a MySQL text column (PostgreSQL text has no limit).
+func IsValueTooLong(err error) bool {
+	return pgCode(err) == pgValueTooLong || mysqlNumber(err) == myDataTooLong
 }
 
 // IsLockTimeout reports that a row lock could not be acquired in time.

@@ -7,6 +7,7 @@ import (
 	"errors"
 [[- end]]
 	"fmt"
+	"net/http"
 [[- if .TextSearch]]
 	"strings"
 [[- end]]
@@ -203,6 +204,10 @@ func (m *Module) list[[.PluralUpper]](c *gin.Context) (any, error) {
 
 var err[[.Upper]]NotFound = httpx.NotFound("[[.Name]]不存在")
 
+// err[[.Upper]]TooLong: a value is longer than its column (on MySQL a text
+// column holds 64 KB).
+var err[[.Upper]]TooLong = httpx.NewError(http.StatusUnprocessableEntity, httpx.CodeValidation, "内容超过字段允许的长度")
+
 // load[[.Upper]] reads one visible row; rows outside the data scope are 404.
 func load[[.Upper]](ctx context.Context, db *gorm.DB, id int64) ([[.Lower]]View, error) {
 	var rows [][[.Lower]]Row
@@ -319,6 +324,9 @@ func (m *Module) create[[.Upper]](c *gin.Context) (any, error) {
 			if constraint, ok := database.UniqueConstraint(err); ok {
 				return [[.Lower]]Duplicate(constraint)
 			}
+			if database.IsValueTooLong(err) {
+				return err[[.Upper]]TooLong
+			}
 			return err
 		}
 		view, err = [[if .Dept]]reload[[else]]load[[end]][[.Upper]](ctx, tx, id)
@@ -403,12 +411,18 @@ func (m *Module) update[[.Upper]](c *gin.Context) (any, error) {
 		}
 [[- if .Version]]
 		if err := updateVersioned(tx, [[.Lower]]Table, id, *req.Version, sets, [[.Lower]]Duplicate); err != nil {
+			if database.IsValueTooLong(err) {
+				return err[[.Upper]]TooLong
+			}
 			return err
 		}
 [[- else]]
 		if err := tx.Table([[.Lower]]Table).Where("id = ?", id).Updates(sets).Error; err != nil {
 			if constraint, ok := database.UniqueConstraint(err); ok {
 				return [[.Lower]]Duplicate(constraint)
+			}
+			if database.IsValueTooLong(err) {
+				return err[[.Upper]]TooLong
 			}
 			return err
 		}

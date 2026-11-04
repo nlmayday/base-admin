@@ -79,7 +79,7 @@ func TestTableSpecMySQL(t *testing.T) {
 		"ordered_at datetime(6) DEFAULT CURRENT_TIMESTAMP(6)",
 		"cover_url varchar(512) NOT NULL DEFAULT ''",
 		"attachments json NOT NULL DEFAULT (JSON_ARRAY()) CHECK (JSON_TYPE(attachments) = 'ARRAY')",
-		"remark text COMMENT '备注'",
+		"remark mediumtext COMMENT '备注'",
 		"channel varchar(8) DEFAULT 'web' CHECK (channel IN ('web', 'app'))",
 		"status smallint NOT NULL DEFAULT 1 COMMENT '状态' CHECK (status IN (1, 2))",
 		"dept_id bigint COMMENT '所属部门'",
@@ -103,7 +103,7 @@ func TestTableSpecMySQL(t *testing.T) {
 	require.Empty(t, spec.Problems())
 	up, _ = spec.MigrationSQL(database.MySQL)
 	assert.Contains(t, up, `DEFAULT 'it''s \\n'`, "backslashes are escaped")
-	assert.Contains(t, up, "body text DEFAULT ('x')", "text takes an expression default")
+	assert.Contains(t, up, "body mediumtext DEFAULT ('x')", "text takes an expression default")
 	assert.Contains(t, up, "UNIQUE KEY biz_notes_title_uq (title)")
 }
 

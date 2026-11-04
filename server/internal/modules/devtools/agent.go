@@ -184,15 +184,63 @@ func (m *Module) createTable(c *gin.Context) (any, error) {
 	if err := writeMigration(dir, view.Migration, up, down); err != nil {
 		return nil, err
 	}
+	twin, err := writeTwin(root, dialect, req.TableSpec, view.Migration, last)
+	if err != nil {
+		removeMigration(dir, view.Migration)
+		return nil, err
+	}
 	if err := m.applyMigrations(ctx, dir, last+1); err != nil {
 		return nil, httpx.NewError(http.StatusInternalServerError, httpx.CodeInternal,
 			"迁移文件已写入但执行失败，请人工检查 "+rel+"/"+view.Migration+"："+err.Error()).WithCause(err)
 	}
 	view.Applied = true
-	view.Notes = append(view.Notes,
-		"已写入 "+rel+"/"+view.Migration+".up.sql / .down.sql 并在开发库执行",
-		"下一步：POST "+m.deps.APIPrefix+agentPath+"/generate 生成模块")
+	view.Notes = append(view.Notes, "已写入 "+rel+"/"+view.Migration+".up.sql / .down.sql 并在开发库执行")
+	if twin != "" {
+		view.Notes = append(view.Notes, twin)
+	}
+	view.Notes = append(view.Notes, "下一步：POST "+m.deps.APIPrefix+agentPath+"/generate 生成模块")
 	return view, nil
+}
+
+// otherDialect is the dialect that is not d.
+func otherDialect(d database.Dialect) database.Dialect {
+	if d == database.MySQL {
+		return database.Postgres
+	}
+	return database.MySQL
+}
+
+// writeTwin writes the migration of spec for the other database as well,
+// when the project keeps that database's application track in step (its
+// last migration is last too), so the project keeps running on both. The
+// twin is not applied. It returns a note for the response, "" when there
+// is no track to keep in step.
+func writeTwin(root string, d database.Dialect, spec codegen.TableSpec, stem string, last uint) (string, error) {
+	other := otherDialect(d)
+	rel := appMigrationsDir(other)
+	dir := filepath.Join(root, filepath.FromSlash(rel))
+	if _, err := os.Stat(dir); err != nil {
+		return "", nil //nolint:nilerr // no track for the other database
+	}
+	otherLast, err := lastMigration(dir)
+	if err != nil {
+		return "", err
+	}
+	if otherLast != last {
+		return fmt.Sprintf("%s 的最后一个迁移是 %06d，与当前数据库（%06d）不一致，未同步写入另一种数据库的迁移，需要时请手写", rel, otherLast, last), nil
+	}
+	up, down := spec.MigrationSQL(other)
+	if err := writeMigration(dir, stem, up, down); err != nil {
+		return "", err
+	}
+	return "同时写入了 " + rel + "/" + stem + "（另一种数据库的版本，未执行）", nil
+}
+
+// removeMigration deletes the files of a migration that was not applied.
+func removeMigration(dir, stem string) {
+	for _, suffix := range []string{".up.sql", ".down.sql"} {
+		_ = os.Remove(filepath.Join(dir, stem+suffix))
+	}
 }
 
 // sameTable recognizes a repeated request: the table exists and was
