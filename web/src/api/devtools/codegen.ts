@@ -114,6 +114,10 @@ export type CodegenRequest = {
   resource: string;
   name: string;
   moduleTitle: string;
+  /** 页面菜单标题，默认「中文名 + 管理」 */
+  menuTitle?: string;
+  /** 页面菜单排序（0–9999，小的在前），默认 1 */
+  menuSort?: number;
   fields?: CodegenFieldOption[];
   keyMode?: CodegenKeyMode;
   /** 只读：只生成列表、详情和导出 */

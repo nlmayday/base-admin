@@ -13,11 +13,27 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 
 	"base-admin/server/internal/platform/httpx"
+	"base-admin/server/internal/platform/requestid"
 )
 
 var errVersionConflict = httpx.Conflict("数据已被他人修改，请刷新")
+
+// Operations passed to the AfterCommit hooks (<resource>_ext.go).
+const (
+	opCreate = "create"
+	opUpdate = "update"
+	opDelete = "delete"
+)
+
+// afterCommitFailed logs an error of an AfterCommit hook; the write was
+// committed, so the user is not told.
+func afterCommitFailed(ctx context.Context, resource, op string, key any, err error) {
+	zap.L().Error("after-commit hook failed", zap.String("module", [[goString .Pkg]]), zap.String("resource", resource),
+		zap.String("op", op), zap.Any("key", key), zap.String("request_id", requestid.From(ctx)), zap.Error(err))
+}
 
 // DictLookup validates values of dictionary-backed fields.
 type DictLookup interface {

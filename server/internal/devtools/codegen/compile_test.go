@@ -46,6 +46,9 @@ func TestGeneratedGoCompiles(t *testing.T) {
 		{ticketTable(), Spec{Module: "desk", Resource: "ticket", Name: "工单", NewModule: true}},
 		// Image and attachment uploads.
 		{productTable(), Spec{Module: "shopup", Resource: "product", Name: "商品", NewModule: true}},
+		// A database-assigned key narrower than bigint.
+		{Table{Name: "biz_tags", Columns: []Column{{Name: "id", UDT: "int4", Identity: true, Primary: true}, {Name: "name", UDT: "varchar", MaxLength: 32}}},
+			Spec{Module: "tags", Resource: "tag", Name: "标签", NewModule: true}},
 		// Relation fields, searched and not.
 		{dealTable(), Spec{Module: "crmrel", Resource: "deal", Name: "商机", NewModule: true,
 			Fields: []FieldOption{{Column: "customer_id", Search: SearchEq}}}},

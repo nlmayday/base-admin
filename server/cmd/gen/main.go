@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,7 +28,7 @@ const usage = `usage: go run ./cmd/gen -table <table> -module <module> -resource
        go run ./cmd/gen -spec <specs.json> [flags]
 
 -spec reads one spec or a list of them, each with the fields of the codegen
-page ("table", "module", "resource", "name", "moduleTitle", "parentMenu",
+page ("table", "module", "resource", "name", "moduleTitle", "parentMenu", "menuTitle", "menuSort",
 "fields", "keyMode", "readOnly", "softDelete", "children"), and generates them in order:
 the way to generate many tables, and to generate them again with -force.
 
@@ -62,6 +63,8 @@ type specEntry struct {
 	Name        string                `json:"name"`
 	ModuleTitle string                `json:"moduleTitle,omitempty"`
 	ParentMenu  string                `json:"parentMenu,omitempty"`
+	MenuTitle   string                `json:"menuTitle,omitempty"`
+	MenuSort    *int                  `json:"menuSort,omitempty"`
 	Fields      []codegen.FieldOption `json:"fields,omitempty"`
 	KeyMode     string                `json:"keyMode,omitempty"`
 	ReadOnly    bool                  `json:"readOnly,omitempty"`
@@ -71,7 +74,8 @@ type specEntry struct {
 
 func (e specEntry) job() job {
 	return job{table: e.Table, spec: codegen.Spec{Module: e.Module, Resource: e.Resource, Name: e.Name,
-		ModuleTitle: e.ModuleTitle, ParentMenu: e.ParentMenu, Fields: e.Fields, KeyMode: e.KeyMode,
+		ModuleTitle: e.ModuleTitle, ParentMenu: e.ParentMenu, MenuTitle: e.MenuTitle, MenuSort: e.MenuSort,
+		Fields: e.Fields, KeyMode: e.KeyMode,
 		ReadOnly: e.ReadOnly, SoftDelete: e.SoftDelete, Children: e.Children}}
 }
 
@@ -97,6 +101,15 @@ func parseFlags(args []string, stderr io.Writer) (options, error) {
 	fs.StringVar(&one.Name, "name", "", "Chinese display name, e.g. 客户 (required without -spec)")
 	fs.StringVar(&one.ModuleTitle, "module-title", "", "directory menu title when the module is new (default: module name)")
 	fs.StringVar(&one.ParentMenu, "parent-menu", "", "parent menu code (default: <module>.root)")
+	fs.StringVar(&one.MenuTitle, "menu-title", "", "the page's menu title (default: <name>管理)")
+	fs.Func("menu-sort", "the page's menu order among its siblings, smaller first (default 1)", func(v string) error {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("menu-sort: %w", err)
+		}
+		one.MenuSort = &n
+		return nil
+	})
 	fs.StringVar(&one.KeyMode, "key-mode", "", "how rows get their primary key: auto, generated (snowflake, Deps.NewID) or input (default: from the column)")
 	fs.BoolVar(&one.ReadOnly, "read-only", false, "generate the list, detail and export only")
 	fs.BoolFunc("no-soft-delete", "treat deleted_at as a plain time column: list every row, delete removes the row", func(string) error {

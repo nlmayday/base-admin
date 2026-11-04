@@ -57,7 +57,9 @@ const form = reactive<CodegenRequest>({
   module: "",
   resource: "",
   name: "",
-  moduleTitle: ""
+  moduleTitle: "",
+  menuTitle: "",
+  menuSort: undefined
 });
 const { fieldErrors, clearFieldErrors, applyFieldErrors } = useFieldErrors();
 const emptyAdvanced = (): AdvancedModel => ({
@@ -135,7 +137,9 @@ async function restoreLast(): Promise<void> {
     module: req.module,
     resource: req.resource,
     name: req.name,
-    moduleTitle: req.moduleTitle
+    moduleTitle: req.moduleTitle,
+    menuTitle: req.menuTitle ?? "",
+    menuSort: req.menuSort
   });
   await loadFields(req.table);
   const overrides = new Map<string, CodegenFieldOption>(
@@ -194,7 +198,8 @@ const rules: FormRules = {
   moduleTitle: [
     { max: 20, message: "最长 20 个字符", trigger: "blur" },
     noUnsafe
-  ]
+  ],
+  menuTitle: [{ max: 20, message: "最长 20 个字符", trigger: "blur" }, noUnsafe]
 };
 
 /** 与默认值不同的字段配置（保持命令行参数简短） */
@@ -247,9 +252,12 @@ function allFieldOptions(): CodegenFieldOption[] {
 function request(): CodegenRequest {
   const a = advanced.value;
   const children = a.readOnly ? [] : childSpecs(a.children);
+  const { menuTitle, menuSort, ...base } = form;
   return {
-    ...form,
+    ...base,
     name: form.name.trim(),
+    ...(menuTitle?.trim() ? { menuTitle: menuTitle.trim() } : {}),
+    ...(menuSort === undefined || menuSort === null ? {} : { menuSort }),
     fields: allFieldOptions(),
     ...(a.keyMode ? { keyMode: a.keyMode } : {}),
     ...(a.readOnly ? { readOnly: true } : {}),
@@ -269,6 +277,8 @@ const command = computed(() => {
   ];
   if (form.moduleTitle) parts.push(`-module-title '${form.moduleTitle}'`);
   const req = request();
+  if (req.menuTitle) parts.push(`-menu-title '${req.menuTitle}'`);
+  if (req.menuSort !== undefined) parts.push(`-menu-sort ${req.menuSort}`);
   if (req.fields?.length) parts.push(`-fields '${JSON.stringify(req.fields)}'`);
   if (req.keyMode) parts.push(`-key-mode ${req.keyMode}`);
   if (req.readOnly) parts.push("-read-only");
@@ -538,6 +548,36 @@ onMounted(async () => {
               maxlength="20"
               clearable
             />
+          </el-form-item>
+          <el-form-item
+            label="菜单标题"
+            prop="menuTitle"
+            :error="fieldErrors.menuTitle"
+          >
+            <el-input
+              v-model="form.menuTitle"
+              :placeholder="`默认 ${form.name.trim() || '中文名'}管理，如 玩家查询`"
+              maxlength="20"
+              clearable
+            />
+          </el-form-item>
+          <el-form-item
+            label="菜单排序"
+            prop="menuSort"
+            :error="fieldErrors.menuSort"
+          >
+            <el-input-number
+              v-model="form.menuSort"
+              :min="0"
+              :max="9999"
+              :step="1"
+              step-strictly
+              placeholder="默认 1"
+              controls-position="right"
+            />
+            <span class="ml-2 text-xs text-[var(--el-text-color-secondary)]">
+              小的在前；菜单只在首次启动时写入，之后改要到菜单管理里改
+            </span>
           </el-form-item>
         </el-form>
         <FieldConfig

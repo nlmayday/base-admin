@@ -138,6 +138,9 @@ type tmplData struct {
 	FileBase, URLPath, URLName                string
 	PermPrefix, MenuCode, PagePath, Component string
 	ViewName                                  string
+	// MenuName and MenuOrder are the page menu's title and sort.
+	MenuName  string
+	MenuOrder int
 
 	Fields, Writable, TableFields, ExportFields, SearchFields []*Field
 	// UniqueFields are writable columns with a single-column unique index.
@@ -241,6 +244,13 @@ func buildData(t Table, spec Spec) *tmplData {
 	}
 	if d.ModuleTitle == "" {
 		d.ModuleTitle = spec.Module
+	}
+	d.MenuName, d.MenuOrder = spec.Name+"管理", 1
+	if t := strings.TrimSpace(spec.MenuTitle); t != "" {
+		d.MenuName = t
+	}
+	if spec.MenuSort != nil {
+		d.MenuOrder = *spec.MenuSort
 	}
 	d.collectFields(t)
 	for _, ct := range t.Children {
@@ -753,8 +763,8 @@ func (d *tmplData) menus() []menu.Def {
 		out = append(out, menu.Def{Code: d.ParentMenu, Type: menu.TypeDir, Title: d.ModuleTitle, Path: "/" + d.Pkg, Sort: 100})
 	}
 	return append(out, menu.Def{
-		Code: d.MenuCode, Parent: d.ParentMenu, Type: menu.TypeMenu, Title: d.Name + "管理", Path: d.PagePath,
-		Component: d.Component, Permission: d.PermPrefix + ":view",
+		Code: d.MenuCode, Parent: d.ParentMenu, Type: menu.TypeMenu, Title: d.MenuName, Path: d.PagePath,
+		Component: d.Component, Permission: d.PermPrefix + ":view", Sort: d.MenuOrder,
 	})
 }
 
