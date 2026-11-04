@@ -279,7 +279,7 @@ func (m *Module) schemaVersion(ctx context.Context) (version uint, dirty bool, e
 	if err != nil {
 		return 0, false, err
 	}
-	v, dirty, err := dbmigrate.AppTrack.State(ctx, sqlDB)
+	v, dirty, err := dbmigrate.AppTrackFor(m.deps.Database).State(ctx, sqlDB)
 	return uint(v), dirty, err
 }
 
@@ -441,7 +441,7 @@ func (m *Module) applyMigrations(ctx context.Context, dir string, want uint) err
 	if err != nil {
 		return err
 	}
-	track := dbmigrate.AppTrack
+	track := dbmigrate.AppTrackFor(m.deps.Database)
 	track.Files = map[database.Dialect]fs.FS{database.SQLDialect(sqlDB): os.DirFS(dir)}
 	runner, err := dbmigrate.New(sqlDB, track)
 	if err != nil {

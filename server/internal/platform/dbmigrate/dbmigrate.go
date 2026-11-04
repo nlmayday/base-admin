@@ -20,6 +20,7 @@ import (
 	"github.com/golang-migrate/migrate/v4/source"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 
+	"base-admin/server/internal/platform/config"
 	dbpkg "base-admin/server/internal/platform/database"
 	"base-admin/server/migrations"
 )
@@ -36,18 +37,37 @@ type Track struct {
 	Files map[dbpkg.Dialect]fs.FS
 }
 
-// The scaffold track keeps the original version table, so existing
-// databases need no conversion; the application track starts empty.
+// The tracks with their default version tables. The scaffold track keeps
+// the original table, so existing databases need no conversion; the
+// application track starts empty. TracksFor applies the configured tables.
 var (
 	BaseTrack = Track{
-		Name: "base", Table: "schema_migrations",
+		Name: "base", Table: config.DefaultMigrationsTable,
 		Files: map[dbpkg.Dialect]fs.FS{dbpkg.Postgres: migrations.FS, dbpkg.MySQL: migrations.MySQL},
 	}
 	AppTrack = Track{
-		Name: "app", Table: "app_schema_migrations",
+		Name: "app", Table: config.DefaultAppMigrationsTable,
 		Files: map[dbpkg.Dialect]fs.FS{dbpkg.Postgres: migrations.App, dbpkg.MySQL: migrations.AppMySQL},
 	}
 )
+
+// TracksFor returns the tracks in the order they are applied (application
+// migrations may reference scaffold tables, never the reverse), with the
+// version tables of cfg (database.migrations_table and
+// database.app_migrations_table); empty names keep the defaults.
+func TracksFor(cfg config.DatabaseConfig) []Track {
+	base, app := BaseTrack, AppTrack
+	if cfg.MigrationsTable != "" {
+		base.Table = cfg.MigrationsTable
+	}
+	if cfg.AppMigrationsTable != "" {
+		app.Table = cfg.AppMigrationsTable
+	}
+	return []Track{base, app}
+}
+
+// AppTrackFor is the application track of TracksFor.
+func AppTrackFor(cfg config.DatabaseConfig) Track { return TracksFor(cfg)[1] }
 
 // FilesFor returns the migrations of a dialect.
 func (t Track) FilesFor(d dbpkg.Dialect) (fs.FS, error) {
@@ -58,13 +78,9 @@ func (t Track) FilesFor(d dbpkg.Dialect) (fs.FS, error) {
 	return files, nil
 }
 
-// Tracks returns the tracks in the order they are applied: application
-// migrations may reference scaffold tables, never the reverse.
-func Tracks() []Track { return []Track{BaseTrack, AppTrack} }
-
-// TrackByName finds a track of Tracks.
-func TrackByName(name string) (Track, bool) {
-	for _, t := range Tracks() {
+// TrackByName finds a track by name.
+func TrackByName(tracks []Track, name string) (Track, bool) {
+	for _, t := range tracks {
 		if t.Name == name {
 			return t, true
 		}
@@ -237,8 +253,8 @@ func (t Track) Latest(d dbpkg.Dialect) (uint, error) {
 
 // RequireCurrent fails unless every track is clean and at its latest
 // version, so the server never runs against an unmigrated database.
-func RequireCurrent(ctx context.Context, db *sql.DB) error {
-	for _, t := range Tracks() {
+func RequireCurrent(ctx context.Context, db *sql.DB, tracks []Track) error {
+	for _, t := range tracks {
 		if err := t.RequireCurrent(ctx, db); err != nil {
 			return err
 		}
@@ -272,7 +288,7 @@ func (t Track) State(ctx context.Context, db *sql.DB) (version uint64, dirty boo
 	if !exists {
 		return 0, false, nil
 	}
-	// The table name is a constant of the track, not input.
+	// The table name comes from the track (validated configuration), not input.
 	err = db.QueryRowContext(ctx, "SELECT version, dirty FROM "+t.Table+" LIMIT 1").Scan(&version, &dirty) //nolint:gosec // G202: constant table name
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, false, nil

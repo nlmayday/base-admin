@@ -40,7 +40,7 @@ type migrateCmd struct {
 // dirty schema is reported as an error so scripts can detect it from the
 // exit code.
 func Migrate(ctx context.Context, cfg config.Config, logger *zap.Logger, out io.Writer, args []string) error {
-	cmd, err := parseMigrateArgs(args)
+	cmd, err := parseMigrateArgs(dbmigrate.TracksFor(cfg.Database), args)
 	if err != nil {
 		return err
 	}
@@ -102,10 +102,10 @@ func reportStatus(track dbmigrate.Track, status dbmigrate.Status, action string,
 
 // parseMigrateArgs reads `[track] action [n]`. up and version default to
 // every track; down and force change one track and must name it.
-func parseMigrateArgs(args []string) (migrateCmd, error) {
-	cmd := migrateCmd{tracks: dbmigrate.Tracks()}
+func parseMigrateArgs(tracks []dbmigrate.Track, args []string) (migrateCmd, error) {
+	cmd := migrateCmd{tracks: tracks}
 	if len(args) > 0 {
-		if t, ok := dbmigrate.TrackByName(args[0]); ok {
+		if t, ok := dbmigrate.TrackByName(tracks, args[0]); ok {
 			cmd.tracks, args = []dbmigrate.Track{t}, args[1:]
 		}
 	}

@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"base-admin/server/internal/platform/config"
 	"base-admin/server/internal/platform/database"
 )
 
@@ -36,7 +37,7 @@ func TestScaffoldMigrationsMatchAcrossDialects(t *testing.T) {
 }
 
 func TestTracksHaveFilesForEveryDialect(t *testing.T) {
-	for _, tr := range Tracks() {
+	for _, tr := range TracksFor(config.DatabaseConfig{}) {
 		for _, d := range []database.Dialect{database.Postgres, database.MySQL} {
 			_, err := tr.FilesFor(d)
 			assert.NoError(t, err, "%s/%s", tr.Name, d)

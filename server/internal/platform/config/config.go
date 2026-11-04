@@ -100,6 +100,11 @@ type DatabaseConfig struct {
 	// StatementTimeout is applied per session; zero disables it.
 	StatementTimeout   time.Duration `mapstructure:"statement_timeout"`
 	SlowQueryThreshold time.Duration `mapstructure:"slow_query_threshold"`
+	// MigrationsTable and AppMigrationsTable are the version tables of the
+	// scaffold and application migration tracks; change them when another
+	// service keeps its golang-migrate versions in the same database.
+	MigrationsTable    string `mapstructure:"migrations_table"`
+	AppMigrationsTable string `mapstructure:"app_migrations_table"`
 	// Extra are other databases of the business modules, by name
 	// (extra.go).
 	Extra map[string]ExtraDatabaseConfig `mapstructure:"extra"`

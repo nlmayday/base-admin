@@ -29,6 +29,8 @@ make test-integration-mysql   # 全部后端测试在 MySQL 上跑一遍
 
 ## 部署要求
 
+和别的服务（例如游戏服，它的 golang-migrate 也用 `schema_migrations`）共用一个库时，把后台的两个迁移版本表改名，避免互相覆盖版本号：`ADMIN_DATABASE_MIGRATIONS_TABLE=admin_schema_migrations`、`ADMIN_DATABASE_APP_MIGRATIONS_TABLE=admin_app_schema_migrations`（或配置文件里的 `database.migrations_table`、`database.app_migrations_table`）。`migrate` 的各个子命令、启动时的版本检查和测试都按这两个名字读写。
+
 用 Docker 部署时直接用 `deploy/docker/compose.prod.mysql.yaml`（MySQL 8.4、Redis、迁移、后端、nginx），下面几条它都已经设置好。数据库密码会拼进连接地址，只用字母、数字和 `-_.~`，其他字符要做 URL 编码（`@` 写成 `%40`）。
 
 - MySQL 8.0.30 及以上（8.0 和 8.4 都在 CI 上跑全部测试）。用到的 CHECK 约束、函数索引、表达式默认值、`INSERT … AS excluded` 行别名在 8.0.19 起都有；低于 8.0.30 或者 MariaDB 时，程序启动就报错。

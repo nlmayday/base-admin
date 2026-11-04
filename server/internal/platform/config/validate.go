@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/netip"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -162,7 +163,7 @@ func (d DatabaseConfig) validate() error {
 	if d.StatementTimeout < 0 {
 		errs = append(errs, errors.New("database.statement_timeout must not be negative"))
 	}
-	errs = append(errs, validateExtra(d.Extra))
+	errs = append(errs, validateExtra(d.Extra), d.validateMigrationTables())
 	return errors.Join(errs...)
 }
 
@@ -249,4 +250,27 @@ func ipOrPrefix(key, value string) error {
 		return nil
 	}
 	return fmt.Errorf("%s entry %q is not an IP or CIDR", key, value)
+}
+
+// Default version tables of the migration tracks.
+const (
+	DefaultMigrationsTable    = "schema_migrations"
+	DefaultAppMigrationsTable = "app_schema_migrations"
+)
+
+var tableNamePattern = regexp.MustCompile(`^[a-z_][a-z0-9_]{0,62}$`)
+
+func (d DatabaseConfig) validateMigrationTables() error {
+	var errs []error
+	for key, name := range map[string]string{
+		"database.migrations_table": d.MigrationsTable, "database.app_migrations_table": d.AppMigrationsTable,
+	} {
+		if !tableNamePattern.MatchString(name) {
+			errs = append(errs, fmt.Errorf("%s must be a lower-case table name (letters, digits, _); got %q", key, name))
+		}
+	}
+	if d.MigrationsTable != "" && d.MigrationsTable == d.AppMigrationsTable {
+		errs = append(errs, errors.New("database.migrations_table and database.app_migrations_table must differ"))
+	}
+	return errors.Join(errs...)
 }
