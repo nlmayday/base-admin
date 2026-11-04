@@ -74,9 +74,9 @@ func applyUserFilter(q *gorm.DB, f userFilter) (*gorm.DB, error) {
 	if kw := strings.TrimSpace(f.Keyword); kw != "" {
 		like := "%" + escapeLike(kw) + "%"
 		if f.namesOnly {
-			q = q.Where("(u.username ILIKE ? OR u.nickname ILIKE ?)", like, like)
+			q = q.Where("(LOWER(u.username) LIKE LOWER(?) OR LOWER(u.nickname) LIKE LOWER(?))", like, like)
 		} else {
-			q = q.Where("(u.username ILIKE ? OR u.nickname ILIKE ? OR u.phone ILIKE ?)", like, like, like)
+			q = q.Where("(LOWER(u.username) LIKE LOWER(?) OR LOWER(u.nickname) LIKE LOWER(?) OR LOWER(u.phone) LIKE LOWER(?))", like, like, like)
 		}
 	}
 	if f.DeptID != "" {
@@ -236,16 +236,17 @@ func (m *Module) createUser(c *gin.Context) (any, error) {
 			return err
 		}
 		// The administrator chose the password, so the user must replace it.
-		res := tx.Raw(`INSERT INTO sys_users (username, password_hash, nickname, email, phone, dept_id, status,
+		var err error
+		id, err = database.InsertID(tx, `INSERT INTO sys_users (username, password_hash, nickname, email, phone, dept_id, status,
 				must_change_password, created_by, updated_by)
-			VALUES (?, ?, ?, ?, ?, ?, ?, true, ?, ?) RETURNING id`,
+			VALUES (?, ?, ?, ?, ?, ?, ?, true, ?, ?)`,
 			req.Username, hash, req.Nickname, req.Email, req.Phone, int64Ptr(req.DeptID), req.Status,
-			actor.From(ctx).UserID(), actor.From(ctx).UserID()).Scan(&id)
-		if res.Error != nil {
-			if database.IsUniqueViolation(res.Error) {
+			actor.From(ctx).UserID(), actor.From(ctx).UserID())
+		if err != nil {
+			if database.IsUniqueViolation(err) {
 				return fieldError("username", "用户名已存在")
 			}
-			return res.Error
+			return err
 		}
 		if err := replaceUserLinks(tx, id, ids.Int64s(req.RoleIDs), ids.Int64s(req.PositionIDs)); err != nil {
 			return err
@@ -405,7 +406,7 @@ func (m *Module) setUserStatus(c *gin.Context) (any, error) {
 			// no side effect (the row is already locked).
 			return requireVersion(tx, id, *req.Version)
 		}, func(tx *gorm.DB) error {
-			return tx.Exec("UPDATE sys_users SET status = 2, version = version + 1, updated_at = now(), updated_by = ? WHERE id = ?",
+			return tx.Exec("UPDATE sys_users SET status = 2, version = version + 1, updated_at = CURRENT_TIMESTAMP(6), updated_by = ? WHERE id = ?",
 				uid, id).Error
 		})
 	}
@@ -494,7 +495,7 @@ func (m *Module) deleteUser(c *gin.Context) (any, error) {
 	err = m.revokeUser(ctx, id, func(tx *gorm.DB) error {
 		return m.prepareDestructive(ctx, tx, id, "不能删除自己")
 	}, func(tx *gorm.DB) error {
-		if err := tx.Exec(`UPDATE sys_users SET deleted_at = now(), status = 2, version = version + 1,
+		if err := tx.Exec(`UPDATE sys_users SET deleted_at = CURRENT_TIMESTAMP(6), status = 2, version = version + 1,
 			updated_by = ? WHERE id = ?`, actor.From(ctx).UserID(), id).Error; err != nil {
 			return err
 		}

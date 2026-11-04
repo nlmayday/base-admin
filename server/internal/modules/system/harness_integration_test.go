@@ -25,6 +25,7 @@ import (
 	"base-admin/server/internal/platform/database"
 	"base-admin/server/internal/platform/httpx"
 	"base-admin/server/internal/platform/testinfra"
+	"base-admin/server/internal/platform/testinfra/dbtest"
 	"base-admin/server/internal/platform/testinfra/migrated"
 )
 
@@ -90,8 +91,8 @@ func newHarness(t *testing.T) *harness {
 	t.Cleanup(func() { _ = rdb.Close(); _ = sqlDB.Close() })
 
 	h := &harness{t: t, db: gdb, rdb: rdb, perms: allCodes()}
-	require.NoError(t, gdb.Raw(`INSERT INTO sys_users (username, password_hash, nickname)
-		VALUES ('sysadmin', 'x', '配置管理员') RETURNING id`).Scan(&h.userID).Error)
+	h.userID = dbtest.InsertID(t, gdb, `INSERT INTO sys_users (username, password_hash, nickname)
+		VALUES ('sysadmin', 'x', '配置管理员')`)
 	h.mod = New(Deps{DB: gdb, Redis: rdb, Logger: zap.NewNop()})
 	require.NoError(t, module.Sync(ctx, gdb, []module.Module{h.mod}))
 

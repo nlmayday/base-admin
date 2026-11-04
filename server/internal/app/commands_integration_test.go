@@ -5,10 +5,12 @@ package app
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -63,9 +65,10 @@ func TestMigrateCommand(t *testing.T) {
 		return out.String(), err
 	}
 	tableExists := func() bool {
-		var exists bool
-		require.NoError(t, probe.QueryRow("SELECT to_regclass('sys_auth_version') IS NOT NULL").Scan(&exists))
-		return exists
+		var n int
+		require.NoError(t, probe.QueryRow(`SELECT COUNT(*) FROM information_schema.tables
+			WHERE table_name = 'sys_auth_version' AND table_schema = `+currentSchema(probe)).Scan(&n))
+		return n > 0
 	}
 
 	out, err := migrate("up")
@@ -198,7 +201,9 @@ func statusOf(url string) int {
 
 func latestVersion(t *testing.T, track dbmigrate.Track) uint {
 	t.Helper()
-	v, err := track.Latest()
+	d, err := database.ParseDialect(os.Getenv("ADMIN_TEST_DATABASE_URL"))
+	require.NoError(t, err)
+	v, err := track.Latest(d)
 	require.NoError(t, err)
 	return v
 }
@@ -216,4 +221,12 @@ func latestStatus(t *testing.T) string {
 		out.WriteString(trackStatus(t, track))
 	}
 	return out.String()
+}
+
+// currentSchema is the SQL for the schema that holds the test's tables.
+func currentSchema(db *sql.DB) string {
+	if database.SQLDialect(db) == database.MySQL {
+		return "DATABASE()"
+	}
+	return "current_schema()"
 }

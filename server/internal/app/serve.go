@@ -14,6 +14,7 @@ import (
 	"go.uber.org/zap"
 
 	"base-admin/server/internal/platform/config"
+	"base-admin/server/internal/platform/database"
 	"base-admin/server/internal/platform/observability"
 	"base-admin/server/internal/platform/password"
 )
@@ -35,11 +36,11 @@ func Serve(ctx context.Context, cfg config.Config, logger *zap.Logger) (err erro
 	defer func() { err = errors.Join(err, d.close()) }()
 
 	metrics := observability.NewMetrics()
-	if err := metrics.Register(collectors.NewDBStatsCollector(d.sqlDB, "postgres")); err != nil {
+	if err := metrics.Register(collectors.NewDBStatsCollector(d.sqlDB, string(database.SQLDialect(d.sqlDB)))); err != nil {
 		return fmt.Errorf("register database metrics: %w", err)
 	}
 	health := observability.NewHealth(logger, readinessOptions,
-		observability.NewCheck("postgres", d.sqlDB.PingContext),
+		observability.NewCheck(string(database.SQLDialect(d.sqlDB)), d.sqlDB.PingContext),
 		observability.NewCheck("redis", func(ctx context.Context) error { return d.redis.Ping(ctx).Err() }),
 	)
 

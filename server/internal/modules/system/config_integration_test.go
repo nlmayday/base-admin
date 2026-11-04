@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"base-admin/server/internal/platform/httpx"
+	"base-admin/server/internal/platform/testinfra/dbtest"
 )
 
 func (h *harness) changes(id string) []configChangeView {
@@ -111,9 +112,8 @@ func TestConfigValidationAndUniqueness(t *testing.T) {
 func TestProtectedConfigs(t *testing.T) {
 	h := newHarness(t)
 	var builtinID, readOnlyID int64
-	require.NoError(t, h.db.Raw("SELECT id FROM sys_configs WHERE key = ?", KeySiteName).Scan(&builtinID).Error)
-	require.NoError(t, h.db.Raw(`INSERT INTO sys_configs (key, value, name, editable) VALUES ('ro.value', 'v', '只读', false)
-		RETURNING id`).Scan(&readOnlyID).Error)
+	require.NoError(t, h.db.Raw(`SELECT id FROM sys_configs WHERE "key" = ?`, KeySiteName).Scan(&builtinID).Error)
+	readOnlyID = dbtest.InsertID(t, h.db, `INSERT INTO sys_configs ("key", value, name, editable) VALUES ('ro.value', 'v', '只读', false)`)
 
 	for _, id := range []int64{builtinID, readOnlyID} {
 		path := "/configs/" + itoa(id)
@@ -127,7 +127,7 @@ func TestProtectedConfigs(t *testing.T) {
 
 	// The upload policy cannot be widened through the generic config API.
 	var extID int64
-	require.NoError(t, h.db.Raw("SELECT id FROM sys_configs WHERE key = ?", KeyUploadAllowedExtensions).Scan(&extID).Error)
+	require.NoError(t, h.db.Raw(`SELECT id FROM sys_configs WHERE "key" = ?`, KeyUploadAllowedExtensions).Scan(&extID).Error)
 	h.fail(h.do(http.MethodPut, "/configs/"+itoa(extID), gin.H{"value": "html", "name": "x", "version": 0}),
 		http.StatusConflict, CodeProtected)
 }

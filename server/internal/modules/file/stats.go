@@ -1,7 +1,10 @@
 package file
 
 import (
+	"fmt"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -78,7 +81,7 @@ func (m *Module) storageStats(c *gin.Context) (any, error) {
 	if err := db.Raw("SELECT count(*) FROM sys_file_categories").Scan(&view.CategoryCount).Error; err != nil {
 		return nil, err
 	}
-	byKind, err := usage(db, `SELECT kind AS key, count(*) AS count, COALESCE(sum(size), 0) AS size
+	byKind, err := usage(db, `SELECT kind AS "key", count(*) AS count, COALESCE(sum(size), 0) AS size
 		FROM sys_files WHERE deleted_at IS NULL GROUP BY kind`)
 	if err != nil {
 		return nil, err
@@ -94,17 +97,50 @@ func (m *Module) storageStats(c *gin.Context) (any, error) {
 		view.FileCount += view.ByKind[i].Count
 		view.TotalSize += view.ByKind[i].Size
 	}
-	if view.TopExtensions, err = usage(db, `SELECT ext AS key, count(*) AS count, COALESCE(sum(size), 0) AS size
+	if view.TopExtensions, err = usage(db, `SELECT ext AS "key", count(*) AS count, COALESCE(sum(size), 0) AS size
 		FROM sys_files WHERE deleted_at IS NULL GROUP BY ext ORDER BY count(*) DESC, ext LIMIT ?`, topExtensions); err != nil {
 		return nil, err
 	}
-	if view.Daily, err = usage(db, `SELECT to_char(d, 'YYYY-MM-DD') AS key, count(f.id) AS count, COALESCE(sum(f.size), 0) AS size
-		FROM generate_series(current_date - (? - 1), current_date, interval '1 day') AS d
-		LEFT JOIN sys_files f ON f.deleted_at IS NULL AND f.created_at >= d AND f.created_at < d + interval '1 day'
-		GROUP BY d ORDER BY d`, trendDays); err != nil {
+	if view.Daily, err = m.dailyUsage(db); err != nil {
 		return nil, err
 	}
 	return view, nil
+}
+
+// dailyUsage counts the uploads of each of the last trendDays calendar days
+// in the server's time zone, oldest first, including days without uploads.
+func (m *Module) dailyUsage(db *gorm.DB) ([]usageStat, error) {
+	now := m.now()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	bounds := make([]time.Time, trendDays+1)
+	for i := range bounds {
+		bounds[i] = today.AddDate(0, 0, i-trendDays+1)
+	}
+	var b strings.Builder
+	args := make([]any, 0, trendDays+2)
+	b.WriteString("CASE")
+	for i := range trendDays {
+		fmt.Fprintf(&b, " WHEN created_at < ? THEN %d", i)
+		args = append(args, bounds[i+1])
+	}
+	b.WriteString(" END")
+	args = append(args, bounds[0], bounds[trendDays])
+	var rows []struct{ Day, Count, Size int64 }
+	if err := db.Raw(`SELECT `+b.String()+` AS day, count(*) AS count, COALESCE(sum(size), 0) AS size
+		FROM sys_files WHERE deleted_at IS NULL AND created_at >= ? AND created_at < ?
+		GROUP BY 1`, args...).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]usageStat, trendDays)
+	for i := range out {
+		out[i].Key = bounds[i].Format(time.DateOnly)
+	}
+	for _, r := range rows {
+		if r.Day >= 0 && r.Day < trendDays {
+			out[r.Day].Count, out[r.Day].Size = r.Count, r.Size
+		}
+	}
+	return out, nil
 }
 
 func usage(db *gorm.DB, query string, args ...any) ([]usageStat, error) {

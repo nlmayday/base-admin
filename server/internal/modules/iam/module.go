@@ -15,6 +15,7 @@ import (
 	"base-admin/server/internal/core/perm"
 	"base-admin/server/internal/modules/auth"
 	"base-admin/server/internal/platform/config"
+	"base-admin/server/internal/platform/database"
 	"base-admin/server/internal/platform/httpx"
 )
 
@@ -97,7 +98,7 @@ func (m *Module) Routes(r *module.Router) {
 // first administrator (design doc 4.4). It is idempotent.
 func (m *Module) Seed(ctx context.Context, tx *gorm.DB) error {
 	if err := tx.Exec(`INSERT INTO sys_roles (code, name, data_scope, is_builtin, sort, remark)
-		VALUES (?, '超级管理员', 'all', true, 0, '内置角色，拥有全部权限') ON CONFLICT (code) DO NOTHING`,
+		VALUES (?, '超级管理员', 'all', true, 0, '内置角色，拥有全部权限') `+database.OnConflictDoNothing(tx, "sys_roles", "code"),
 		auth.SuperAdminRole).Error; err != nil {
 		return fmt.Errorf("seed super admin role: %w", err)
 	}
@@ -115,9 +116,9 @@ func (m *Module) Seed(ctx context.Context, tx *gorm.DB) error {
 	if err != nil {
 		return err
 	}
-	var id int64
-	if err := tx.Raw(`INSERT INTO sys_users (username, password_hash, nickname, must_change_password)
-		VALUES (?, ?, '超级管理员', true) RETURNING id`, m.bootstrap.AdminUsername, hash).Scan(&id).Error; err != nil {
+	id, err := database.InsertID(tx, `INSERT INTO sys_users (username, password_hash, nickname, must_change_password)
+		VALUES (?, ?, '超级管理员', true)`, m.bootstrap.AdminUsername, hash)
+	if err != nil {
 		return fmt.Errorf("seed admin user: %w", err)
 	}
 	return tx.Exec(`INSERT INTO sys_user_roles (user_id, role_id) SELECT ?, id FROM sys_roles WHERE code = ?`,

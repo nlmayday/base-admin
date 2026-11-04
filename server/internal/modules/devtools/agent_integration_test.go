@@ -18,6 +18,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"base-admin/server/internal/platform/config"
+	"base-admin/server/internal/platform/testinfra"
+	"base-admin/server/internal/platform/testinfra/dbtest"
 )
 
 // agentRepo is a fake repository holding a copy of the real migrations of
@@ -46,11 +48,9 @@ func agentRepo(t *testing.T) string {
 // agentUser creates a user, optionally holding PermCodegen through a role.
 func (h *harness) agentUser(name string, codegen bool) int64 {
 	h.t.Helper()
-	var uid int64
-	require.NoError(h.t, h.db.Raw(`INSERT INTO sys_users (username, password_hash) VALUES (?, 'x') RETURNING id`, name).Scan(&uid).Error)
+	uid := dbtest.InsertID(h.t, h.db, `INSERT INTO sys_users (username, password_hash) VALUES (?, 'x')`, name)
 	if codegen {
-		var rid int64
-		require.NoError(h.t, h.db.Raw(`INSERT INTO sys_roles (code, name) VALUES (?, ?) RETURNING id`, name+"_role", name).Scan(&rid).Error)
+		rid := dbtest.InsertID(h.t, h.db, `INSERT INTO sys_roles (code, name) VALUES (?, ?)`, name+"_role", name)
 		require.NoError(h.t, h.db.Exec(`INSERT INTO sys_role_permissions (role_id, permission_code) VALUES (?, ?)`, rid, PermCodegen).Error)
 		require.NoError(h.t, h.db.Exec(`INSERT INTO sys_user_roles (user_id, role_id) VALUES (?, ?)`, uid, rid).Error)
 	}
@@ -151,7 +151,7 @@ func TestAgentAuth(t *testing.T) {
 	noPerm := h.newKey(plain, map[string]any{"name": "plain"}).Key
 
 	r := h.agent(key, http.MethodGet, "/tables", nil)
-	require.Equal(t, http.StatusOK, r.status, string(r.body))
+	require.Equal(t, tablesStatus(t), r.status, string(r.body))
 	var used int
 	require.NoError(t, h.db.Raw(`SELECT count(*) FROM sys_agent_keys WHERE last_used_at IS NOT NULL`).Scan(&used).Error)
 	assert.Equal(t, 1, used, "last_used_at is recorded")
@@ -172,9 +172,9 @@ func TestAgentAuth(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, h.agent(key, http.MethodGet, "/tables", nil).status, "disabled creator")
 	require.NoError(t, h.db.Exec(`UPDATE sys_users SET status = 1 WHERE id = ?`, dev).Error)
 
-	require.NoError(t, h.db.Exec(`UPDATE sys_agent_keys SET expires_at = now() - interval '1 minute' WHERE key_hash = ?`, hashAgentKey(key)).Error)
+	require.NoError(t, h.db.Exec(`UPDATE sys_agent_keys SET expires_at = ? WHERE key_hash = ?`, time.Now().Add(-time.Minute), hashAgentKey(key)).Error)
 	assert.Equal(t, http.StatusUnauthorized, h.agent(key, http.MethodGet, "/tables", nil).status, "expired")
-	require.NoError(t, h.db.Exec(`UPDATE sys_agent_keys SET expires_at = NULL, revoked_at = now() WHERE key_hash = ?`, hashAgentKey(key)).Error)
+	require.NoError(t, h.db.Exec(`UPDATE sys_agent_keys SET expires_at = NULL, revoked_at = CURRENT_TIMESTAMP(6) WHERE key_hash = ?`, hashAgentKey(key)).Error)
 	assert.Equal(t, http.StatusUnauthorized, h.agent(key, http.MethodGet, "/tables", nil).status, "revoked")
 }
 
@@ -194,6 +194,7 @@ func TestAgentIsDevOnly(t *testing.T) {
 }
 
 func TestAgentCreateTable(t *testing.T) {
+	testinfra.SkipOnMySQL(t, "the code generator reads and writes PostgreSQL tables")
 	root := agentRepo(t)
 	h := newHarness(t, config.EnvDev, root)
 	key := h.newKey(h.agentUser("builder", true), map[string]any{"name": "builder"}).Key

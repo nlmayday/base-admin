@@ -2,11 +2,11 @@ package audit
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
-
-	"base-admin/server/internal/platform/database"
 )
 
 // trendDays is the length of the trend series, today included.
@@ -80,11 +80,20 @@ func (m *Module) buckets(ctx context.Context, table, cond string, start time.Tim
 	for i := range bounds {
 		bounds[i] = start.AddDate(0, 0, i)
 	}
-	// width_bucket returns 1..trendDays for rows inside [bounds[0], bounds[n]).
+	// The CASE maps rows inside [bounds[0], bounds[n]) to their day 0..n-1.
+	var b strings.Builder
+	args := make([]any, 0, trendDays+2)
+	b.WriteString("CASE")
+	for i := range trendDays {
+		fmt.Fprintf(&b, " WHEN created_at < ? THEN %d", i)
+		args = append(args, bounds[i+1])
+	}
+	b.WriteString(" END")
+	args = append(args, bounds[0], bounds[trendDays])
 	var rows []bucketRow
-	err := m.db.WithContext(ctx).Raw(`SELECT width_bucket(created_at, ?::timestamptz[]) - 1 AS day, success, count(*) AS n
+	err := m.db.WithContext(ctx).Raw(`SELECT `+b.String()+` AS day, success, count(*) AS n
 		FROM `+table+` WHERE `+cond+` AND created_at >= ? AND created_at < ?
-		GROUP BY 1, 2`, timestamps(bounds), bounds[0], bounds[trendDays]).Scan(&rows).Error
+		GROUP BY 1, 2`, args...).Scan(&rows).Error
 	if err != nil {
 		return nil, err
 	}
@@ -95,14 +104,4 @@ func (m *Module) buckets(ctx context.Context, table, cond string, start time.Tim
 		}
 	}
 	return out, nil
-}
-
-// timestamps renders bounds as a timestamptz[] parameter; GORM would expand
-// a plain slice into a value list.
-func timestamps(bounds []time.Time) database.TextArray {
-	out := make(database.TextArray, len(bounds))
-	for i, t := range bounds {
-		out[i] = t.Format(time.RFC3339Nano)
-	}
-	return out
 }

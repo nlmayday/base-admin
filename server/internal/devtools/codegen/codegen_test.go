@@ -211,11 +211,11 @@ func TestGenerateCustomer(t *testing.T) {
 		`csvValue(r.DeptName), // the department name instead of its ID`,
 		`Name    string  ` + "`" + `json:"name" binding:"required,max=64" doc:"客户名称，必填"` + "`",
 		`DeptID  *ids.ID ` + "`" + `json:"deptId" doc:"部门"` + "`",
-		"UPDATE biz_customers SET deleted_at = now(), updated_by = ?, version = version + 1, updated_at = now() WHERE id = ? AND deleted_at IS NULL",
+		"UPDATE biz_customers SET deleted_at = CURRENT_TIMESTAMP(6), updated_by = ?, version = version + 1, updated_at = CURRENT_TIMESTAMP(6) WHERE id = ? AND deleted_at IS NULL",
 		`INSERT INTO biz_customers (name, contact, phone, level, dept_id, owner_id, status, sort, remark, created_by, updated_by)`,
 		// Default search: unique text first, then the next text column, and status.
-		`q = q.Where("t.phone ILIKE ?", "%"+escapeLike(v)+"%")`,
-		`q = q.Where("t.name ILIKE ?", "%"+escapeLike(v)+"%")`,
+		`q = q.Where("LOWER(t.phone) LIKE LOWER(?)", "%"+escapeLike(v)+"%")`,
+		`q = q.Where("LOWER(t.name) LIKE LOWER(?)", "%"+escapeLike(v)+"%")`,
 		`q = q.Where("t.status = ?", f.Status)`,
 		`Order("t.sort, t.id DESC")`,
 		`g := r.Group("/customers")`,
@@ -263,7 +263,7 @@ func TestGenerateWithoutOptionalColumns(t *testing.T) {
 	assert.Contains(t, src, "DELETE FROM biz_notes WHERE id = ?")
 	assert.Contains(t, src, `tx.Table(noteTable).Where("id = ?", id).Updates(sets)`)
 	assert.Contains(t, src, `Order("t.id DESC")`)
-	assert.Contains(t, src, `q = q.Where("t.body ILIKE ?", "%"+escapeLike(v)+"%")`)
+	assert.Contains(t, src, `q = q.Where("LOWER(t.body) LIKE LOWER(?)", "%"+escapeLike(v)+"%")`)
 	api := fileByPath(t, res, "/api/notes/note.ts").Content
 	assert.NotContains(t, api, "UpdatePayload")
 	assert.Contains(t, strings.Join(res.Notes, "\n"), "模块 notes 已存在")
@@ -277,7 +277,7 @@ func TestGenerateSkipsUnsupportedAndSensitiveColumns(t *testing.T) {
 	assert.NotContains(t, src, "PasswordHash")
 	assert.Contains(t, src, `t."order"`)
 	assert.Contains(t, src, "int(actor.StatusEnabled)", "integer status columns convert the constant")
-	assert.Contains(t, src, "VALUES (?, ?, ?, ?, COALESCE(?, true), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now())", "created_at without default is set")
+	assert.Contains(t, src, "VALUES (?, ?, ?, ?, COALESCE(?, true), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP(6))", "created_at without default is set")
 	notes := strings.Join(res.Notes, "\n")
 	assert.Contains(t, notes, "tags")
 	assert.Contains(t, notes, "password_hash")

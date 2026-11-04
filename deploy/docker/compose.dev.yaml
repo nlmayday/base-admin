@@ -20,6 +20,33 @@ services:
       timeout: 3s
       retries: 30
 
+  # Optional MySQL alternative to PostgreSQL: `make deps-up-mysql` starts it
+  # and the mysql-* targets use it (docs/mysql.md).
+  mysql:
+    image: mysql:8.4.13
+    profiles: ["mysql"]
+    environment:
+      MYSQL_ROOT_PASSWORD: admin
+      MYSQL_USER: admin
+      MYSQL_PASSWORD: admin
+      MYSQL_DATABASE: base_admin
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_as_cs
+      # Lets a user without SUPER create the triggers of the migrations
+      # while binary logging is on.
+      - --log-bin-trust-function-creators=1
+    ports:
+      - "127.0.0.1:13307:3306"
+    volumes:
+      - mysqldata:/var/lib/mysql
+      - ./mysql-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uadmin -padmin --silent"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+
   redis:
     image: redis:7.4.12-alpine
     # Matches design doc 6.5.6: AOF on, keys without TTL never evicted.
@@ -44,3 +71,4 @@ services:
 volumes:
   pgdata:
   redisdata:
+  mysqldata:

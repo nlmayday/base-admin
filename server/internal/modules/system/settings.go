@@ -52,7 +52,7 @@ type settingRow struct {
 // loadSettingRows reads the built-in setting rows by key; lock adds FOR
 // UPDATE inside a transaction.
 func loadSettingRows(tx *gorm.DB, lock bool) (map[string]settingRow, error) {
-	sql := "SELECT id, key, value, version FROM sys_configs WHERE key IN ? ORDER BY id"
+	sql := `SELECT id, "key", value, version FROM sys_configs WHERE "key" IN ? ORDER BY id`
 	if lock {
 		sql += " FOR UPDATE"
 	}
@@ -161,7 +161,7 @@ func applySettingValues(tx *gorm.DB, rows map[string]settingRow, values map[stri
 		if row.Value == next {
 			continue
 		}
-		err := tx.Exec(`UPDATE sys_configs SET value = ?, version = version + 1, updated_at = now(), updated_by = ?
+		err := tx.Exec(`UPDATE sys_configs SET value = ?, version = version + 1, updated_at = CURRENT_TIMESTAMP(6), updated_by = ?
 			WHERE id = ?`, next, nullableID(uid), row.ID).Error
 		if err != nil {
 			return err

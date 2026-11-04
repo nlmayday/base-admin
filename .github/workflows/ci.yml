@@ -54,6 +54,46 @@ jobs:
       - name: Test (unit + integration)
         run: make test-integration
 
+  # The same backend tests on MySQL (docs/mysql.md). The tests create and
+  # drop one database per test, so they connect as root.
+  server-mysql:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      mysql:
+        image: mysql:8.4.13
+        env:
+          MYSQL_ROOT_PASSWORD: admin
+          MYSQL_DATABASE: base_admin
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -padmin --silent"
+          --health-interval 2s --health-timeout 3s --health-retries 60
+      redis:
+        image: redis:7.4.12-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+
+    env:
+      ADMIN_DATABASE_URL: mysql://root:admin@127.0.0.1:3306/base_admin
+      ADMIN_REDIS_ADDR: 127.0.0.1:6379
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      - name: Test (unit + integration)
+        run: make test-integration
+
   web:
     runs-on: ubuntu-latest
     timeout-minutes: 20

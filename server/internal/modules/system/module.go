@@ -16,6 +16,7 @@ import (
 	"base-admin/server/internal/core/menu"
 	"base-admin/server/internal/core/module"
 	"base-admin/server/internal/core/perm"
+	"base-admin/server/internal/platform/database"
 	"base-admin/server/internal/platform/httpx"
 )
 
@@ -94,10 +95,10 @@ func (m *Module) Routes(r *module.Router) {
 // descriptive metadata and the built-in flag are kept in sync with code.
 func (m *Module) Seed(_ context.Context, tx *gorm.DB) error {
 	for _, s := range builtinSettings {
-		err := tx.Exec(`INSERT INTO sys_configs (key, value, value_type, group_name, name, description, editable, builtin)
-			VALUES (?, ?, ?, ?, ?, ?, true, true)
-			ON CONFLICT (key) DO UPDATE SET value_type = EXCLUDED.value_type, group_name = EXCLUDED.group_name,
-				name = EXCLUDED.name, description = EXCLUDED.description, builtin = true, editable = true`,
+		err := tx.Exec(`INSERT INTO sys_configs ("key", value, value_type, group_name, name, description, editable, builtin)
+			VALUES (?, ?, ?, ?, ?, ?, true, true) `+database.OnConflictUpdate(tx, `"key"`)+`
+				value_type = excluded.value_type, group_name = excluded.group_name,
+				name = excluded.name, description = excluded.description, builtin = true, editable = true`,
 			s.Key, s.Value, s.ValueType, s.Group, s.Name, s.Description).Error
 		if err != nil {
 			return fmt.Errorf("seed setting %s: %w", s.Key, err)

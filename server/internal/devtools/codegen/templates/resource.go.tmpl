@@ -390,7 +390,7 @@ func (m *Module) update[[.Upper]](c *gin.Context) (any, error) {
 		"updated_by": actor.From(ctx).UserID(),
 [[- end]]
 [[- if .UpdatedAt]]
-		"updated_at": gorm.Expr("now()"),
+		"updated_at": gorm.Expr("CURRENT_TIMESTAMP(6)"),
 [[- end]]
 	}
 	var view [[.Lower]]View

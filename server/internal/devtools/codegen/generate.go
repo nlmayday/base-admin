@@ -342,7 +342,7 @@ func (d *tmplData) deriveColumns() {
 		cols = append(cols, fmt.Sprintf("COALESCE(%s.%s::text, '') AS %s", f.RelAlias, f.RelLabelSQL, quoteIdent(f.LabelColumn)))
 	}
 	d.Columns = strings.Join(cols, ", ")
-	sets := []string{"deleted_at = now()"}
+	sets := []string{"deleted_at = CURRENT_TIMESTAMP(6)"}
 	if d.UpdatedBy != nil {
 		sets = append(sets, "updated_by = ?")
 	}
@@ -350,7 +350,7 @@ func (d *tmplData) deriveColumns() {
 		sets = append(sets, "version = version + 1")
 	}
 	if d.UpdatedAt != nil {
-		sets = append(sets, "updated_at = now()")
+		sets = append(sets, "updated_at = CURRENT_TIMESTAMP(6)")
 	}
 	d.SoftDeleteSets = strings.Join(sets, ", ")
 }
@@ -421,7 +421,7 @@ func (d *tmplData) deriveInsert() {
 	}
 	for _, f := range []*Field{d.CreatedAt, d.UpdatedAt} {
 		if f != nil && f.colDefault == "" {
-			cols, vals = append(cols, f.Column), append(vals, "now()")
+			cols, vals = append(cols, f.Column), append(vals, "CURRENT_TIMESTAMP(6)")
 		}
 	}
 	d.InsertCols, d.InsertVals = strings.Join(cols, ", "), strings.Join(vals, ", ")

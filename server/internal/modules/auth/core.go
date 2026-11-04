@@ -161,7 +161,7 @@ func (c *Core) ResetPassword(ctx context.Context, uid int64, newPassword string,
 	_, err = c.Revoker.Revoke(ctx, uid, RevokeSpec{
 		Prepare: prepare,
 		Apply: func(tx *gorm.DB, _ int64) error {
-			return tx.Exec(`UPDATE sys_users SET password_hash = ?, password_changed_at = now(),
+			return tx.Exec(`UPDATE sys_users SET password_hash = ?, password_changed_at = CURRENT_TIMESTAMP(6),
 				must_change_password = true, version = version + 1 WHERE id = ?`, h, uid).Error
 		},
 	})

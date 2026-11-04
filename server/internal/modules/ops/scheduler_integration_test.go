@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"base-admin/server/internal/platform/testinfra/dbtest"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -22,17 +24,15 @@ type cronRun struct {
 func (e *env) cronRuns(jobID int64) []cronRun {
 	e.t.Helper()
 	var rows []cronRun
-	require.NoError(e.t, e.db.Raw(`SELECT scheduled_at, instance, status, trigger FROM sys_job_runs
-		WHERE job_id = ? AND trigger = 'cron' ORDER BY scheduled_at`, jobID).Scan(&rows).Error)
+	require.NoError(e.t, e.db.Raw(`SELECT scheduled_at, instance, status, "trigger" FROM sys_job_runs
+		WHERE job_id = ? AND "trigger" = 'cron' ORDER BY scheduled_at`, jobID).Scan(&rows).Error)
 	return rows
 }
 
 func (e *env) insertJob(name, handler, expr string) int64 {
 	e.t.Helper()
-	var id int64
-	require.NoError(e.t, e.db.Raw(`INSERT INTO sys_jobs (name, handler_key, cron_expr) VALUES (?, ?, ?) RETURNING id`,
-		name, handler, expr).Scan(&id).Error)
-	return id
+	return dbtest.InsertID(e.t, e.db, `INSERT INTO sys_jobs (name, handler_key, cron_expr) VALUES (?, ?, ?)`,
+		name, handler, expr)
 }
 
 // Two instances share PostgreSQL and Redis and fire the same schedule:
@@ -105,18 +105,17 @@ func TestPeriodicResync(t *testing.T) {
 	id := e.insertJob("direct", "test.count", "@every 1s")
 	eventually(t, 5*time.Second, func() bool { return len(e.cronRuns(id)) >= 1 }, "resync did not pick up the job")
 
-	var orphan int64
-	require.NoError(t, e.db.Raw(`INSERT INTO sys_job_runs (job_id, job_name, handler_key, trigger, status, instance, expires_at)
-		VALUES (?, 'direct', 'test.count', 'manual', 'running', 'dead', now() - interval '1 second') RETURNING id`, id).Scan(&orphan).Error)
+	orphan := dbtest.InsertID(t, e.db, `INSERT INTO sys_job_runs (job_id, job_name, handler_key, "trigger", status, instance, expires_at)
+		VALUES (?, 'direct', 'test.count', 'manual', 'running', 'dead', ?)`, id, time.Now().Add(-time.Second))
 	eventually(t, 5*time.Second, func() bool {
 		return e.countRuns("id = ? AND status = 'failed' AND error <> ''", orphan) == 1
 	}, "expired run was not failed")
 
 	require.NoError(t, e.db.Exec("DELETE FROM sys_jobs WHERE id = ?", id).Error)
 	time.Sleep(500 * time.Millisecond)
-	before := e.countRuns("job_name = 'direct' AND trigger = 'cron'")
+	before := e.countRuns(`job_name = 'direct' AND "trigger" = 'cron'`)
 	time.Sleep(2 * time.Second)
-	assert.Equal(t, before, e.countRuns("job_name = 'direct' AND trigger = 'cron'"), "deleted job kept firing")
+	assert.Equal(t, before, e.countRuns(`job_name = 'direct' AND "trigger" = 'cron'`), "deleted job kept firing")
 }
 
 // A cron fire that finds the previous run still going is recorded as skipped.

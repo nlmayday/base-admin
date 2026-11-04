@@ -44,7 +44,7 @@ func (m *Module) listPositions(c *gin.Context) (any, error) {
 	q := m.db.WithContext(c.Request.Context()).Table("sys_positions")
 	if kw := strings.TrimSpace(c.Query("keyword")); kw != "" {
 		like := "%" + escapeLike(kw) + "%"
-		q = q.Where("code ILIKE ? OR name ILIKE ?", like, like)
+		q = q.Where("LOWER(code) LIKE LOWER(?) OR LOWER(name) LIKE LOWER(?)", like, like)
 	}
 	var total int64
 	if err := q.Session(&gorm.Session{}).Count(&total).Error; err != nil {
@@ -98,14 +98,13 @@ func (m *Module) createPosition(c *gin.Context) (any, error) {
 	}
 	ctx := c.Request.Context()
 	uid := actor.From(ctx).UserID()
-	var id int64
-	res := m.db.WithContext(ctx).Raw(`INSERT INTO sys_positions (code, name, sort, status, remark, created_by, updated_by)
-		VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id`, req.Code, req.Name, req.Sort, req.Status, req.Remark, uid, uid).Scan(&id)
-	if res.Error != nil {
-		if database.IsUniqueViolation(res.Error) {
+	id, err := database.InsertID(m.db.WithContext(ctx), `INSERT INTO sys_positions (code, name, sort, status, remark, created_by, updated_by)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`, req.Code, req.Name, req.Sort, req.Status, req.Remark, uid, uid)
+	if err != nil {
+		if database.IsUniqueViolation(err) {
 			return nil, fieldError("code", "岗位编码已存在")
 		}
-		return nil, res.Error
+		return nil, err
 	}
 	return m.loadPosition(m.db.WithContext(ctx), id)
 }

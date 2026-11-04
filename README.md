@@ -48,6 +48,8 @@ ADMIN_HTTP_ADDR=:18080 make run
 API_URL=http://127.0.0.1:18080 make web-dev
 ```
 
+也可以用 MySQL 8.4 代替 PostgreSQL：`make deps-up-mysql`、`make migrate-up-mysql`、`make run-mysql`，写法和限制见 [docs/mysql.md](docs/mysql.md)（代码生成器暂只支持 PostgreSQL）。
+
 `make help` 列出所有命令。`make ci` 依次执行：构建、lint、后端单元测试和集成测试、前端 lint 和类型检查、前端构建。
 
 ### 初始数据
@@ -68,7 +70,7 @@ API_URL=http://127.0.0.1:18080 make web-dev
 
 | 变量 | 用途 |
 |---|---|
-| `ADMIN_DATABASE_URL` | PostgreSQL 连接地址（必填） |
+| `ADMIN_DATABASE_URL` | 数据库连接地址（必填）：`postgres://…` 或 `mysql://…`，协议头决定用哪种数据库 |
 | `ADMIN_REDIS_PASSWORD` | Redis 密码 |
 | `ADMIN_BOOTSTRAP_ADMIN_PASSWORD` | 没有任何用户时用它创建第一个超级管理员（12–72 个字符） |
 | `ADMIN_FILE_SIGNING_KEY` | 文件签名链接的 HMAC 密钥，至少 32 字节（生产环境必填） |

@@ -23,6 +23,7 @@ import (
 	"base-admin/server/internal/core/datascope"
 	"base-admin/server/internal/core/module"
 	"base-admin/server/internal/platform/database"
+	"base-admin/server/internal/platform/testinfra/dbtest"
 	"base-admin/server/internal/platform/testinfra/migrated"
 )
 
@@ -68,9 +69,8 @@ func newInboxHarness(t *testing.T) *inboxHarness {
 }
 
 func (x *inboxHarness) user(name, nickname string) int64 {
-	var id int64
-	require.NoError(x.t, x.db.Raw(`INSERT INTO sys_users (username, password_hash, nickname)
-		VALUES (?, 'x', ?) RETURNING id`, name, nickname).Scan(&id).Error)
+	id := dbtest.InsertID(x.t, x.db, `INSERT INTO sys_users (username, password_hash, nickname)
+		VALUES (?, 'x', ?)`, name, nickname)
 	return id
 }
 

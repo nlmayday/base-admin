@@ -30,6 +30,7 @@ import (
 	"base-admin/server/internal/platform/httpx"
 	"base-admin/server/internal/platform/ids"
 	"base-admin/server/internal/platform/testinfra"
+	"base-admin/server/internal/platform/testinfra/dbtest"
 	"base-admin/server/internal/platform/testinfra/migrated"
 )
 
@@ -149,8 +150,7 @@ func newEnv(t *testing.T) *env {
 	rdb := redis.NewClient(&redis.Options{Addr: redisCfg.Addr, DB: redisCfg.DB})
 	t.Cleanup(func() { _ = rdb.Close(); _ = sqlDB.Close() })
 
-	var uid int64
-	require.NoError(t, gdb.Raw(`INSERT INTO sys_users (username, password_hash) VALUES ('ops-tester', 'x') RETURNING id`).Scan(&uid).Error)
+	uid := dbtest.InsertID(t, gdb, `INSERT INTO sys_users (username, password_hash) VALUES ('ops-tester', 'x')`)
 	f := newFakes()
 	t.Cleanup(f.unblock)
 	e := &env{t: t, db: gdb, rdb: rdb, fakes: f, uid: uid}

@@ -239,11 +239,10 @@ func pickColumns(rec []string, index []int) []string {
 // insertImported creates one validated user like createUser does.
 func insertImported(ctx context.Context, tx *gorm.DB, u importUser, hash string) error {
 	uid := actor.From(ctx).UserID()
-	var id int64
-	err := tx.Raw(`INSERT INTO sys_users (username, password_hash, nickname, email, phone, dept_id, status,
+	id, err := database.InsertID(tx, `INSERT INTO sys_users (username, password_hash, nickname, email, phone, dept_id, status,
 			must_change_password, created_by, updated_by)
-		VALUES (?, ?, ?, ?, ?, ?, ?, true, ?, ?) RETURNING id`,
-		u.username, hash, u.nickname, u.email, u.phone, u.deptID, actor.StatusEnabled, uid, uid).Scan(&id).Error
+		VALUES (?, ?, ?, ?, ?, ?, ?, true, ?, ?)`,
+		u.username, hash, u.nickname, u.email, u.phone, u.deptID, actor.StatusEnabled, uid, uid)
 	if err != nil {
 		if database.IsUniqueViolation(err) {
 			return importRejected([]importRowError{{Row: u.line, Message: "用户名已存在"}})

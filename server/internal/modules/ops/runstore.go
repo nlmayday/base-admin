@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"time"
 
+	"base-admin/server/internal/platform/database"
+
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 // dbTimeout bounds the scheduler's own database and Redis calls.
@@ -29,7 +32,7 @@ type jobRow struct {
 	LastStatus     string
 }
 
-const jobColumns = `id, name, handler_key, cron_expr, params::text AS params, enabled, timeout_seconds,
+const jobColumns = `id, name, handler_key, cron_expr, params AS params, enabled, timeout_seconds,
 	max_retries, remark, version, created_at, updated_at, last_run_at, last_status`
 
 func (s *scheduler) loadJob(ctx context.Context, id int64) (jobRow, bool, error) {
@@ -56,19 +59,21 @@ type runRecord struct {
 }
 
 // insertRunning records a started run and marks the job as running in one
-// statement, so readers never see one without the other.
+// transaction, so readers never see one without the other.
 func (s *scheduler) insertRunning(ctx context.Context, r runRecord) (int64, error) {
 	var id int64
-	err := s.db.WithContext(ctx).Raw(`WITH run AS (
-		INSERT INTO sys_job_runs (job_id, job_name, handler_key, trigger, status, attempt, scheduled_at, instance,
-			triggered_by, expires_at)
-		VALUES (?, ?, ?, ?, 'running', 1, ?, ?, ?, ?) RETURNING id, job_id, started_at
-	), job AS (
-		UPDATE sys_jobs SET last_run_at = (SELECT started_at FROM run), last_status = 'running'
-		WHERE id = (SELECT job_id FROM run)
-	)
-	SELECT id FROM run`,
-		r.job.ID, r.job.Name, r.job.HandlerKey, r.trigger, r.scheduledAt, r.instance, r.triggeredBy, r.expiresAt).Scan(&id).Error
+	err := database.RunTx(ctx, s.db, func(tx *gorm.DB) error {
+		var err error
+		id, err = database.InsertID(tx, `INSERT INTO sys_job_runs (job_id, job_name, handler_key, "trigger", status,
+			attempt, scheduled_at, instance, triggered_by, expires_at)
+			VALUES (?, ?, ?, ?, 'running', 1, ?, ?, ?, ?)`,
+			r.job.ID, r.job.Name, r.job.HandlerKey, r.trigger, r.scheduledAt, r.instance, r.triggeredBy, r.expiresAt)
+		if err != nil {
+			return err
+		}
+		return tx.Exec(`UPDATE sys_jobs SET last_status = 'running',
+			last_run_at = (SELECT started_at FROM sys_job_runs WHERE id = ?) WHERE id = ?`, id, r.job.ID).Error
+	})
 	if err != nil {
 		return 0, fmt.Errorf("insert job run: %w", err)
 	}
@@ -78,12 +83,11 @@ func (s *scheduler) insertRunning(ctx context.Context, r runRecord) (int64, erro
 // insertFinishedRun records a run that never executed (skipped, or its
 // handler is missing). The job's last status is left alone.
 func (s *scheduler) insertFinishedRun(ctx context.Context, r runRecord) (int64, error) {
-	var id int64
-	err := s.db.WithContext(ctx).Raw(`INSERT INTO sys_job_runs
-		(job_id, job_name, handler_key, trigger, status, attempt, scheduled_at, instance, triggered_by,
+	id, err := database.InsertID(s.db.WithContext(ctx), `INSERT INTO sys_job_runs
+		(job_id, job_name, handler_key, "trigger", status, attempt, scheduled_at, instance, triggered_by,
 		 finished_at, duration_ms, error, expires_at)
-		VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, now(), 0, ?, now()) RETURNING id`,
-		r.job.ID, r.job.Name, r.job.HandlerKey, r.trigger, r.status, r.scheduledAt, r.instance, r.triggeredBy, r.errText).Scan(&id).Error
+		VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, CURRENT_TIMESTAMP(6), 0, ?, CURRENT_TIMESTAMP(6))`,
+		r.job.ID, r.job.Name, r.job.HandlerKey, r.trigger, r.status, r.scheduledAt, r.instance, r.triggeredBy, r.errText)
 	if err != nil {
 		return 0, fmt.Errorf("insert job run: %w", err)
 	}
@@ -99,16 +103,19 @@ func (s *scheduler) markAttempt(runID int64, attempt int) {
 }
 
 // finishRun stores the outcome of a run and the job's last status in one
-// statement. It runs while the job lock is still held.
+// transaction. It runs while the job lock is still held.
 func (s *scheduler) finishRun(runID, jobID int64, status, errText string, attempts int, took time.Duration) {
 	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
 	defer cancel()
-	err := s.db.WithContext(ctx).Exec(`WITH run AS (
-		UPDATE sys_job_runs SET status = ?, error = ?, attempt = ?, finished_at = now(), duration_ms = ?
-		WHERE id = ? RETURNING job_id
-	)
-	UPDATE sys_jobs SET last_status = ? WHERE id = (SELECT job_id FROM run)`,
-		status, errText, attempts, took.Milliseconds(), runID, status).Error
+	err := database.RunTx(ctx, s.db, func(tx *gorm.DB) error {
+		if err := tx.Exec(`UPDATE sys_job_runs SET status = ?, error = ?, attempt = ?, finished_at = CURRENT_TIMESTAMP(6),
+			duration_ms = ? WHERE id = ?`, status, errText, attempts, took.Milliseconds(), runID).Error; err != nil {
+			return err
+		}
+		// The run keeps no job once the job is deleted; then nothing changes.
+		return tx.Exec(`UPDATE sys_jobs SET last_status = ?
+			WHERE id = (SELECT job_id FROM sys_job_runs WHERE id = ?)`, status, runID).Error
+	})
 	if err != nil {
 		s.logger.Error("record job run result failed", zap.Int64("run", runID), zap.String("status", status), zap.Error(err))
 	}
@@ -121,8 +128,8 @@ func (s *scheduler) finishRun(runID, jobID int64, status, errText string, attemp
 // failExpiredRuns marks runs whose instance died while running as failed.
 func (s *scheduler) failExpiredRuns(ctx context.Context) error {
 	db := s.db.WithContext(ctx)
-	if err := db.Exec(`UPDATE sys_job_runs SET status = 'failed', finished_at = now(),
-		error = '执行实例已中断，未上报结果' WHERE status = 'running' AND expires_at < now()`).Error; err != nil {
+	if err := db.Exec(`UPDATE sys_job_runs SET status = 'failed', finished_at = CURRENT_TIMESTAMP(6),
+		error = '执行实例已中断，未上报结果' WHERE status = 'running' AND expires_at < CURRENT_TIMESTAMP(6)`).Error; err != nil {
 		return fmt.Errorf("fail expired runs: %w", err)
 	}
 	return db.Exec(`UPDATE sys_jobs j SET last_status = 'failed' WHERE last_status = 'running'

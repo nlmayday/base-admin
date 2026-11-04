@@ -10,6 +10,7 @@ import (
 	"base-admin/server/internal/core/actor"
 	"base-admin/server/internal/core/attachment"
 	"base-admin/server/internal/core/module"
+	"base-admin/server/internal/platform/database"
 	"base-admin/server/internal/platform/httpx"
 	"base-admin/server/internal/platform/ids"
 )
@@ -89,7 +90,7 @@ func (m *Module) inbox(c *gin.Context) *gorm.DB {
 		Where("t.published_at IS NOT NULL")
 }
 
-const inboxColumns = `t.id, t.title, t.type, t.content, t.attachments::text AS attachments, t.published_at,
+const inboxColumns = `t.id, t.title, t.type, t.content, t.attachments AS attachments, t.published_at,
 	r.read_at, u.nickname AS publisher`
 
 func (m *Module) listInbox(c *gin.Context) (any, error) {
@@ -106,7 +107,7 @@ func (m *Module) listInbox(c *gin.Context) (any, error) {
 		q = q.Where("r.read_at IS NULL")
 	}
 	if f.Title != "" {
-		q = q.Where("t.title ILIKE ?", "%"+escapeLike(f.Title)+"%")
+		q = q.Where("LOWER(t.title) LIKE LOWER(?)", "%"+escapeLike(f.Title)+"%")
 	}
 	var total int64
 	if err := q.Session(&gorm.Session{}).Count(&total).Error; err != nil {
@@ -154,7 +155,8 @@ func (m *Module) readInbox(c *gin.Context) (any, error) {
 	if row.ReadAt == nil {
 		now := time.Now()
 		err := m.db.WithContext(c.Request.Context()).Exec(`INSERT INTO sys_notice_reads (notice_id, user_id, read_at)
-			VALUES (?, ?, ?) ON CONFLICT DO NOTHING`, id, actor.From(c.Request.Context()).UserID(), now).Error
+			VALUES (?, ?, ?) `+database.OnConflictDoNothing(m.db, "sys_notice_reads", "user_id"),
+			id, actor.From(c.Request.Context()).UserID(), now).Error
 		if err != nil {
 			return nil, err
 		}
@@ -164,9 +166,14 @@ func (m *Module) readInbox(c *gin.Context) (any, error) {
 }
 
 func (m *Module) readAll(c *gin.Context) (any, error) {
+	// Only unread notices are inserted, so the affected rows count the
+	// newly marked ones on both databases; the conflict clause covers a
+	// concurrent read of the same notice.
+	uid := actor.From(c.Request.Context()).UserID()
 	res := m.db.WithContext(c.Request.Context()).Exec(`INSERT INTO sys_notice_reads (notice_id, user_id)
 		SELECT t.id, ? FROM sys_notices t WHERE t.published_at IS NOT NULL
-		ON CONFLICT DO NOTHING`, actor.From(c.Request.Context()).UserID())
+		AND NOT EXISTS (SELECT 1 FROM sys_notice_reads r WHERE r.notice_id = t.id AND r.user_id = ?) `+
+		database.OnConflictDoNothing(m.db, "sys_notice_reads", "user_id"), uid, uid)
 	if res.Error != nil {
 		return nil, res.Error
 	}

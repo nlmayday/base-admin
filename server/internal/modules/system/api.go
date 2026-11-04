@@ -78,7 +78,7 @@ func (m *Module) GetString(ctx context.Context, key string) (string, error) {
 	}
 	gen := m.values.generation()
 	var rows []struct{ Value string }
-	if err := m.db.WithContext(ctx).Raw("SELECT value FROM sys_configs WHERE key = ?", key).Scan(&rows).Error; err != nil {
+	if err := m.db.WithContext(ctx).Raw(`SELECT value FROM sys_configs WHERE "key" = ?`, key).Scan(&rows).Error; err != nil {
 		return "", fmt.Errorf("load config %s: %w", key, err)
 	}
 	if len(rows) == 0 {

@@ -108,8 +108,8 @@ type policyStore struct {
 
 const policyColumns = `password_min_length, password_require_upper, password_require_lower,
 	password_require_digit, password_require_symbol, captcha_mode, captcha_after_failures,
-	lockout_threshold, lockout_minutes, ip_allowlist::text AS ip_allowlist_json,
-	login_exempt_roles::text AS login_exempt_roles_json, login_time_start, login_time_end, login_time_zone, version`
+	lockout_threshold, lockout_minutes, ip_allowlist AS ip_allowlist_json,
+	login_exempt_roles AS login_exempt_roles_json, login_time_start, login_time_end, login_time_zone, version`
 
 // policyRow is a policy as scanned: the lists are JSON text.
 type policyRow struct {

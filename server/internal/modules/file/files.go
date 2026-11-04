@@ -124,7 +124,7 @@ type fileFilter struct {
 
 func applyFileFilter(q *gorm.DB, f fileFilter) (*gorm.DB, error) {
 	if kw := strings.TrimSpace(f.Keyword); kw != "" {
-		q = q.Where("f.original_name ILIKE ?", "%"+escapeLike(kw)+"%")
+		q = q.Where("LOWER(f.original_name) LIKE LOWER(?)", "%"+escapeLike(kw)+"%")
 	}
 	switch f.CategoryID {
 	case "":
@@ -238,12 +238,19 @@ func (m *Module) deleteFile(c *gin.Context) (any, error) {
 	}
 	ctx := c.Request.Context()
 	var keys []string
-	if err := m.db.WithContext(ctx).Raw(`UPDATE sys_files SET deleted_at = now(), updated_at = now()
-		WHERE id = ? AND deleted_at IS NULL RETURNING object_key`, id).Scan(&keys).Error; err != nil {
+	err = database.RunTx(ctx, m.db, func(tx *gorm.DB) error {
+		if err := tx.Raw(`SELECT object_key FROM sys_files WHERE id = ? AND deleted_at IS NULL FOR UPDATE`, id).
+			Scan(&keys).Error; err != nil {
+			return err
+		}
+		if len(keys) == 0 {
+			return httpx.NotFound("文件不存在")
+		}
+		return tx.Exec(`UPDATE sys_files SET deleted_at = CURRENT_TIMESTAMP(6), updated_at = CURRENT_TIMESTAMP(6)
+			WHERE id = ?`, id).Error
+	})
+	if err != nil {
 		return nil, err
-	}
-	if len(keys) == 0 {
-		return nil, httpx.NotFound("文件不存在")
 	}
 	purgeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
 	defer cancel()

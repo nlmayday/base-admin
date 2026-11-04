@@ -60,7 +60,7 @@ func (m *Module) listCategories(c *gin.Context) (any, error) {
 		Total         int64
 		Uncategorized int64
 	}
-	if err := db.Raw(`SELECT count(*) AS total, count(*) FILTER (WHERE category_id IS NULL) AS uncategorized
+	if err := db.Raw(`SELECT count(*) AS total, count(CASE WHEN category_id IS NULL THEN 1 END) AS uncategorized
 		FROM sys_files WHERE deleted_at IS NULL`).Scan(&totals).Error; err != nil {
 		return nil, err
 	}
@@ -108,14 +108,13 @@ func (m *Module) createCategory(c *gin.Context) (any, error) {
 	ctx := c.Request.Context()
 	uid := actor.From(ctx).UserID()
 	db := m.db.WithContext(ctx)
-	var id int64
-	res := db.Raw(`INSERT INTO sys_file_categories (name, sort, created_by, updated_by) VALUES (?, ?, ?, ?) RETURNING id`,
-		req.Name, req.Sort, uid, uid).Scan(&id)
-	if res.Error != nil {
-		if database.IsUniqueViolation(res.Error) {
+	id, err := database.InsertID(db, `INSERT INTO sys_file_categories (name, sort, created_by, updated_by) VALUES (?, ?, ?, ?)`,
+		req.Name, req.Sort, uid, uid)
+	if err != nil {
+		if database.IsUniqueViolation(err) {
 			return nil, fieldError("name", categoryNameTaken)
 		}
-		return nil, res.Error
+		return nil, err
 	}
 	return m.loadCategory(db, id)
 }

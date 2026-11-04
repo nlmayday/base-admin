@@ -39,7 +39,7 @@ type configChangeRow struct {
 
 // insertChange records a value change in the caller's transaction.
 func insertChange(tx *gorm.DB, configID int64, key string, oldValue *string, newValue string, uid int64) error {
-	return tx.Exec(`INSERT INTO sys_config_changes (config_id, key, old_value, new_value, changed_by)
+	return tx.Exec(`INSERT INTO sys_config_changes (config_id, "key", old_value, new_value, changed_by)
 		VALUES (?, ?, ?, ?, ?)`, configID, key, oldValue, newValue, nullableID(uid)).Error
 }
 

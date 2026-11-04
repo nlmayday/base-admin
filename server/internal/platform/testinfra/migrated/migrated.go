@@ -19,7 +19,7 @@ func Database(t *testing.T) config.DatabaseConfig {
 	t.Helper()
 	cfg := testinfra.Database(t)
 	for _, track := range dbmigrate.Tracks() {
-		db, err := database.OpenSQL(context.Background(), cfg, "testinfra-migrate")
+		db, err := database.OpenSQL(context.Background(), cfg, "testinfra-migrate", database.ForMigrations())
 		if err != nil {
 			t.Fatalf("open test database: %v", err)
 		}

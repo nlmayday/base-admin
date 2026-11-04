@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -106,8 +107,8 @@ func TestMessageCleanup(t *testing.T) {
 	var ids []int64
 	require.NoError(t, x.db.Raw(`SELECT id FROM sys_user_messages WHERE user_id = ? ORDER BY id`, x.reader).Scan(&ids).Error)
 	require.Len(t, ids, 3)
-	require.NoError(t, x.db.Exec(`UPDATE sys_user_messages SET read_at = now() - interval '100 days' WHERE id = ?`, ids[0]).Error)
-	require.NoError(t, x.db.Exec(`UPDATE sys_user_messages SET read_at = now() - interval '10 days' WHERE id = ?`, ids[1]).Error)
+	require.NoError(t, x.db.Exec(`UPDATE sys_user_messages SET read_at = ? WHERE id = ?`, time.Now().AddDate(0, 0, -100), ids[0]).Error)
+	require.NoError(t, x.db.Exec(`UPDATE sys_user_messages SET read_at = ? WHERE id = ?`, time.Now().AddDate(0, 0, -10), ids[1]).Error)
 	require.NoError(t, x.db.Exec(`UPDATE sys_users SET deleted_at = now() WHERE id = ?`, gone).Error)
 
 	require.NoError(t, x.m.cleanupMessages(ctx, nil))

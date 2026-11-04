@@ -68,7 +68,7 @@ func (m *Module) listJobs(c *gin.Context) (any, error) {
 	q := m.db.WithContext(c.Request.Context()).Table("sys_jobs")
 	if kw := strings.TrimSpace(c.Query("keyword")); kw != "" {
 		like := "%" + escapeLike(kw) + "%"
-		q = q.Where("name ILIKE ? OR remark ILIKE ?", like, like)
+		q = q.Where("LOWER(name) LIKE LOWER(?) OR LOWER(remark) LIKE LOWER(?)", like, like)
 	}
 	if hk := c.Query("handlerKey"); hk != "" {
 		q = q.Where("handler_key = ?", hk)
@@ -185,15 +185,14 @@ func (m *Module) createJob(c *gin.Context) (any, error) {
 	enabled := req.Enabled == nil || *req.Enabled
 	ctx := c.Request.Context()
 	uid := actor.From(ctx).UserID()
-	var id int64
-	res := m.db.WithContext(ctx).Raw(`INSERT INTO sys_jobs (name, handler_key, cron_expr, params, enabled, timeout_seconds,
-		max_retries, remark, created_by, updated_by) VALUES (?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?, ?) RETURNING id`,
-		req.Name, req.HandlerKey, req.CronExpr, params, enabled, req.TimeoutSeconds, req.MaxRetries, req.Remark, uid, uid).Scan(&id)
-	if res.Error != nil {
-		if database.IsUniqueViolation(res.Error) {
+	id, err := database.InsertID(m.db.WithContext(ctx), `INSERT INTO sys_jobs (name, handler_key, cron_expr, params, enabled, timeout_seconds,
+		max_retries, remark, created_by, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		req.Name, req.HandlerKey, req.CronExpr, params, enabled, req.TimeoutSeconds, req.MaxRetries, req.Remark, uid, uid)
+	if err != nil {
+		if database.IsUniqueViolation(err) {
 			return nil, fieldError("name", "任务名称已存在")
 		}
-		return nil, res.Error
+		return nil, err
 	}
 	m.sched.notifyChanged(ctx)
 	return m.loadJobView(c, id)
@@ -221,7 +220,7 @@ func (m *Module) updateJob(c *gin.Context) (any, error) {
 	ctx := c.Request.Context()
 	sets := map[string]any{
 		"name": req.Name, "handler_key": req.HandlerKey, "cron_expr": req.CronExpr,
-		"params": gorm.Expr("?::jsonb", params), "timeout_seconds": req.TimeoutSeconds,
+		"params": params, "timeout_seconds": req.TimeoutSeconds,
 		"max_retries": req.MaxRetries, "remark": req.Remark, "updated_by": actor.From(ctx).UserID(),
 	}
 	if req.Enabled != nil {

@@ -32,6 +32,7 @@ import (
 	"base-admin/server/internal/platform/httpx"
 	"base-admin/server/internal/platform/middleware"
 	"base-admin/server/internal/platform/storage"
+	"base-admin/server/internal/platform/testinfra/dbtest"
 	"base-admin/server/internal/platform/testinfra/migrated"
 )
 
@@ -132,8 +133,7 @@ func newHarness(t *testing.T, opts ...harnessOpts) *harness {
 	if o.storage != nil {
 		h.store = o.storage(local)
 	}
-	require.NoError(t, gdb.Raw(`INSERT INTO sys_users (username, password_hash, nickname) VALUES ('uploader', 'x', '上传者') RETURNING id`).
-		Scan(&h.userID).Error)
+	h.userID = dbtest.InsertID(t, gdb, `INSERT INTO sys_users (username, password_hash, nickname) VALUES ('uploader', 'x', '上传者')`)
 
 	cfg := config.FileConfig{Driver: config.FileDriverLocal, LocalDir: dir, SignedURLTTL: 10 * time.Minute,
 		MaxUploadBytes: testCeiling, SigningKey: testSigningKey}

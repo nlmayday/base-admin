@@ -68,11 +68,16 @@ func (v *Versions) publishAfterCommit(ctx context.Context, ver int64) {
 	v.logger.Warn("auth version not published; reconciler will converge", zap.Int64("version", ver), zap.Error(err))
 }
 
-// Bump increments the PostgreSQL version inside tx and returns it.
+// Bump increments the database version inside tx and returns it.
 func Bump(tx *gorm.DB) (int64, error) {
-	var ver int64
-	if err := tx.Raw("UPDATE sys_auth_version SET version = version + 1 WHERE id = 1 RETURNING version").Scan(&ver).Error; err != nil {
+	// The UPDATE keeps the row locked until tx ends, so the SELECT reads
+	// this transaction's own increment.
+	if err := tx.Exec("UPDATE sys_auth_version SET version = version + 1 WHERE id = 1").Error; err != nil {
 		return 0, fmt.Errorf("bump auth version: %w", err)
+	}
+	var ver int64
+	if err := tx.Raw("SELECT version FROM sys_auth_version WHERE id = 1").Scan(&ver).Error; err != nil {
+		return 0, fmt.Errorf("read auth version: %w", err)
 	}
 	return ver, nil
 }

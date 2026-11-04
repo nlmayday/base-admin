@@ -48,6 +48,8 @@ ADMIN_HTTP_ADDR=:18080 make run
 API_URL=http://127.0.0.1:18080 make web-dev
 ```
 
+MySQL 8.4 can replace PostgreSQL: `make deps-up-mysql`, `make migrate-up-mysql`, `make run-mysql`. The conventions and limits are in [docs/mysql.md](docs/mysql.md) (in Chinese); the code generator supports PostgreSQL only for now.
+
 `make help` lists every target. `make ci` runs build, lint, the backend unit and integration tests, the frontend lint and type-check, and the frontend build.
 
 ### Initial data
@@ -68,7 +70,7 @@ Secrets are read only from the environment, and the server refuses to start if a
 
 | Variable | Purpose |
 |---|---|
-| `ADMIN_DATABASE_URL` | PostgreSQL URL (required) |
+| `ADMIN_DATABASE_URL` | Database URL (required): `postgres://…` or `mysql://…`; the scheme picks the database |
 | `ADMIN_REDIS_PASSWORD` | Redis password |
 | `ADMIN_BOOTSTRAP_ADMIN_PASSWORD` | Creates the first super admin when no user exists (12–72 characters) |
 | `ADMIN_FILE_SIGNING_KEY` | HMAC key for signed file links, at least 32 bytes (required in prod) |

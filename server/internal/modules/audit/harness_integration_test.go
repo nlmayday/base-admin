@@ -26,6 +26,7 @@ import (
 	"base-admin/server/internal/platform/database"
 	"base-admin/server/internal/platform/httpx"
 	"base-admin/server/internal/platform/requestid"
+	"base-admin/server/internal/platform/testinfra/dbtest"
 	"base-admin/server/internal/platform/testinfra/migrated"
 )
 
@@ -176,10 +177,8 @@ func (h *harness) decode(r apiResponse, dst any) {
 
 func (h *harness) createUser(username, nickname string) int64 {
 	h.t.Helper()
-	var id int64
-	require.NoError(h.t, h.db.Raw(`INSERT INTO sys_users (username, password_hash, nickname) VALUES (?, 'x', ?) RETURNING id`,
-		username, nickname).Scan(&id).Error)
-	return id
+	return dbtest.InsertID(h.t, h.db, `INSERT INTO sys_users (username, password_hash, nickname) VALUES (?, 'x', ?)`,
+		username, nickname)
 }
 
 func (h *harness) count(table, cond string, args ...any) int64 {

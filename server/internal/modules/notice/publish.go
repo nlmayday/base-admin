@@ -53,12 +53,12 @@ func (m *Module) setPublished(c *gin.Context, publish bool) (any, error) {
 		}
 		publishedAt := gorm.Expr("NULL")
 		if publish {
-			publishedAt = gorm.Expr("now()")
+			publishedAt = gorm.Expr("CURRENT_TIMESTAMP(6)")
 		}
 		sets := map[string]any{
 			"published_at": publishedAt,
 			"updated_by":   actor.From(ctx).UserID(),
-			"updated_at":   gorm.Expr("now()"),
+			"updated_at":   gorm.Expr("CURRENT_TIMESTAMP(6)"),
 		}
 		if err := updateVersioned(tx, noticeTable, id, *req.Version, sets, noticeDuplicate); err != nil {
 			return err

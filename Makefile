@@ -5,7 +5,10 @@ GOLANGCI_LINT_VERSION := v2.15.0
 GOLANGCI_LINT := go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 
 # Local defaults match deploy/docker/compose.dev.yaml; CI overrides them.
+# The URL scheme picks the database: postgres:// (default) or mysql://.
 ADMIN_DATABASE_URL      ?= postgres://admin:admin@127.0.0.1:15432/base_admin?sslmode=disable
+# The optional MySQL of compose.dev.yaml, used by the *-mysql targets.
+MYSQL_DATABASE_URL      ?= mysql://admin:admin@127.0.0.1:13307/base_admin
 ADMIN_REDIS_ADDR        ?= 127.0.0.1:16380
 ADMIN_TEST_DATABASE_URL ?= $(ADMIN_DATABASE_URL)
 # Tests lease free Redis databases 1-15 and never touch database 0 or ones
@@ -22,6 +25,7 @@ export ADMIN_AUTH_COOKIE_SECURE ADMIN_BOOTSTRAP_ADMIN_PASSWORD
 API_URL ?= http://127.0.0.1:8080
 
 .PHONY: help deps-up deps-down run migrate-up new-migration migrate-version codegen-web-check build test test-integration cover lint fmt ci \
+	deps-up-mysql run-mysql migrate-up-mysql test-integration-mysql \
 	web-install web-dev web-check web-build e2e
 
 help: ## List targets
@@ -30,17 +34,26 @@ help: ## List targets
 deps-up: ## Start PostgreSQL and Redis for local development
 	$(COMPOSE) up -d --wait
 
-deps-down: ## Stop local dependencies (data volumes are kept)
-	$(COMPOSE) down
+deps-down: ## Stop local dependencies, MySQL included (data volumes are kept)
+	$(COMPOSE) --profile mysql down
+
+deps-up-mysql: ## Start MySQL 127.0.0.1:13307 and Redis for the *-mysql targets
+	$(COMPOSE) --profile mysql up -d --wait mysql redis
 
 run: ## Run the API server with console logs
 	cd $(SERVER_DIR) && ADMIN_LOG_FORMAT=console go run ./cmd/admin serve
 
+run-mysql: ## Run the API server on the local MySQL (needs deps-up-mysql)
+	cd $(SERVER_DIR) && ADMIN_DATABASE_URL=$(MYSQL_DATABASE_URL) ADMIN_LOG_FORMAT=console go run ./cmd/admin serve
+
 migrate-up: ## Apply database migrations
 	cd $(SERVER_DIR) && go run ./cmd/admin migrate up
 
-new-migration: ## Create a migration pair in server/migrations/app; NAME=create_<table> starts from the table template (TRACK=base for scaffold migrations)
-	@sh scripts/new-migration.sh "$(NAME)" "$(TRACK)"
+migrate-up-mysql: ## Apply database migrations to the local MySQL
+	cd $(SERVER_DIR) && ADMIN_DATABASE_URL=$(MYSQL_DATABASE_URL) go run ./cmd/admin migrate up
+
+new-migration: ## Create a migration pair in server/migrations/app; NAME=create_<table> starts from the table template (TRACK=base for scaffold migrations, DIALECT=mysql for MySQL)
+	@sh scripts/new-migration.sh "$(NAME)" "$(TRACK)" "$(DIALECT)"
 
 migrate-version: ## Print the schema version of each track
 	cd $(SERVER_DIR) && go run ./cmd/admin migrate version
@@ -53,6 +66,9 @@ test: ## Unit tests
 
 test-integration: ## Unit + integration tests (needs deps-up)
 	cd $(SERVER_DIR) && go test -race -tags integration ./...
+
+test-integration-mysql: ## Unit + integration tests on the local MySQL (needs deps-up-mysql)
+	cd $(SERVER_DIR) && ADMIN_TEST_DATABASE_URL=$(MYSQL_DATABASE_URL) go test -race -tags integration ./...
 
 cover: ## Coverage report including integration tests (needs deps-up)
 	cd $(SERVER_DIR) && go test -tags integration -coverpkg=./internal/...,./cmd/... -coverprofile=coverage.out \

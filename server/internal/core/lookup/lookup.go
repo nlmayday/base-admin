@@ -12,6 +12,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"base-admin/server/internal/platform/database"
 	"base-admin/server/internal/platform/ids"
 )
 
@@ -52,9 +53,9 @@ func (t Target) Options(ctx context.Context, db *gorm.DB, keyword string) ([]Opt
 	if err != nil {
 		return nil, err
 	}
-	label := `COALESCE(x."` + t.Label + `"::text, '')`
+	label := `COALESCE(` + database.CastText(db, `x."`+t.Label+`"`) + `, '')`
 	if kw := strings.TrimSpace(keyword); kw != "" {
-		q = q.Where(label+` ILIKE ?`, "%"+escapeLike(kw)+"%")
+		q = q.Where(`LOWER(`+label+`) LIKE LOWER(?)`, "%"+escapeLike(kw)+"%")
 	}
 	out := []Option{}
 	err = q.Select("x.id AS id, " + label + " AS label").Order(label + ", x.id").Limit(MaxOptions).Scan(&out).Error

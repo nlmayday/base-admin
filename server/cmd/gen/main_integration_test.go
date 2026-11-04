@@ -11,10 +11,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"base-admin/server/internal/platform/database"
+	"base-admin/server/internal/platform/testinfra"
 	"base-admin/server/internal/platform/testinfra/migrated"
 )
 
 func TestGenerateFromRealTable(t *testing.T) {
+	testinfra.SkipOnMySQL(t, "the code generator reads and writes PostgreSQL tables")
 	cfg := migrated.Database(t)
 	sqlDB, err := database.OpenSQL(context.Background(), cfg, "gen-test")
 	require.NoError(t, err)

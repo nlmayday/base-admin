@@ -60,7 +60,7 @@ func (m *Module) loginLogQuery(c *gin.Context) (*gorm.DB, error) {
 func applyLoginFilter(ctx context.Context, db *gorm.DB, f loginFilter) (*gorm.DB, error) {
 	q := db.WithContext(ctx).Table(tableLoginLogs + " AS l")
 	if v := strings.TrimSpace(f.Username); v != "" {
-		q = q.Where("l.username ILIKE ?", "%"+escapeLike(v)+"%")
+		q = q.Where("LOWER(l.username) LIKE LOWER(?)", "%"+escapeLike(v)+"%")
 	}
 	if v := strings.TrimSpace(f.IP); v != "" {
 		q = q.Where("l.ip LIKE ?", escapeLike(v)+"%")

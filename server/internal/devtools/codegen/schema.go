@@ -10,6 +10,8 @@ import (
 	"slices"
 	"strings"
 
+	"base-admin/server/internal/platform/database"
+
 	"gorm.io/gorm"
 )
 
@@ -63,6 +65,10 @@ func (t Table) Column(name string) (Column, bool) {
 // ErrTableNotFound is returned for unknown tables.
 var ErrTableNotFound = errors.New("table not found")
 
+// ErrDialectUnsupported reports that the code generator cannot read tables
+// of the database's dialect yet: it supports PostgreSQL only.
+var ErrDialectUnsupported = errors.New("the code generator supports PostgreSQL databases only")
+
 // TableInfo is one entry of ListTables.
 type TableInfo struct {
 	Name    string `json:"name"`
@@ -81,6 +87,9 @@ func excludedTable(name string) bool {
 
 // ListTables lists the generator candidates of the current schema.
 func ListTables(ctx context.Context, db *gorm.DB) ([]TableInfo, error) {
+	if database.IsMySQL(db) {
+		return nil, ErrDialectUnsupported
+	}
 	var rows []struct {
 		Name    string
 		Comment string
@@ -123,6 +132,9 @@ type columnRow struct {
 
 // Introspect reads a table of the current schema.
 func Introspect(ctx context.Context, db *gorm.DB, table string) (Table, error) {
+	if database.IsMySQL(db) {
+		return Table{}, ErrDialectUnsupported
+	}
 	db = db.WithContext(ctx)
 	var meta []struct {
 		RelID   int64
