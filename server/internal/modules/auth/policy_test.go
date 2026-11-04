@@ -9,6 +9,7 @@ import (
 func TestCheckPassword(t *testing.T) {
 	strict := Policy{PasswordMinLength: 10, PasswordRequireUpper: true, PasswordRequireLower: true,
 		PasswordRequireDigit: true, PasswordRequireSymbol: true}
+	letters := Policy{PasswordMinLength: 10, PasswordRequireLetter: true, PasswordRequireDigit: true}
 	cases := []struct {
 		policy Policy
 		pw     string
@@ -23,6 +24,13 @@ func TestCheckPassword(t *testing.T) {
 		{strict, "abc1", "密码至少 10 位，且须包含大写字母、特殊字符"},
 		{strict, "ABCDEFGHIJ", "密码须包含小写字母、数字、特殊字符"},
 		{Policy{PasswordMinLength: 8}, "密码密码密码密码", ""},
+		// 至少 10 位，含字母（大小写不限）和数字.
+		{letters, "abcdefghi1", ""},
+		{letters, "ABCDEFGHI1", ""},
+		{letters, "1234567890", "密码须包含字母"},
+		{letters, "密码密码密码密码密码1", "密码须包含字母"},
+		{letters, "abcdefghij", "密码须包含数字"},
+		{letters, "ab1", "密码至少 10 位"},
 	}
 	for _, tc := range cases {
 		got := tc.policy.CheckPassword(tc.pw)

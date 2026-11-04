@@ -45,6 +45,7 @@ const view = ref<SecurityPolicyView | null>(null);
 const form = reactive<SecurityPolicy>({
   passwordMinLength: 8,
   passwordRequireUpper: false,
+  passwordRequireLetter: false,
   passwordRequireLower: false,
   passwordRequireDigit: true,
   passwordRequireSymbol: false,
@@ -70,6 +71,10 @@ const passwordRuleText = computed(() => {
   const classes = [
     form.passwordRequireUpper && "大写字母",
     form.passwordRequireLower && "小写字母",
+    form.passwordRequireLetter &&
+      !form.passwordRequireUpper &&
+      !form.passwordRequireLower &&
+      "字母",
     form.passwordRequireDigit && "数字",
     form.passwordRequireSymbol && "特殊字符"
   ].filter(Boolean);
@@ -86,6 +91,7 @@ async function load(): Promise<void> {
       passwordMinLength: p.passwordMinLength,
       passwordRequireUpper: p.passwordRequireUpper,
       passwordRequireLower: p.passwordRequireLower,
+      passwordRequireLetter: p.passwordRequireLetter,
       passwordRequireDigit: p.passwordRequireDigit,
       passwordRequireSymbol: p.passwordRequireSymbol,
       captchaMode: p.captchaMode,
@@ -194,6 +200,9 @@ onMounted(() => {
               </el-checkbox>
               <el-checkbox v-model="form.passwordRequireLower">
                 小写字母
+              </el-checkbox>
+              <el-checkbox v-model="form.passwordRequireLetter">
+                字母（大小写不限）
               </el-checkbox>
               <el-checkbox v-model="form.passwordRequireDigit">
                 数字

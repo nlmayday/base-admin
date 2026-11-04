@@ -22,6 +22,8 @@ export type SecurityPolicy = {
   passwordMinLength: number;
   passwordRequireUpper: boolean;
   passwordRequireLower: boolean;
+  /** 须含字母，大小写不限 */
+  passwordRequireLetter: boolean;
   passwordRequireDigit: boolean;
   passwordRequireSymbol: boolean;
   captchaMode: CaptchaMode;
