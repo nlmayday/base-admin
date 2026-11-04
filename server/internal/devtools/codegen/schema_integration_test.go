@@ -32,7 +32,8 @@ CREATE TABLE biz_gadgets (
     version     integer      NOT NULL DEFAULT 0,
     created_at  timestamptz  NOT NULL DEFAULT now(),
     created_by  bigint,
-    deleted_at  timestamptz
+    deleted_at  timestamptz,
+    note        text         DEFAULT '备注 it''s'
 );
 COMMENT ON TABLE biz_gadgets IS '小工具';
 COMMENT ON COLUMN biz_gadgets.name IS '名称，必填';
@@ -49,40 +50,87 @@ CREATE TABLE biz_items (
 );
 `
 
+// mysqlFixtureDDL is fixtureDDL for MySQL; blob stands in for text[] as
+// the unsupported type.
+const mysqlFixtureDDL = `
+CREATE TABLE biz_gadgets (
+    id          bigint       NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    name        varchar(64)  NOT NULL COMMENT '名称，必填',
+    code        varchar(32)  NOT NULL DEFAULT '',
+    price       decimal(12, 2),
+    released_on date,
+    meta        json,
+    tags        blob,
+    dept_id     bigint,
+    status      smallint     NOT NULL DEFAULT 1,
+    version     integer      NOT NULL DEFAULT 0,
+    created_at  datetime(6)  NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    created_by  bigint,
+    deleted_at  datetime(6),
+    note        text         DEFAULT ('备注 it''s'),
+    UNIQUE KEY biz_gadgets_code_uq (code),
+    UNIQUE KEY biz_gadgets_name_dept_uq (name, dept_id)
+) COMMENT='小工具';
+CREATE TABLE biz_legacy (id int NOT NULL AUTO_INCREMENT PRIMARY KEY, title text);
+CREATE TABLE biz_pairs (a bigint, b bigint, PRIMARY KEY (a, b));
+CREATE TABLE biz_tags (id bigint NOT NULL AUTO_INCREMENT PRIMARY KEY, code varchar(16), title text, secret_token text);
+CREATE TABLE biz_items (
+    id       bigint NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    tag_id   bigint,
+    owner_id bigint,
+    plain_id bigint,
+    CONSTRAINT biz_items_tag_fk FOREIGN KEY (tag_id) REFERENCES biz_tags (id),
+    CONSTRAINT biz_items_owner_fk FOREIGN KEY (owner_id) REFERENCES sys_users (id)
+);
+`
+
 func openDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	cfg := migrated.Database(t)
-	sqlDB, err := database.OpenSQL(context.Background(), cfg, "codegen-test")
+	sqlDB, err := database.OpenSQL(context.Background(), cfg, "codegen-test", database.ForMigrations())
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	db, err := database.NewGorm(sqlDB, cfg, zap.NewNop())
 	require.NoError(t, err)
-	require.NoError(t, db.Exec(fixtureDDL).Error)
+	ddl := fixtureDDL
+	if testinfra.IsMySQL(t) {
+		ddl = mysqlFixtureDDL
+	}
+	require.NoError(t, db.Exec(ddl).Error)
 	return db
 }
 
 func TestIntrospect(t *testing.T) {
-	testinfra.SkipOnMySQL(t, "the code generator reads and writes PostgreSQL tables")
 	db := openDB(t)
 	ctx := context.Background()
 	tb, err := Introspect(ctx, db, "biz_gadgets")
 	require.NoError(t, err)
 	assert.Equal(t, "小工具", tb.Comment)
-	require.Len(t, tb.Columns, 13)
+	require.Len(t, tb.Columns, 14)
 
 	byName := map[string]Column{}
 	for _, c := range tb.Columns {
 		byName[c.Name] = c
 	}
+	mysql := testinfra.IsMySQL(t)
 	assert.Equal(t, Column{Name: "id", UDT: "int8", Identity: true, Primary: true}, byName["id"])
 	assert.Equal(t, Column{Name: "name", UDT: "varchar", MaxLength: 64, Comment: "名称，必填"}, byName["name"])
-	assert.Equal(t, "''::character varying", byName["code"].Default)
+	assert.Equal(t, pick(mysql, "''", "''::character varying"), byName["code"].Default)
 	assert.True(t, byName["code"].Unique, "single-column unique index")
 	assert.False(t, byName["name"].Unique, "multi-column unique indexes are not per column")
 	assert.Equal(t, "numeric", byName["price"].UDT)
 	assert.True(t, byName["price"].Nullable)
-	assert.Equal(t, "_text", byName["tags"].UDT)
-	assert.Equal(t, "now()", byName["created_at"].Default)
+	assert.Equal(t, "date", byName["released_on"].UDT)
+	assert.Equal(t, pick(mysql, "json", "jsonb"), byName["meta"].UDT)
+	assert.Equal(t, pick(mysql, "blob", "_text"), byName["tags"].UDT)
+	assert.Equal(t, "int2", byName["status"].UDT)
+	assert.Equal(t, "1", byName["status"].Default)
+	assert.Equal(t, "timestamptz", byName["created_at"].UDT)
+	assert.Equal(t, pick(mysql, "CURRENT_TIMESTAMP(6)", "now()"), byName["created_at"].Default)
+	assert.False(t, byName["deleted_at"].HasDefault())
+	lit, ok := parseDefault(byName["note"].Default)
+	assert.True(t, ok, byName["note"].Default)
+	assert.Equal(t, "备注 it's", lit, "a non-ASCII expression default reads back intact")
 	assert.Equal(t, "id", tb.Columns[0].Name, "columns keep table order")
 	require.NoError(t, CheckTable(tb))
 
@@ -95,7 +143,6 @@ func TestIntrospect(t *testing.T) {
 }
 
 func TestListTables(t *testing.T) {
-	testinfra.SkipOnMySQL(t, "the code generator reads and writes PostgreSQL tables")
 	db := openDB(t)
 	tables, err := ListTables(context.Background(), db)
 	require.NoError(t, err)
@@ -105,13 +152,12 @@ func TestListTables(t *testing.T) {
 		assert.NotContains(t, tb.Name, "sys_", "core tables are excluded")
 		assert.NotEqual(t, "schema_migrations", tb.Name)
 	}
-	assert.Equal(t, TableInfo{Name: "biz_gadgets", Comment: "小工具", Supported: true, Columns: 13}, byName["biz_gadgets"])
+	assert.Equal(t, TableInfo{Name: "biz_gadgets", Comment: "小工具", Supported: true, Columns: 14}, byName["biz_gadgets"])
 	assert.True(t, byName["biz_legacy"].Supported == false && byName["biz_legacy"].Reason != "", "serial (int4) ids are rejected")
 	assert.False(t, byName["biz_pairs"].Supported)
 }
 
 func TestIntrospectForeignKeys(t *testing.T) {
-	testinfra.SkipOnMySQL(t, "the code generator reads and writes PostgreSQL tables")
 	db := openDB(t)
 	tb, err := Introspect(context.Background(), db, "biz_items")
 	require.NoError(t, err)
@@ -134,14 +180,13 @@ func TestIntrospectForeignKeys(t *testing.T) {
 // module from the resulting table: the conventions it writes are the ones
 // the generator reads (relations, uploads, options, standard columns).
 func TestTableSpecRoundTrip(t *testing.T) {
-	testinfra.SkipOnMySQL(t, "the code generator reads and writes PostgreSQL tables")
 	db := openDB(t)
 	customers := TableSpec{Name: "biz_customers", Label: "客户", Columns: []ColumnSpec{
 		{Name: "name", Type: ColString, Label: "客户名称", Required: true, Unique: true},
 	}}
 	for _, spec := range []TableSpec{customers, orderSpec()} {
 		require.Empty(t, spec.Problems())
-		up, _ := spec.MigrationSQL()
+		up, _ := spec.MigrationSQL(database.DialectOf(db))
 		require.NoError(t, db.Exec(up).Error, up)
 	}
 	tb, err := Introspect(context.Background(), db, "biz_orders")
@@ -171,7 +216,7 @@ func TestTableSpecRoundTrip(t *testing.T) {
 			continue
 		}
 		var got string
-		require.NoError(t, db.Raw("SELECT ("+f.InsertVal+")::text", nil).Scan(&got).Error, f.InsertVal)
+		require.NoError(t, db.Raw("SELECT "+database.CastText(db, "("+f.InsertVal+")"), nil).Scan(&got).Error, f.InsertVal)
 		defaults[f.Column] = got
 	}
 	assert.NotEmpty(t, defaults["ordered_at"], "DEFAULT now()")

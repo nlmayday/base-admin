@@ -163,7 +163,11 @@ type Field struct {
 	ArgExpr    string // request → SQL argument
 	InsertVal  string // INSERT value placeholder ("?" or COALESCE with the default)
 	UpdateArg  string // UPDATE value (ArgExpr, or COALESCE keeping the current value)
-	SelectExpr string // column expression in SELECT
+	SelectExpr string // column expression in SELECT, e.g. t.name
+	// SelectCast reads the column as text (castText) or as a YYYY-MM-DD
+	// date (castDate) through the database package, so the generated query
+	// runs on both PostgreSQL and MySQL; "" reads it as is.
+	SelectCast string
 	Binding    string
 	Sample     string // Go literal for the integration test payload
 
@@ -217,11 +221,10 @@ func newField(c Column, ti typeInfo) *Field {
 	f.goTypes(ti)
 	f.SelectExpr = "t." + f.Quoted
 	if ti.castText {
-		expr := "t." + f.Quoted + "::text"
+		f.SelectCast = castText
 		if ti.kind == kindDate {
-			expr = "to_char(t." + f.Quoted + ", 'YYYY-MM-DD')"
+			f.SelectCast = castDate
 		}
-		f.SelectExpr = expr + " AS " + f.Quoted
 	}
 	f.writable(c)
 	f.canWrite = f.Writable

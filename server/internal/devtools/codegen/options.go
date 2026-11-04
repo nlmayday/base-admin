@@ -244,7 +244,7 @@ func (s Spec) FieldProblems(t Table) []Problem {
 		if o.Upload != nil && *o.Upload != "" {
 			switch {
 			case !slices.Contains(uploadModes(f), *o.Upload):
-				add("字段 " + o.Column + " 不能使用该上传方式（图片需要长度不小于 255 的文本字段，附件需要 jsonb 字段）")
+				add("字段 " + o.Column + " 不能使用该上传方式（图片需要长度不小于 255 的文本字段，附件需要 JSON（jsonb 或 json）字段）")
 			case o.Dict != nil && *o.Dict != "":
 				add("字段 " + o.Column + " 不能同时使用上传和下拉选项")
 			case o.Search != "" && o.Search != SearchNone:

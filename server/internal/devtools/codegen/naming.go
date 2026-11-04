@@ -83,7 +83,9 @@ func plural(s string) string {
 	}
 }
 
-// reservedWords are PostgreSQL keywords that must be quoted as column names.
+// reservedWords are PostgreSQL and MySQL 8.4 reserved words, which must be
+// quoted as names (double quotes work in both: MySQL sessions run with
+// ANSI_QUOTES).
 var reservedWords = map[string]bool{}
 
 func init() {
@@ -95,6 +97,24 @@ func init() {
 		only or order outer overlaps placing primary references returning right select session_user similar some
 		symmetric system_user table tablesample then to trailing true union unique user using variadic verbose when
 		where window with`) {
+		reservedWords[w] = true
+	}
+	for _, w := range strings.Fields(`accessible add alter asensitive before between bigint blob by call cascade change
+		char character condition continue convert cube cume_dist cursor database databases day_hour day_microsecond
+		day_minute day_second dec decimal declare delayed delete dense_rank describe deterministic distinctrow div
+		double drop dual each elseif empty enclosed escaped exists exit explain first_value float float4 float8 force
+		fulltext function generated get groups grouping high_priority hour_microsecond hour_minute hour_second if
+		ignore index infile inout insensitive insert int int1 int2 int3 int4 int8 integer interval io_after_gtids
+		io_before_gtids iterate json_table key keys kill lag last_value lead leave linear lines load lock long longblob
+		longtext loop low_priority master_bind master_ssl_verify_server_cert match maxvalue mediumblob mediumint
+		mediumtext middleint minute_microsecond minute_second mod modifies no_write_to_binlog nth_value ntile numeric
+		of optimize optimizer_costs option optionally out outfile over partition percent_rank precision procedure
+		purge range rank read read_write reads real recursive regexp release rename repeat replace require resignal
+		restrict return revoke rlike row row_number rows schema schemas second_microsecond sensitive separator set
+		show signal smallint spatial specific sql sql_big_result sql_calc_found_rows sql_small_result sqlexception
+		sqlstate sqlwarning ssl starting stored straight_join system terminated tinyblob tinyint tinytext trigger undo
+		unlock unsigned update usage use utc_date utc_time utc_timestamp values varbinary varchar varcharacter
+		varying virtual while write xor year_month zerofill`) {
 		reservedWords[w] = true
 	}
 }

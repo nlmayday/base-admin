@@ -24,16 +24,23 @@ const (
 	kindNet     kind = "net"  // inet, cidr
 )
 
+// Select casts (Field.SelectCast).
+const (
+	castText = "text" // database.CastText
+	castDate = "date" // database.FormatDate
+)
+
 // typeInfo describes a supported column type.
 type typeInfo struct {
 	kind kind
 	// goType is the non-pointer Go type of rows and requests.
 	goType string
-	// castText selects the column as text (e.g. to_char or ::text).
+	// castText selects the column as text (a date as YYYY-MM-DD).
 	castText bool
 }
 
-// mapType maps a PostgreSQL type; ok is false for unsupported types.
+// mapType maps a column type (PostgreSQL names, see Column.UDT); ok is
+// false for unsupported types.
 func mapType(c Column) (typeInfo, bool) {
 	switch c.UDT {
 	case "int2":

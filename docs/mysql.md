@@ -25,7 +25,7 @@ make test-integration-mysql   # 全部后端测试在 MySQL 上跑一遍
 | 登录、会话、权限、用户 / 角色 / 部门 / 岗位 / 菜单 | ✓ | ✓ |
 | 字典、系统参数、基础设置、安全策略 | ✓ | ✓ |
 | 通知公告、个人消息、审计日志、文件、定时任务、监控 | ✓ | ✓ |
-| 代码生成器、AI 接口建表 | ✓ | 暂不支持，返回 409 / 80005 |
+| 代码生成器、AI 接口建表 | ✓ | ✓ |
 
 ## 部署要求
 
@@ -67,6 +67,28 @@ make test-integration-mysql   # 全部后端测试在 MySQL 上跑一遍
 - `UPDATE` / `DELETE` 的子查询不能读同一张表，也不能在 `IN (SELECT … LIMIT ?)` 里用 `LIMIT`；包一层派生表：`WHERE id IN (SELECT id FROM (SELECT id FROM t WHERE … LIMIT ?) AS batch)`。
 - 没有 `UPDATE … RETURNING`、带写操作的 `WITH`、`DISTINCT ON`、`FILTER (WHERE …)`、`generate_series`：拆成同一事务里的几条语句，或改用 `ROW_NUMBER()`、`COUNT(CASE WHEN … END)`、在 Go 里分组。
 - `NOT IN` 一个空列表时一行都不匹配；列表可能为空时在 Go 里去掉这个条件。
+
+## 代码生成器
+
+开发库是 MySQL 时，代码生成器读 MySQL 的表结构，AI 接口建表生成 MySQL 的迁移，写到 `server/migrations/app/mysql`。
+
+- 读表时 MySQL 类型按下表对应到生成器的字段类型；`enum`、`set`、`blob`、`time`、`year`、`bit` 等不支持，可为空或有默认值的列会被跳过，必填的会让整张表不能生成。
+
+  | MySQL | 当作 | 控件 |
+  |---|---|---|
+  | `bigint`（`id`、`*_id`、`created_by`） / `int` / `smallint`、`tinyint` | 整数 / ID | 数字输入；ID 是 JSON 字符串 |
+  | `tinyint(1)`（`boolean`） | 布尔 | 开关 |
+  | `decimal` | 定点数，JSON 字符串 | 数字输入 |
+  | `float` / `double` | 浮点 | 数字输入 |
+  | `varchar` / `char` / `text` 系列 | 文本 | 输入框 / 多行文本 |
+  | `datetime` / `timestamp` | 时间（UTC） | 日期时间 |
+  | `date` | 日期 | 日期 |
+  | `json` | JSON 文本 | 多行文本；名为 `attachments` 时是附件上传 |
+
+- 主键要求和 PostgreSQL 一样：`id bigint NOT NULL AUTO_INCREMENT PRIMARY KEY`。
+- 生成的后端代码两种数据库都能运行：需要转换的列（`decimal`、`date`、`json`、关联名称）通过 `database.CastText` / `database.FormatDate` 读取，插入用 `database.InsertID`。只有列默认值是数据库专有的表达式（例如 `gen_random_uuid()`）时，插入语句才会按生成时的数据库写。
+- AI 接口建的 MySQL 表是一条 `CREATE TABLE`，注释、索引、外键都写在里面，失败不会留下半个迁移。执行前先用临时表名（`tmp_try_…`）建一次再删除，检查 SQL 能否执行。
+- 软删除表的唯一字段用函数索引 `((CASE WHEN deleted_at IS NULL THEN col END))`，等价于 PostgreSQL 的部分唯一索引。唯一的 string 字段最长 768（MySQL 索引的上限）。
 
 ## 写 MySQL 迁移
 

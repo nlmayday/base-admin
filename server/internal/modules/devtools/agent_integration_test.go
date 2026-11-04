@@ -18,7 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"base-admin/server/internal/platform/config"
-	"base-admin/server/internal/platform/testinfra"
+	"base-admin/server/internal/platform/database"
 	"base-admin/server/internal/platform/testinfra/dbtest"
 )
 
@@ -27,7 +27,7 @@ import (
 func agentRepo(t *testing.T) string {
 	t.Helper()
 	root := fakeRepo(t)
-	for _, sub := range []string{"", "app"} {
+	for _, sub := range []string{"", "app", "mysql", "app/mysql"} {
 		dst := filepath.Join(root, "server", "migrations", sub)
 		require.NoError(t, os.MkdirAll(dst, 0o750))
 		src := filepath.Join("..", "..", "..", "migrations", sub)
@@ -151,7 +151,7 @@ func TestAgentAuth(t *testing.T) {
 	noPerm := h.newKey(plain, map[string]any{"name": "plain"}).Key
 
 	r := h.agent(key, http.MethodGet, "/tables", nil)
-	require.Equal(t, tablesStatus(t), r.status, string(r.body))
+	require.Equal(t, http.StatusOK, r.status, string(r.body))
 	var used int
 	require.NoError(t, h.db.Raw(`SELECT count(*) FROM sys_agent_keys WHERE last_used_at IS NOT NULL`).Scan(&used).Error)
 	assert.Equal(t, 1, used, "last_used_at is recorded")
@@ -194,11 +194,10 @@ func TestAgentIsDevOnly(t *testing.T) {
 }
 
 func TestAgentCreateTable(t *testing.T) {
-	testinfra.SkipOnMySQL(t, "the code generator reads and writes PostgreSQL tables")
 	root := agentRepo(t)
 	h := newHarness(t, config.EnvDev, root)
 	key := h.newKey(h.agentUser("builder", true), map[string]any{"name": "builder"}).Key
-	dir := filepath.Join(root, "server", "migrations", "app")
+	dir := filepath.Join(root, filepath.FromSlash(appMigrationsDir(database.DialectOf(h.db))))
 	before, err := os.ReadDir(dir)
 	require.NoError(t, err)
 
@@ -280,11 +279,23 @@ func TestAgentCreateTable(t *testing.T) {
 
 	invalid := h.agent(key, http.MethodPost, "/tables", map[string]any{"name": "sys_x", "label": "x", "columns": []any{}})
 	assert.Equal(t, http.StatusUnprocessableEntity, invalid.status)
+	assert.Zero(t, h.countTables(`tmp\_try\_%`), "the scratch tables of the MySQL check are dropped")
 }
 
 func (h *harness) tableExists(name string) bool {
 	h.t.Helper()
+	return h.countTables(name) == 1
+}
+
+// countTables counts the tables of the current schema whose name is LIKE
+// pattern.
+func (h *harness) countTables(pattern string) int {
+	h.t.Helper()
+	schema := "current_schema()"
+	if database.IsMySQL(h.db) {
+		schema = "DATABASE()"
+	}
 	var n int
-	require.NoError(h.t, h.db.Raw(`SELECT count(*) FROM pg_tables WHERE schemaname = current_schema() AND tablename = ?`, name).Scan(&n).Error)
-	return n == 1
+	require.NoError(h.t, h.db.Raw(`SELECT count(*) FROM information_schema.tables WHERE table_schema = `+schema+` AND table_name LIKE ?`, pattern).Scan(&n).Error)
+	return n
 }

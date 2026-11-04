@@ -1,5 +1,5 @@
 // Command gen generates a CRUD module (Go backend and Vue frontend) from a
-// PostgreSQL table (docs/p1-p3-plan.md, devtools).
+// PostgreSQL or MySQL table (docs/p1-p3-plan.md, devtools).
 //
 //	go run ./cmd/gen -table biz_orders -module sales -resource order -name 订单
 package main

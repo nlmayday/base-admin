@@ -1,12 +1,10 @@
 package devtools
 
 import (
-	"errors"
 	"net/http"
 
 	"base-admin/server/internal/core/menu"
 	"base-admin/server/internal/core/perm"
-	"base-admin/server/internal/devtools/codegen"
 	"base-admin/server/internal/platform/httpx"
 )
 
@@ -31,18 +29,7 @@ const (
 	// CodeMigrationState: the database is not at the last migration on
 	// disk, so the agent API will not add one (409).
 	CodeMigrationState = 80004
-	// CodeDialectUnsupported: the feature does not support the database's
-	// dialect yet (409).
-	CodeDialectUnsupported = 80005
 )
-
-// dialectError maps the code generator's dialect refusal to a 409.
-func dialectError(err error) error {
-	if errors.Is(err, codegen.ErrDialectUnsupported) {
-		return httpx.NewError(http.StatusConflict, CodeDialectUnsupported, "代码生成暂只支持 PostgreSQL 数据库").WithCause(err)
-	}
-	return err
-}
 
 var errCodegenDisabled = httpx.NewError(http.StatusForbidden, CodeCodegenDisabled,
 	"代码生成仅在开发环境（app.env=dev）可用")
