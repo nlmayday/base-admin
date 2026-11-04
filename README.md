@@ -48,7 +48,7 @@ ADMIN_HTTP_ADDR=:18080 make run
 API_URL=http://127.0.0.1:18080 make web-dev
 ```
 
-也可以用 MySQL 8.4 代替 PostgreSQL：`make deps-up-mysql`、`make migrate-up-mysql`、`make run-mysql`，写法和限制见 [docs/mysql.md](docs/mysql.md)。代码生成器和 AI 接口建表在两种数据库上都能用。
+也可以用 MySQL（8.0.30 及以上）代替 PostgreSQL：`make deps-up-mysql`、`make migrate-up-mysql`、`make run-mysql`，写法和限制见 [docs/mysql.md](docs/mysql.md)。代码生成器和 AI 接口建表在两种数据库上都能用。
 
 `make help` 列出所有命令。`make ci` 依次执行：构建、lint、后端单元测试和集成测试、前端 lint 和类型检查、前端构建。
 

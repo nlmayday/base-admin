@@ -10,7 +10,7 @@ import (
 )
 
 // Dialect names the database server the application runs on. PostgreSQL is
-// the primary target; MySQL 8.4+ is supported with the same schema in
+// the primary target; MySQL 8.0.30+ (8.0 and 8.4) is supported with the same schema in
 // migrations/mysql. The dialect follows from the scheme of the database URL
 // (postgres:// or mysql://), so there is no separate setting to keep in sync.
 type Dialect string

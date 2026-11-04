@@ -91,3 +91,17 @@ func TestTextArrayScansJSON(t *testing.T) {
 	assert.Equal(t, TextArray{}, a)
 	assert.Error(t, a.Scan("[broken"))
 }
+
+func TestMySQLVersionProblem(t *testing.T) {
+	for v, ok := range map[string]bool{
+		"8.0.46": true, "8.0.30": true, "8.4.13": true, "9.1.0": true, "8.0.30-log": true,
+		"8.0.29": false, "5.7.44-log": false, "10.11.6-MariaDB": false, "x": false,
+	} {
+		err := mysqlVersionProblem(v)
+		if ok {
+			assert.NoError(t, err, v)
+		} else {
+			assert.Error(t, err, v)
+		}
+	}
+}

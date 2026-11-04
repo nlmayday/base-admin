@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"base-admin/server/internal/platform/httpx"
+	"base-admin/server/internal/platform/testinfra"
 )
 
 func TestLoginSetsHardenedCookies(t *testing.T) {
@@ -204,6 +205,19 @@ func TestSessionGenerationNeverDecreasesInDatabase(t *testing.T) {
 	uid := h.createUser("kate")
 	_, err := h.core.Revoker.Revoke(context.Background(), uid, RevokeSpec{})
 	require.NoError(t, err)
+	if testinfra.IsMySQL(t) {
+		// No trigger on MySQL (it would need SUPER with binary logging):
+		// the migrations create none, and revocations keep raising the
+		// generation (GREATEST in the UPDATE).
+		var triggers int
+		require.NoError(t, h.db.Raw("SELECT count(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = DATABASE()").Scan(&triggers).Error)
+		assert.Zero(t, triggers)
+		before := h.pgGen(uid)
+		_, err = h.core.Revoker.Revoke(context.Background(), uid, RevokeSpec{})
+		require.NoError(t, err)
+		assert.Greater(t, h.pgGen(uid), before)
+		return
+	}
 	err = h.db.Exec("UPDATE sys_users SET session_gen = 1 WHERE id = ?", uid).Error
 	require.Error(t, err)
 	assert.True(t, strings.Contains(err.Error(), "must not decrease"), err.Error())
