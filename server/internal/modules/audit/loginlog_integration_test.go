@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"base-admin/server/internal/core/export"
 	"base-admin/server/internal/modules/auth"
 	"base-admin/server/internal/platform/httpx"
 )
@@ -149,4 +150,32 @@ func TestWriterFlushesToDatabaseOnShutdown(t *testing.T) {
 	require.NoError(t, db.Raw("SELECT count(*) FROM sys_login_logs").Scan(&n).Error)
 	assert.EqualValues(t, 25, n, "shutdown flushes the queue")
 	assert.Zero(t, mod.Writer().Dropped())
+}
+
+// An export over the limit set in 基础设置 is refused, never cut short;
+// time columns are UTC and say so.
+func TestLoginLogExportLimit(t *testing.T) {
+	h := newHarness(t)
+	frank := h.createUser("frank2", "")
+	require.NoError(t, h.db.Exec(`DELETE FROM sys_configs WHERE "key" = ?`, export.SettingKey).Error)
+	require.NoError(t, h.db.Exec(`INSERT INTO sys_configs ("key", value, value_type, group_name, name, builtin)
+		VALUES (?, '1000', 'number', '导出设置', '导出行数上限', TRUE)`, export.SettingKey).Error)
+	rows := make([]map[string]any, export.MinMaxRows+1)
+	for i := range rows {
+		rows[i] = map[string]any{"kind": "login", "username": "bulk", "success": true, "reason": "", "ip": "10.0.0.1",
+			"created_at": time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)}
+	}
+	require.NoError(t, h.db.Table("sys_login_logs").CreateInBatches(rows, 500).Error)
+
+	r := h.call(http.MethodGet, "/api/v1/audit/login-logs/export", "", frank, PermLoginLogExport)
+	assert.Equal(t, http.StatusUnprocessableEntity, r.Status, r.Body)
+	assert.Contains(t, r.Body, "数据量过大")
+
+	require.NoError(t, h.db.Exec(`DELETE FROM sys_login_logs WHERE id IN (SELECT id FROM (SELECT id FROM sys_login_logs WHERE username = 'bulk' ORDER BY id LIMIT 1) AS x)`).Error)
+	r = h.call(http.MethodGet, "/api/v1/audit/login-logs/export?username=bulk", "", frank, PermLoginLogExport)
+	require.Equal(t, http.StatusOK, r.Status, r.Body)
+	lines := strings.Split(strings.TrimSpace(strings.TrimPrefix(r.Body, "\xef\xbb\xbf")), "\n")
+	assert.Len(t, lines, export.MinMaxRows+1, "the header and every row")
+	assert.Contains(t, lines[0], "时间(UTC)")
+	assert.Contains(t, lines[1], "2026-01-02 03:04:05")
 }

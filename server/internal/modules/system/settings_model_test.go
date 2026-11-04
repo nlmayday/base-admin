@@ -12,7 +12,7 @@ import (
 
 func validSettings() Settings {
 	return Settings{SiteName: "Admin", LogoURL: "", UploadAllowedExtensions: []string{"png"},
-		UploadMaxSizeMB: 20, AuditRetentionDays: 180}
+		UploadMaxSizeMB: 20, AuditRetentionDays: 180, ExportMaxRows: 100000, PageSize: 20}
 }
 
 func fieldNames(fields []httpx.FieldError) []string {
@@ -27,7 +27,7 @@ func TestSettingsNormalizedValid(t *testing.T) {
 	in := Settings{
 		SiteName: "  My Admin ", LogoURL: " https://cdn.example.com/logo.png ",
 		UploadAllowedExtensions: []string{" .PNG", "jpg", "png", "", "Pdf"},
-		UploadMaxSizeMB:         1024, AuditRetentionDays: 7,
+		UploadMaxSizeMB:         1024, AuditRetentionDays: 7, ExportMaxRows: 1000, PageSize: 50,
 	}
 	out, fields := in.normalized()
 	require.Empty(t, fields)
@@ -61,6 +61,9 @@ func TestSettingsNormalizedInvalid(t *testing.T) {
 		{"size too big", func(s *Settings) { s.UploadMaxSizeMB = 1025 }, "uploadMaxSizeMB"},
 		{"retention zero", func(s *Settings) { s.AuditRetentionDays = 0 }, "auditRetentionDays"},
 		{"retention too big", func(s *Settings) { s.AuditRetentionDays = maxRetentionDays + 1 }, "auditRetentionDays"},
+		{"export too small", func(s *Settings) { s.ExportMaxRows = 999 }, "exportMaxRows"},
+		{"export too big", func(s *Settings) { s.ExportMaxRows = 1000001 }, "exportMaxRows"},
+		{"page size", func(s *Settings) { s.PageSize = 30 }, "pageSize"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -93,7 +96,7 @@ func TestValidateLogoURL(t *testing.T) {
 
 func TestStoredValuesRoundTrip(t *testing.T) {
 	in, fields := Settings{SiteName: "X", LogoURL: "/l.png", UploadAllowedExtensions: []string{"png", "zip"},
-		UploadMaxSizeMB: 5, AuditRetentionDays: 30}.normalized()
+		UploadMaxSizeMB: 5, AuditRetentionDays: 30, ExportMaxRows: 5000, PageSize: 10}.normalized()
 	require.Empty(t, fields)
 	values := in.storedValues()
 	assert.Equal(t, "png,zip", values[KeyUploadAllowedExtensions])

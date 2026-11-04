@@ -46,6 +46,7 @@ type previewRequest struct {
 	Fields      []codegen.FieldOption `json:"fields" binding:"max=200,dive" doc:"字段配置（中文名、列表、表单、搜索方式）；不传的字段使用默认值"`
 	KeyMode     string                `json:"keyMode,omitempty" binding:"omitempty,oneof=auto generated input" doc:"主键来源：auto 数据库自增，generated 程序生成（雪花 ID），input 新增时填写；不传按列自动判断"`
 	ReadOnly    bool                  `json:"readOnly,omitempty" doc:"只读：只生成列表、详情和导出"`
+	SoftDelete  *bool                 `json:"softDelete,omitempty" doc:"false 时 deleted_at 作为普通时间字段（如注销时间）：列出全部行，删除即删除行；不传或 true 时按软删除处理"`
 	Children    []codegen.ChildSpec   `json:"children,omitempty" binding:"max=5" doc:"随主表一起编辑的子表（如多语言表），每个键（如语言）一行"`
 }
 
@@ -270,7 +271,7 @@ func (m *Module) loadTable(c *gin.Context, name string) (codegen.Table, error) {
 // prepare validates a request and generates the files in memory.
 func (m *Module) prepare(c *gin.Context, req previewRequest) (codegen.Result, codegen.Spec, error) {
 	spec := codegen.Spec{Module: req.Module, Resource: req.Resource, Name: req.Name, ModuleTitle: req.ModuleTitle,
-		Fields: req.Fields, KeyMode: req.KeyMode, ReadOnly: req.ReadOnly, Children: req.Children}
+		Fields: req.Fields, KeyMode: req.KeyMode, ReadOnly: req.ReadOnly, SoftDelete: req.SoftDelete, Children: req.Children}
 	if problems := spec.Problems(); len(problems) > 0 {
 		return codegen.Result{}, spec, problemsError(problems)
 	}
@@ -329,22 +330,34 @@ func (m *Module) codegenGenerate(c *gin.Context) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	kept, err := codegen.Kept(root, res.Files)
+	if err != nil {
+		return nil, err
+	}
 	if err := codegen.Write(root, res.Files, req.Force); err != nil {
 		if errors.Is(err, codegen.ErrExists) {
-			existing, _ := codegen.Existing(root, res.Files)
+			existing, _ := codegen.Conflicts(root, res.Files)
 			return nil, httpx.NewError(http.StatusConflict, CodeCodegenExists,
 				"以下文件已存在，勾选「覆盖已有文件」后再生成："+strings.Join(existing, "、"))
 		}
 		return nil, err
 	}
 	view := generateView{Notes: res.Notes, NewModule: spec.NewModule}
+	written := make([]codegen.File, 0, len(res.Files))
 	for _, f := range res.Files {
+		if slices.Contains(kept, f.Path) {
+			continue
+		}
+		written = append(written, f)
 		view.Files = append(view.Files, f.Path)
+	}
+	if len(kept) > 0 {
+		view.Notes = append(view.Notes, "已保留扩展文件（不会覆盖）："+strings.Join(kept, "、"))
 	}
 	// Detached: the dev server may reload the page (and abort this request)
 	// as soon as the new view files appear.
 	ctx := context.WithoutCancel(c.Request.Context())
-	if note := codegen.FormatWeb(ctx, root, res.Files); note != "" {
+	if note := codegen.FormatWeb(ctx, root, written); note != "" {
 		view.Notes = append(view.Notes, note)
 	}
 	view.Wired, view.Notes = wire(root, spec, res, view.Notes)
@@ -360,6 +373,10 @@ type previewFile struct {
 	Content  string `json:"content"`
 	// Exists reports a file the CLI would refuse to overwrite without -force.
 	Exists bool `json:"exists"`
+	// Keep: hand-written extension points, written only when missing;
+	// Kept: it exists and is left as it is.
+	Keep bool `json:"keep"`
+	Kept bool `json:"kept"`
 }
 
 type menuView struct {
@@ -422,7 +439,8 @@ func buildPreview(res codegen.Result, spec codegen.Spec, req previewRequest, roo
 		v.Notes = append(v.Notes, "未找到仓库根目录，无法检查文件是否已存在")
 	}
 	for i, f := range res.Files {
-		v.Files[i] = previewFile{Path: f.Path, Language: f.Language, Content: f.Content, Exists: existing[f.Path]}
+		v.Files[i] = previewFile{Path: f.Path, Language: f.Language, Content: f.Content,
+			Exists: existing[f.Path] && !f.Keep, Keep: f.Keep, Kept: existing[f.Path] && f.Keep}
 	}
 	for i, p := range res.Permissions {
 		v.Permissions[i] = permissionView{Code: p.Code, Name: p.Name}
@@ -453,6 +471,9 @@ func cliCommand(req previewRequest) string {
 	}
 	if req.ReadOnly {
 		parts = append(parts, "-read-only")
+	}
+	if req.SoftDelete != nil && !*req.SoftDelete {
+		parts = append(parts, "-no-soft-delete")
 	}
 	if len(req.Children) > 0 {
 		raw, _ := json.Marshal(req.Children)

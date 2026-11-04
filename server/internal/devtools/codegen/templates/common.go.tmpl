@@ -50,6 +50,48 @@ func dictValue(v any) string {
 	return fmt.Sprint(rv.Interface())
 }
 
+// dictLabeler gives the labels of a dictionary (the system module
+// implements it); exports write labels instead of values.
+type dictLabeler interface {
+	DictLabels(ctx context.Context, code string) (map[string]string, error)
+}
+
+// dictLabels maps the values of dictionary code to their labels; without
+// a lookup that has labels the values are exported as they are.
+func dictLabels(ctx context.Context, dict DictLookup, code string) (map[string]string, error) {
+	l, ok := dict.(dictLabeler)
+	if !ok {
+		return nil, nil
+	}
+	labels, err := l.DictLabels(ctx, code)
+	if err != nil {
+		return nil, fmt.Errorf("load dictionary %s: %w", code, err)
+	}
+	return labels, nil
+}
+
+// optionKey renders v as option values are written: yes/no as 1 and 0, a
+// nil pointer as "".
+func optionKey(v any) string {
+	rv := reflect.ValueOf(v)
+	if rv.Kind() == reflect.Pointer {
+		if rv.IsNil() {
+			return ""
+		}
+		rv = rv.Elem()
+	}
+	switch rv.Kind() {
+	case reflect.Invalid:
+		return ""
+	case reflect.Bool:
+		if rv.Bool() {
+			return "1"
+		}
+		return "0"
+	}
+	return fmt.Sprint(rv.Interface())
+}
+
 func fieldError(field, msg string) error {
 	return httpx.Validation([]httpx.FieldError{{Field: field, Message: msg}})
 }
@@ -117,7 +159,7 @@ func csvValue(v any) string {
 	case string:
 		return csvCell(x)
 	case time.Time:
-		return x.Format(time.RFC3339)
+		return x.UTC().Format(time.DateTime) // the header says (UTC)
 	case bool:
 		if x {
 			return "是"

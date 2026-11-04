@@ -33,6 +33,8 @@ type Column struct {
 	// Ref is set when the column is a single-column foreign key to the id
 	// of another table.
 	Ref *Ref
+	// plain: the spec takes the standard role away (Spec.plainColumns).
+	plain bool
 }
 
 // Ref is the table a foreign key refers to.

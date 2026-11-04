@@ -31,6 +31,7 @@ import (
 [[- if .Scope]]
 	"base-admin/server/internal/core/datascope"
 [[- end]]
+	"base-admin/server/internal/core/export"
 [[- if .Relations]]
 	"base-admin/server/internal/core/lookup"
 [[- end]]
@@ -55,8 +56,6 @@ const [[.Lower]]Table = "[[.Table]]"
 var [[.RelVar]] = [[.RelTarget]]
 [[- end]]
 
-// max[[.Upper]]ExportRows bounds one export.
-const max[[.Upper]]ExportRows = 10000
 [[- if .Status]]
 
 var [[.Lower]]StatusLabels = map[int]string{1: "启用", 2: "停用"}
@@ -163,8 +162,9 @@ type [[.Lower]]Filter struct {
 [[- end]]
 }
 
-// scoped[[.PluralUpper]] starts a query over the [[.Name]] rows visible to the caller.
-func scoped[[.PluralUpper]](ctx context.Context, db *gorm.DB) *gorm.DB {
+// scoped[[.PluralUpper]] starts a query over the [[.Name]] rows visible to the
+// caller, narrowed by [[.Lower]]Restrict ([[.FileBase]]_ext.go).
+func (m *Module) scoped[[.PluralUpper]](ctx context.Context, db *gorm.DB) *gorm.DB {
 	q := db.WithContext(ctx).Table([[.Lower]]Table + " AS t")
 [[- if .DeptJoin]]
 	q = q.Joins("LEFT JOIN sys_departments d ON d.id = t.dept_id")
@@ -175,6 +175,7 @@ func scoped[[.PluralUpper]](ctx context.Context, db *gorm.DB) *gorm.DB {
 [[- if .SoftDelete]]
 	q = q.Where("t.deleted_at IS NULL")
 [[- end]]
+	q = m.[[.Lower]]Restrict(ctx, q)
 [[- if .Scope]]
 	return actor.Scope(ctx, q, [[.Lower]]Scope)
 [[- else]]
@@ -206,7 +207,7 @@ func (m *Module) list[[.PluralUpper]](c *gin.Context) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	q := apply[[.Upper]]Filter(scoped[[.PluralUpper]](c.Request.Context(), m.db), f)
+	q := apply[[.Upper]]Filter(m.scoped[[.PluralUpper]](c.Request.Context(), m.db), f)
 	var total int64
 	if err := q.Session(&gorm.Session{}).Count(&total).Error; err != nil {
 		return nil, err
@@ -250,9 +251,9 @@ func parse[[.Upper]]Key(c *gin.Context) ([[.KeyGo]], error) {
 }
 
 // load[[.Upper]] reads one visible row; rows outside the data scope are 404.
-func load[[.Upper]](ctx context.Context, db *gorm.DB, key [[.KeyGo]]) ([[.Lower]]View, error) {
+func (m *Module) load[[.Upper]](ctx context.Context, db *gorm.DB, key [[.KeyGo]]) ([[.Lower]]View, error) {
 	var rows [][[.Lower]]Row
-	if err := scoped[[.PluralUpper]](ctx, db).Select([[.Lower]]Columns(db)).Where("t.[[.PK.Quoted]] = ?", key).Scan(&rows).Error; err != nil {
+	if err := m.scoped[[.PluralUpper]](ctx, db).Select([[.Lower]]Columns(db)).Where("t.[[.PK.Quoted]] = ?", key).Scan(&rows).Error; err != nil {
 		return [[.Lower]]View{}, err
 	}
 	if len(rows) == 0 {
@@ -342,7 +343,7 @@ func (m *Module) get[[.Upper]](c *gin.Context) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return load[[.Upper]](c.Request.Context(), m.db, key)
+	return m.load[[.Upper]](c.Request.Context(), m.db, key)
 }
 [[- if not .ReadOnly]]
 
@@ -444,8 +445,8 @@ func (m *Module) save[[$.Upper]][[.GoName]](ctx context.Context, tx *gorm.DB, ke
 
 // reload[[.Upper]] re-reads a written row inside the transaction, so a row
 // moved outside the caller's data scope is rejected and rolled back.
-func reload[[.Upper]](ctx context.Context, tx *gorm.DB, key [[.KeyGo]]) ([[.Lower]]View, error) {
-	v, err := load[[.Upper]](ctx, tx, key)
+func (m *Module) reload[[.Upper]](ctx context.Context, tx *gorm.DB, key [[.KeyGo]]) ([[.Lower]]View, error) {
+	v, err := m.load[[.Upper]](ctx, tx, key)
 	if errors.Is(err, err[[.Upper]]NotFound) {
 		return v, fieldError("deptId", "所选部门不在您的数据范围内")
 	}
@@ -558,8 +559,11 @@ func (m *Module) create[[.Upper]](c *gin.Context) (any, error) {
 			return err
 		}
 [[- end]]
-		view, err = [[if .Dept]]reload[[else]]load[[end]][[.Upper]](ctx, tx, key)
-		return err
+		view, err = [[if .Dept]]m.reload[[else]]m.load[[end]][[.Upper]](ctx, tx, key)
+		if err != nil {
+			return err
+		}
+		return m.[[.Lower]]AfterSave(ctx, tx, view, true)
 	})
 	if err != nil {
 		return nil, err
@@ -635,7 +639,7 @@ func (m *Module) update[[.Upper]](c *gin.Context) (any, error) {
 	}
 	var view [[.Lower]]View
 	err = database.RunTx(ctx, m.db, func(tx *gorm.DB) error {
-		if _, err := load[[.Upper]](ctx, tx, key); err != nil {
+		if _, err := m.load[[.Upper]](ctx, tx, key); err != nil {
 			return err
 		}
 [[- if .Version]]
@@ -674,8 +678,11 @@ func (m *Module) update[[.Upper]](c *gin.Context) (any, error) {
 		}
 [[- end]]
 		var err error
-		view, err = [[if .Dept]]reload[[else]]load[[end]][[.Upper]](ctx, tx, key)
-		return err
+		view, err = [[if .Dept]]m.reload[[else]]m.load[[end]][[.Upper]](ctx, tx, key)
+		if err != nil {
+			return err
+		}
+		return m.[[.Lower]]AfterSave(ctx, tx, view, false)
 	})
 	if err != nil {
 		return nil, err
@@ -690,12 +697,14 @@ func (m *Module) delete[[.Upper]](c *gin.Context) (any, error) {
 	}
 	ctx := c.Request.Context()
 	return nil, database.RunTx(ctx, m.db, func(tx *gorm.DB) error {
-		if _, err := load[[.Upper]](ctx, tx, key); err != nil {
+		if _, err := m.load[[.Upper]](ctx, tx, key); err != nil {
 			return err
 		}
 [[- if .SoftDelete]]
-		return tx.Exec(`UPDATE [[.Table]] SET [[.SoftDeleteSets]] WHERE [[.PK.Quoted]] = ? AND deleted_at IS NULL`,
-			[[if .UpdatedBy]]actor.From(ctx).UserID(), [[end]]key).Error
+		if err := tx.Exec(`UPDATE [[.Table]] SET [[.SoftDeleteSets]] WHERE [[.PK.Quoted]] = ? AND deleted_at IS NULL`,
+			[[if .UpdatedBy]]actor.From(ctx).UserID(), [[end]]key).Error; err != nil {
+			return err
+		}
 [[- else]]
 [[- range .Children]]
 		if err := tx.Exec(`DELETE FROM [[.Table]] WHERE [[.FK.Quoted]] = ?`, key).Error; err != nil {
@@ -706,8 +715,11 @@ func (m *Module) delete[[.Upper]](c *gin.Context) (any, error) {
 		if database.IsForeignKeyViolation(err) {
 			return httpx.Conflict("[[.Name]]已被引用，不能删除")
 		}
-		return err
+		if err != nil {
+			return err
+		}
 [[- end]]
+		return m.[[.Lower]]AfterDelete(ctx, tx, key)
 	})
 }
 [[- end]]
@@ -718,9 +730,23 @@ func (m *Module) export[[.PluralUpper]](c *gin.Context) {
 		httpx.Fail(c, err)
 		return
 	}
-	q := apply[[.Upper]]Filter(scoped[[.PluralUpper]](c.Request.Context(), m.db), f)
+	ctx := c.Request.Context()
+	q := apply[[.Upper]]Filter(m.scoped[[.PluralUpper]](ctx, m.db), f)
+	// Over the limit set in 基础设置 the export is refused, never cut short.
+	maxRows, err := export.Check(ctx, m.db, q)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+[[- range .ExportDicts]]
+	[[.JSONName]]Labels, err := dictLabels(ctx, m.dict, [[goString .Dict]])
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+[[- end]]
 	var rows [][[.Lower]]Row
-	if err := q.Select([[.Lower]]Columns(q)).Order("[[.Order]]").Limit(max[[.Upper]]ExportRows).Scan(&rows).Error; err != nil {
+	if err := q.Select([[.Lower]]Columns(q)).Order("[[.Order]]").Limit(maxRows).Scan(&rows).Error; err != nil {
 		httpx.Fail(c, err)
 		return
 	}
@@ -731,7 +757,8 @@ func (m *Module) export[[.PluralUpper]](c *gin.Context) {
 	// UTF-8 BOM so spreadsheet tools detect the encoding of Chinese text.
 	_, _ = c.Writer.WriteString("\xef\xbb\xbf")
 	w := csv.NewWriter(c.Writer)
-	_ = w.Write([]string{[[range $i, $f := .ExportFields]][[if $i]], [[end]][[goString $f.Label]][[end]]})
+	// Times are written in UTC, as the headers say.
+	_ = w.Write([]string{[[range $i, $f := .ExportFields]][[if $i]], [[end]][[if eq $f.Kind "time"]]export.TimeHeader([[goString $f.Label]])[[else]][[goString $f.Label]][[end]][[end]]})
 	for _, r := range rows {
 		_ = w.Write([]string{
 [[- range .ExportFields]]
@@ -742,7 +769,9 @@ func (m *Module) export[[.PluralUpper]](c *gin.Context) {
 [[- else if .Relation]]
 			csvValue(r.[[.LabelGo]]), // the [[.Label]] name instead of its ID
 [[- else if .Enum]]
-			[[$.Lower]]Label([[$.Lower]][[.GoName]]Labels, csvValue(r.[[.GoName]])), // the option instead of its value
+			[[$.Lower]]Label([[$.Lower]][[.GoName]]Labels, optionKey(r.[[.GoName]])), // the option instead of its value
+[[- else if .Dict]]
+			[[$.Lower]]Label([[.JSONName]]Labels, optionKey(r.[[.GoName]])), // the dictionary label instead of the value
 [[- else]]
 			csvValue(r.[[.GoName]]),
 [[- end]]
@@ -751,7 +780,7 @@ func (m *Module) export[[.PluralUpper]](c *gin.Context) {
 	}
 	w.Flush()
 }
-[[- if .EnumExports]]
+[[- if or .EnumExports .ExportDicts]]
 [[- range .EnumExports]]
 
 // [[$.Lower]][[.GoName]]Labels are the options of [[.Column]] (column comment), for the export.

@@ -64,6 +64,20 @@ function basename(path: string): string {
           >
             已存在
           </el-tag>
+          <el-tag
+            v-else-if="f.keep"
+            size="small"
+            :type="f.kept ? 'success' : 'info'"
+            effect="plain"
+            class="ml-1"
+            :title="
+              f.kept
+                ? '已存在，生成时保留原样（自定义代码）'
+                : '扩展文件：只在不存在时写入，之后重新生成也不会覆盖'
+            "
+          >
+            {{ f.kept ? "保留" : "扩展" }}
+          </el-tag>
         </template>
         <CodeBlock
           :code="f.content"

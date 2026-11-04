@@ -355,11 +355,12 @@ func TestCodegenTablesAndPreview(t *testing.T) {
 	var preview previewView
 	require.NoError(t, json.Unmarshal(r.env.Data, &preview))
 	assert.True(t, preview.NewModule)
-	require.Len(t, preview.Files, 7)
+	require.Len(t, preview.Files, 9, "with the two extension files")
 	exists := map[string]bool{}
 	for _, f := range preview.Files {
 		exists[f.Path] = f.Exists
 		assert.NotEmpty(t, f.Content)
+		assert.Equal(t, strings.HasSuffix(f.Path, "_ext.go") || strings.HasSuffix(f.Path, "Extension.vue"), f.Keep, f.Path)
 	}
 	assert.True(t, exists["web/src/api/shop/gadget.ts"], "existing files are flagged")
 	assert.False(t, exists["server/internal/modules/shop/gadget.go"])
@@ -498,9 +499,18 @@ func build() {
 	r = h.do(http.MethodPost, "/api/v1/devtools/codegen/generate", PermCodegen, req)
 	assert.Equal(t, http.StatusConflict, r.status, "existing files are kept")
 	assert.Equal(t, CodeCodegenExists, r.env.Code)
+	ext := filepath.Join(root, "server", "internal", "modules", "shop", "widget_ext.go")
+	require.NoError(t, os.WriteFile(ext, []byte("package shop\n// hand-written\n"), 0o600))
 	req["force"] = true
 	r = h.do(http.MethodPost, "/api/v1/devtools/codegen/generate", PermCodegen, req)
-	assert.Equal(t, http.StatusOK, r.status, "force overwrites")
+	require.Equal(t, http.StatusOK, r.status, "force overwrites")
+	var forced generateView
+	require.NoError(t, json.Unmarshal(r.env.Data, &forced))
+	assert.NotContains(t, forced.Files, "server/internal/modules/shop/widget_ext.go", "the extension file is kept")
+	assert.Contains(t, strings.Join(forced.Notes, "\n"), "已保留扩展文件")
+	kept, err := os.ReadFile(ext)
+	require.NoError(t, err)
+	assert.Equal(t, "package shop\n// hand-written\n", string(kept))
 
 	prod := newHarness(t, config.EnvProd, root)
 	assert.Equal(t, http.StatusForbidden, prod.do(http.MethodPost, "/api/v1/devtools/codegen/generate", PermCodegen, req).status)

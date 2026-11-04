@@ -1,5 +1,6 @@
 import { reactive, ref, type Ref } from "vue";
 import type { Page, PageQuery } from "@/api/types";
+import { FALLBACK_PAGE_SIZE, defaultPageSize } from "@/utils/pageSize";
 
 export type Pagination = {
   currentPage: number;
@@ -19,7 +20,8 @@ export type UsePagedTable<T> = {
   onCurrentChange: (page: number) => void;
 };
 
-export const DEFAULT_PAGE_SIZE = 20;
+/** 未加载「基础设置」时的每页条数 */
+export const DEFAULT_PAGE_SIZE = FALLBACK_PAGE_SIZE;
 
 /** 通用分页表格状态：fetcher 收到 page/pageSize，返回 Page<T> */
 export function usePagedTable<T>(
@@ -29,7 +31,7 @@ export function usePagedTable<T>(
   const rows = ref<T[]>([]) as Ref<T[]>;
   const pagination = reactive<Pagination>({
     currentPage: 1,
-    pageSize: DEFAULT_PAGE_SIZE,
+    pageSize: defaultPageSize(),
     total: 0
   });
 

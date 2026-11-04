@@ -46,12 +46,12 @@ This guide shows two routes: generating a module from a table (recommended), and
    ```
    Flags:
    - `-fields`: the field configuration as JSON; only the columns that differ from the defaults are needed.
-   - `-key-mode`, `-read-only`, `-children`: the options below.
-   - `-spec specs.json`: generates a list of tables in one run. Each entry has the fields of the page's request (`table`, `module`, `resource`, `name`, `moduleTitle`, `parentMenu`, `fields`, `keyMode`, `readOnly`, `children`); with `-force` the same file regenerates them.
+   - `-key-mode`, `-read-only`, `-no-soft-delete`, `-children`: the options below.
+   - `-spec specs.json`: generates a list of tables in one run. Each entry has the fields of the page's request (`table`, `module`, `resource`, `name`, `moduleTitle`, `parentMenu`, `fields`, `keyMode`, `readOnly`, `softDelete`, `children`); with `-force` the same file regenerates them.
    - `-module-title`: the title of the new module's menu directory.
    - `-parent-menu`: attaches the page to an existing directory instead of creating one.
    - `-dsn`: the database URL; defaults to `$ADMIN_DATABASE_URL`.
-   - `-force`: overwrites existing files.
+   - `-force`: overwrites existing files, except the extension files (below).
    - `-no-format`: skips Prettier on the web files.
    - `-no-wire`: skips the registration in `modules.go` or `module.go`.
 
@@ -59,13 +59,20 @@ This guide shows two routes: generating a module from a table (recommended), and
    - `server/internal/modules/<module>/module.go` and `common.go` (only for a new module), `<resource>.go` and `<resource>_integration_test.go`. The test covers create/read/update/delete, optimistic locking, duplicates on unique columns, validation and every search parameter.
    - `web/src/api/<module>/<resource>.ts`
    - `web/src/views/<module>/<resource>/index.vue` and `components/<Resource>FormDialog.vue`
+   - The extension files `<resource>_ext.go` and `components/<Resource>Extension.vue`, written only when they do not exist and never overwritten, not even with `-force`, so hand-written code there survives regeneration:
+     - `<resource>Restrict(ctx, q)`: a fixed condition on every query of the resource (list, detail, export, update, delete), e.g. `q.Where("t.is_test = ?", false)`.
+     - `<resource>AfterSave(ctx, tx, row, created)` and `<resource>AfterDelete(ctx, tx, key)`: run inside the write's transaction after the row is written or deleted; an error rolls it back (`fieldError("price", "…")` reaches the form). Read-only resources have only `Restrict`.
+     - `<Resource>Extension.vue` renders in the list's toolbar (`place="toolbar"`) and in each row's 操作 column (`place="row"`, with `row`); emit `reload` to refresh the list, and set `hasRowActions = true` when it adds row buttons.
 
    **Tables owned by another service** (a game server's tables, created by its migrations) need no change for the generator; 高级选项 on the page (and the same JSON keys in the CLI) cover them:
    - **Primary key** (`keyMode`). Any single-column bigint, integer or text key. `auto`: the database assigns it (IDENTITY, AUTO_INCREMENT). `generated`: a bigint the module assigns on create with `NextID()`, from `Deps.NewID` (default `ids.Next`, a snowflake id); pass the other service's generator in `modules.go` when both write the table. `input`: typed in the create form and never changed, such as `cfg_key` or `level`; a duplicate is a field error. By default, database-assigned keys are `auto`, other bigint keys `generated`, the rest `input`.
-   - **Read-only** (`readOnly`): only the list, the detail and the export (with the `:view` and `:export` codes) for ledgers, orders and logs.
+   - **Read-only** (`readOnly`): only the list, the detail and the export (with the `:view` and `:export` codes) for ledgers, orders and logs. Fields of a read-only module can still have options (`fields[].dict`), for the list's labels, the search select and the export.
+   - **Soft delete off** (`"softDelete": false`, `-no-soft-delete`): a nullable `deleted_at` normally hides deleted rows; when it means something else, such as the time an account was closed, turn soft delete off: `deleted_at` becomes a plain time column (listed, searchable), every row is listed, and delete removes the row.
    - **Declared relations** (`fields[].refTable`, `refKey`, `relation`): `{"column":"user_id","refTable":"lg_user","relation":"nickname"}` shows a bigint column as the name of the referenced row without a foreign key; `refKey` is the referenced column (default `id`).
    - **Child tables** (`children`): `{"table":"lg_item_i18n","foreignKey":"item_id","keyColumn":"lang","keyDict":"lang","label":"多语言"}` edits a translation table with each row. The form shows one tab per key; rows with all fields empty are not stored. The keys come from the dictionary `keyDict` (its enabled items, maintained in 数据字典), or from a table instead, such as a language registry shared with the game server: `"keyTable":"lg_language","keyValueColumn":"code","keyLabelColumn":"name","keyFilter":"enabled = 1","keySortColumn":"sort","keyRequiredColumn":"required"`. With `keyRequiredColumn`, the rows of the keys marked required must be filled in (the tab shows `*`); `keyFilter` is a fixed SQL condition on that table, run once when generating to check it; it is written into the code as it is, so for a project on both databases use a form both accept (`enabled = TRUE` works for a MySQL `tinyint(1)` and a PostgreSQL `boolean`, `enabled = 1` only on MySQL). The module adds `GET /<resources>/options/<child>Keys` for the form. The detail returns the rows; an update without them keeps them. The child's key is `(foreignKey, keyColumn)` or its own id (database-assigned or generated). Composite keys of other tables are not supported.
-   - Missing standard columns (`version`, `created_by`, ...) only add a note. A `status` column with options in its comment keeps those options instead of 启用/停用. Columns with comment options are exported as their labels.
+   - Missing standard columns (`version`, `created_by`, ...) only add a note.
+   - **Options.** A column comment lists options as `类型：1=通知,2=公告` or `1正常 2冻结 3注销` (with or without a `状态：` in front). `status` is the standard 1 启用 / 2 停用 only when its comment has no numbers; with options in the comment it uses them, with other numbers it is a plain integer, and a dictionary (`fields[].dict`) replaces 启用/停用 too. Yes/no columns (`boolean`, MySQL `tinyint(1)`) take a dictionary when they are not in the form (read-only modules, or `form: false`); its values are `1` and `0`.
+   - **Export.** The CSV has the key and the list's columns; `fields[].export` (the 导出 column of the page) adds or removes one. Options and dictionary fields are written as labels, times in UTC with `(UTC)` in the header. An export larger than 基础设置 → 导出行数上限 (default 100,000) is refused with 422 「数据量过大…，请缩小查询范围」, never cut short; the system's own exports (users, logs) follow the same limit.
    - The generated integration test skips when the table is not created by this project's migrations; create the table in the test to run it.
 
    What the generator supports:

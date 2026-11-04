@@ -1,0 +1,33 @@
+package [[.Pkg]]
+
+import (
+	"context"
+
+	"gorm.io/gorm"
+)
+
+// Extension points of [[.Name]] ([[.Table]]). cmd/gen writes this file once
+// and never overwrites it, not even with -force: code here survives
+// regenerating [[.FileBase]].go.
+
+// [[.Lower]]Restrict narrows every query of [[.Name]] (list, detail,
+// export[[if not .ReadOnly]], update and delete[[end]]) with a fixed condition, for example
+// q.Where("t.is_test = ?", false); the table's columns are t.<column>.
+func (m *Module) [[.Lower]]Restrict(ctx context.Context, q *gorm.DB) *gorm.DB {
+	return q
+}
+[[- if not .ReadOnly]]
+
+// [[.Lower]]AfterSave runs in the transaction of a create (created true) or
+// an update, after the row is written; an error rolls the transaction back
+// (fieldError(...) or an httpx error reaches the user).
+func (m *Module) [[.Lower]]AfterSave(ctx context.Context, tx *gorm.DB, row [[.Lower]]View, created bool) error {
+	return nil
+}
+
+// [[.Lower]]AfterDelete runs in the transaction of a delete, after the row
+// is deleted; an error rolls the transaction back.
+func (m *Module) [[.Lower]]AfterDelete(ctx context.Context, tx *gorm.DB, key [[.KeyGo]]) error {
+	return nil
+}
+[[- end]]

@@ -65,6 +65,11 @@ function setControl(f: CodegenFieldInfo, value: string | undefined): void {
   if (!modesOf(f).includes(f.search)) f.search = "eq";
 }
 
+/** 导出默认跟随「列表显示」；单独改过导出的不再跟随 */
+function followList(f: CodegenFieldInfo, list: boolean): void {
+  if (f.export === !list) f.export = list;
+}
+
 function hasControls(f: CodegenFieldInfo): boolean {
   return (
     f.dictAllowed || f.uploadModes.length > 0 || f.relationLabels.length > 0
@@ -131,7 +136,15 @@ function labelError(f: CodegenFieldInfo): string {
       </el-table-column>
       <el-table-column label="列表显示" width="90" align="center">
         <template #default="{ row }">
-          <el-checkbox v-model="row.list" />
+          <el-checkbox
+            v-model="row.list"
+            @change="(v: unknown) => followList(row as CodegenFieldInfo, !!v)"
+          />
+        </template>
+      </el-table-column>
+      <el-table-column label="导出" width="70" align="center">
+        <template #default="{ row }">
+          <el-checkbox v-model="row.export" />
         </template>
       </el-table-column>
       <el-table-column label="表单" width="90" align="center">
@@ -219,12 +232,16 @@ function labelError(f: CodegenFieldInfo): string {
       </el-table-column>
     </el-table>
     <div class="mt-2 text-xs leading-5 text-[var(--el-text-color-secondary)]">
-      搜索方式：模糊＝包含输入的文字；精确＝等于；范围＝在两个值之间（数字、金额填最小/最大值，日期、时间选起止日期）。每个搜索字段在列表页生成一个独立的搜索项。
+      导出：CSV
+      默认包含主键和列表显示的列，可单独勾选。搜索方式：模糊＝包含输入的文字；精确＝等于；范围＝在两个值之间（数字、金额填最小/最大值，日期、时间选起止日期）。每个搜索字段在列表页生成一个独立的搜索项。
       控件：关联——字段是外键（如 customer_id
       指向客户表）时，表单为可搜索的下拉，列表显示所选记录的名称，可选择显示哪一列；上传——图片字段（文本，长度
       ≥ 255）用图片上传，附件字段（JSON：PostgreSQL 的 jsonb、MySQL 的
       json）用附件上传，按字段名或注释（如
-      cover_url、封面、attachments、附件）自动选择；下拉选项——表单与搜索变为下拉框，列表显示选项文字，保存时校验取值，选项来自「数据字典」（运行时可维护）或字段注释（写成「类型：1=通知,2=公告」）。不选则为默认输入框。
+      cover_url、封面、attachments、附件）自动选择；下拉选项——表单与搜索变为下拉框，列表显示选项文字，保存时校验取值，选项来自「数据字典」（运行时可维护）或字段注释（写成「类型：1=通知,2=公告」或「1正常
+      2冻结」）；status
+      列选了选项后按选项显示，不再是启用/停用；是/否字段只在不进表单（只读模块或不勾表单）时可用选项，字典值写
+      1 和 0。不选则为默认输入框。
     </div>
   </div>
 </template>
