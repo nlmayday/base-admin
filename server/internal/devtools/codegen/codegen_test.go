@@ -208,6 +208,7 @@ func TestGenerateCustomer(t *testing.T) {
 	}, paths)
 	for _, f := range res.Files {
 		assert.Equal(t, strings.HasSuffix(f.Path, "_ext.go") || strings.HasSuffix(f.Path, "Extension.vue"), f.Keep, f.Path)
+		assert.Equal(t, strings.HasSuffix(f.Path, "/common.go"), f.Refresh, f.Path)
 	}
 
 	ext := fileByPath(t, res, "/customer_ext.go").Content
@@ -272,7 +273,9 @@ func TestGenerateCustomer(t *testing.T) {
 func TestGenerateWithoutOptionalColumns(t *testing.T) {
 	res, err := Generate(minimalTable(), Spec{Module: "notes", Resource: "note", Name: "笔记"})
 	require.NoError(t, err)
-	assert.Len(t, res.Files, 7, "an existing module gets no module.go/common.go")
+	assert.Len(t, res.Files, 8, "an existing module gets no module.go")
+	common := fileByPath(t, res, "/common.go")
+	assert.True(t, common.Refresh, "common.go is brought up to date in an existing module")
 	src := fileByPath(t, res, "/note.go").Content
 	assert.NotContains(t, src, "datascope")
 	assert.NotContains(t, src, "updateVersioned")
@@ -349,6 +352,15 @@ func TestWriteKeepsExtensionFiles(t *testing.T) {
 	assert.Equal(t, []string{"x.go"}, conflicts, "a kept file is no conflict")
 
 	require.NoError(t, Write(root, files[1:], false), "only the kept file: nothing to refuse")
+
+	// A Refresh file is rewritten, with or without force, and never a conflict.
+	helpers := []File{{Path: "common.go", Content: "v1", Refresh: true}}
+	require.NoError(t, Write(root, helpers, false))
+	helpers[0].Content = "v2"
+	require.NoError(t, Write(root, helpers, false))
+	got, err = os.ReadFile(filepath.Join(root, "common.go"))
+	require.NoError(t, err)
+	assert.Equal(t, "v2", string(got))
 	require.NoError(t, Write(root, files, true))
 	got, err = os.ReadFile(filepath.Join(root, "x_ext.go"))
 	require.NoError(t, err)

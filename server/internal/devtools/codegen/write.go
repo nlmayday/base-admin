@@ -59,9 +59,9 @@ func Existing(root string, files []File) ([]string, error) {
 }
 
 // Conflicts returns the existing paths that Write refuses to overwrite
-// without force: the existing files other than Keep ones.
+// without force: the existing files other than Keep and Refresh ones.
 func Conflicts(root string, files []File) ([]string, error) {
-	return Existing(root, slices.DeleteFunc(slices.Clone(files), func(f File) bool { return f.Keep }))
+	return Existing(root, slices.DeleteFunc(slices.Clone(files), func(f File) bool { return f.Keep || f.Refresh }))
 }
 
 // Kept returns the Keep files that already exist, which Write leaves as
@@ -72,7 +72,7 @@ func Kept(root string, files []File) ([]string, error) {
 
 // Write writes files under root. Without force it refuses, before writing
 // anything, when any target exists; existing Keep files are left alone
-// either way. When a write fails, the files already written are restored
+// and Refresh files rewritten either way. When a write fails, the files already written are restored
 // (or removed when they were new).
 func Write(root string, files []File, force bool) (err error) {
 	if !force {

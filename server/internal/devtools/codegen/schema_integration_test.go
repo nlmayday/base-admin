@@ -253,7 +253,7 @@ func TestLoadDeclaredRefsAndChildren(t *testing.T) {
 
 	res, err := Generate(tb, spec)
 	require.NoError(t, err)
-	src := res.Files[0].Content
+	src := fileByPath(t, res, "/item.go").Content
 	assert.Contains(t, src, "LEFT JOIN lg_user r1 ON r1.id = t.owner")
 	assert.Contains(t, src, "saveItemI18n")
 

@@ -78,5 +78,5 @@ func TestKeyModes(t *testing.T) {
 	assert.ErrorContains(t, err, "generated 只用于 bigint")
 	res, err := Generate(playerTable(), Spec{Module: "game", Resource: "player", Name: "玩家", KeyMode: KeyInput})
 	require.NoError(t, err, "a bigint key may be typed in")
-	assert.Contains(t, res.Files[0].Content, "key := int64(req.ID)")
+	assert.Contains(t, fileByPath(t, res, "/player.go").Content, "key := int64(req.ID)")
 }
