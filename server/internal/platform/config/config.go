@@ -28,6 +28,8 @@ type Config struct {
 	Auth      AuthConfig      `mapstructure:"auth"`
 	Bootstrap BootstrapConfig `mapstructure:"bootstrap"`
 	File      FileConfig      `mapstructure:"file"`
+	// Biz is the business modules' own configuration (biz.go).
+	Biz Biz `mapstructure:"biz"`
 }
 
 // AuthConfig holds session and login protection settings (design doc 6).
@@ -85,7 +87,8 @@ type HTTPConfig struct {
 	TrustedProxies []string `mapstructure:"trusted_proxies"`
 }
 
-// DatabaseConfig holds PostgreSQL settings.
+// DatabaseConfig holds the settings of the main database (PostgreSQL or
+// MySQL) and of the extra databases of the business modules.
 type DatabaseConfig struct {
 	// URL is a secret and must come from ADMIN_DATABASE_URL.
 	URL             string        `mapstructure:"url"`
@@ -97,6 +100,9 @@ type DatabaseConfig struct {
 	// StatementTimeout is applied per session; zero disables it.
 	StatementTimeout   time.Duration `mapstructure:"statement_timeout"`
 	SlowQueryThreshold time.Duration `mapstructure:"slow_query_threshold"`
+	// Extra are other databases of the business modules, by name
+	// (extra.go).
+	Extra map[string]ExtraDatabaseConfig `mapstructure:"extra"`
 }
 
 // RedisConfig holds Redis settings.

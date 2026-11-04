@@ -41,6 +41,12 @@ func Load(path string) (Config, error) {
 	if err := v.Unmarshal(&cfg, strictDecoding); err != nil {
 		return Config{}, fmt.Errorf("decode config: %w", err)
 	}
+	biz, err := loadBiz(v.Get("biz"))
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.Biz = biz
+	cfg.Database.Extra = withExtraEnv(cfg.Database.Extra)
 	cfg.File = cfg.File.withDevSigningKey(cfg.App.Env)
 	if err := cfg.Validate(); err != nil {
 		return Config{}, fmt.Errorf("invalid config: %w", err)
@@ -75,6 +81,11 @@ func rejectNumericDuration(from, to reflect.Type, data any) (any, error) {
 }
 
 func rejectSecretsInFile(v *viper.Viper) error {
+	for name := range v.GetStringMap("database.extra") {
+		if v.InConfig("database.extra." + name + ".url") {
+			return fmt.Errorf("database.extra.%s.url must not be set in the config file; use %s", name, ExtraURLEnv(name))
+		}
+	}
 	for _, key := range secretKeys {
 		if v.InConfig(key) {
 			envName := envPrefix + "_" + strings.ToUpper(strings.ReplaceAll(key, ".", "_"))
