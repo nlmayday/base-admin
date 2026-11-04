@@ -105,7 +105,9 @@ func postgresForeignKeys(db *gorm.DB, oid int64) (map[string]*Ref, error) {
 }
 
 // postgresIndexColumns returns the primary key columns and the columns that carry
-// a single-column unique index.
+// a single-column unique index, also one among the visible rows of a
+// soft-delete table (WHERE deleted_at IS NULL); other partial indexes are
+// not per column.
 func postgresIndexColumns(db *gorm.DB, oid int64) (primary, unique []string, err error) {
 	var rows []struct {
 		Name      string
@@ -114,7 +116,8 @@ func postgresIndexColumns(db *gorm.DB, oid int64) (primary, unique []string, err
 	}
 	err = db.Raw(`SELECT a.attname AS name, i.indisprimary AS is_primary, i.indnkeyatts = 1 AS single
 		FROM pg_index i JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY (i.indkey)
-		WHERE i.indrelid = ?::oid AND i.indisunique AND i.indpred IS NULL`, oid).Scan(&rows).Error
+		WHERE i.indrelid = ?::oid AND i.indisunique
+			AND (i.indpred IS NULL OR pg_get_expr(i.indpred, i.indrelid) = '(deleted_at IS NULL)')`, oid).Scan(&rows).Error
 	if err != nil {
 		return nil, nil, err
 	}

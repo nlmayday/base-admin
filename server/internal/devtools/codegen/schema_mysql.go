@@ -219,17 +219,24 @@ func unescapeMySQL(s string) (string, bool) {
 	return b.String(), true
 }
 
+// mysqlVisibleUnique is the functional key part of a unique index among
+// the visible rows of a soft-delete table, as information_schema shows
+// (CASE WHEN deleted_at IS NULL THEN code END); group 1 is the column.
+var mysqlVisibleUnique = regexp.MustCompile("(?i)^\\(case when \\(`deleted_at` is null\\) then `([a-z0-9_]+)` end\\)$")
+
 // mysqlIndexColumns returns the primary key columns and the columns that
-// carry a single-column unique index. Functional index parts, such as the
-// soft-delete aware (CASE WHEN deleted_at IS NULL THEN code END), have no
-// column, like PostgreSQL's partial indexes they are not per column.
+// carry a single-column unique index, also one among the visible rows of a
+// soft-delete table (the counterpart of PostgreSQL's partial index). Other
+// functional key parts have no column and are not per column.
 func mysqlIndexColumns(db *gorm.DB, table string) (primary, unique []string, err error) {
 	var rows []struct {
-		IndexName string
-		Name      string
-		Unique    bool
+		IndexName  string
+		Name       string
+		Expression string
+		Unique     bool
 	}
-	err = db.Raw(`SELECT INDEX_NAME AS index_name, COALESCE(COLUMN_NAME, '') AS name, NON_UNIQUE = 0 AS "unique"
+	err = db.Raw(`SELECT INDEX_NAME AS index_name, COALESCE(COLUMN_NAME, '') AS name,
+			COALESCE(EXPRESSION, '') AS expression, NON_UNIQUE = 0 AS "unique"
 		FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?
 		ORDER BY INDEX_NAME, SEQ_IN_INDEX`, table).Scan(&rows).Error
 	if err != nil {
@@ -237,9 +244,14 @@ func mysqlIndexColumns(db *gorm.DB, table string) (primary, unique []string, err
 	}
 	parts := map[string][]string{}
 	for _, r := range rows {
-		if r.Unique {
-			parts[r.IndexName] = append(parts[r.IndexName], r.Name)
+		if !r.Unique {
+			continue
 		}
+		name := r.Name
+		if m := mysqlVisibleUnique.FindStringSubmatch(r.Expression); name == "" && m != nil {
+			name = m[1]
+		}
+		parts[r.IndexName] = append(parts[r.IndexName], name)
 	}
 	for name, cols := range parts {
 		switch {

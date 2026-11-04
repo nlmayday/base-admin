@@ -192,6 +192,8 @@ func TestTableSpecRoundTrip(t *testing.T) {
 	tb, err := Introspect(context.Background(), db, "biz_orders")
 	require.NoError(t, err)
 	require.NoError(t, CheckTable(tb))
+	orderNo, _ := tb.Column("order_no")
+	assert.True(t, orderNo.Unique, "unique among the visible rows of a soft-delete table")
 	infos, err := Describe(tb)
 	require.NoError(t, err)
 	byColumn := map[string]FieldInfo{}

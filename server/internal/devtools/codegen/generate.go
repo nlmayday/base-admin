@@ -587,7 +587,7 @@ func (d *tmplData) notes() []string {
 		notes = append(notes, fmt.Sprintf("模块 %s 已存在：「生成到项目」会把新资源加到它的 module.go 中（该文件需含 codegen 标记）", d.Pkg))
 	}
 	notes = append(notes,
-		"表结构必须由 server/migrations/app 中的迁移创建，集成测试才能通过",
+		"表结构必须由业务迁移创建（PostgreSQL：server/migrations/app，MySQL：server/migrations/app/mysql），集成测试才能通过",
 		"前端路由由后端菜单动态下发，无需修改 web/src/router",
 	)
 	if d.Scope {
