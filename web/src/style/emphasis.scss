@@ -1,5 +1,9 @@
 /*
- * 标题层级：一级菜单、卡片标题、表头、弹窗标题比正文更突出（参考 gin-vue-admin）。
+ * 标题层级（参考 gin-vue-admin），不用 700，中文会发黑：
+ * - 页面标题、卡片标题：16px / 600（class="card-title"）
+ * - 表头、一级菜单：14px / 600
+ * - 表单标签：14px / 500
+ * - 正文、二级菜单：14px / 400
  * element-plus 的 css 和侧边栏的 body[layout] 规则优先级更高，这里的选择器要多一层。
  */
 
@@ -29,7 +33,10 @@ body[layout] .sidebar-container {
   }
 }
 
-/* 卡片、列表的标题（class="card-title"）和 PureTableBar 的标题：加粗、主文字色，左侧一条主题色竖条 */
+/*
+ * 卡片、列表的标题（class="card-title"）和 PureTableBar 的标题：加粗、主文字色，左侧一条主题色竖条。
+ * 标题前已有图标、或是一排指标卡（CPU、内存、磁盘）的标题时加 no-bar，只保留字重。
+ */
 .card-title,
 .pure-table-bar__title {
   font-size: 16px;
@@ -49,7 +56,6 @@ body[layout] .sidebar-container {
     border-radius: 2px;
   }
 
-  /* 标题前已有图标时不再加竖条 */
   &.no-bar::before {
     display: none;
   }
@@ -83,4 +89,20 @@ body[layout] .sidebar-container {
 /* 标签页的当前页 */
 .scroll-item.is-active {
   font-weight: 600;
+}
+
+/* 链接按钮（表格操作列等）：warning / danger / success 用深一级的颜色，白底上更清楚；禁用时同色降低透明度 */
+@each $type in warning, danger, success {
+  :root .el-button--#{$type}.is-link {
+    --el-button-text-color: var(--el-color-#{$type}-dark-2);
+    --el-button-hover-link-text-color: var(--el-color-#{$type});
+
+    &.is-disabled,
+    &.is-disabled:hover,
+    &.is-disabled:focus,
+    &.is-disabled:active {
+      color: var(--el-color-#{$type}-dark-2);
+      opacity: 0.45;
+    }
+  }
 }

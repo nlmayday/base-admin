@@ -517,7 +517,7 @@ onUnmounted(() => removeMatchMedia);
 <style lang="scss" scoped>
 :deep(.el-divider__text) {
   font-size: 16px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 :deep(.el-switch__core) {
