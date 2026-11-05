@@ -30,6 +30,20 @@ describe("usePagedTable", () => {
     expect(fetcher).toHaveBeenLastCalledWith({ page: 1, pageSize: 50 });
   });
 
+  it("keeps whether the total was capped", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce({ ...page(2), total: 10000, totalCapped: true })
+      .mockResolvedValueOnce(page(2));
+    const t = usePagedTable(fetcher);
+    expect(t.pagination.totalCapped).toBe(false);
+    await t.reload();
+    expect(t.pagination.total).toBe(10000);
+    expect(t.pagination.totalCapped).toBe(true);
+    await t.reload();
+    expect(t.pagination.totalCapped).toBe(false);
+  });
+
   it("clears the rows when loading fails", async () => {
     const fetcher = vi
       .fn()

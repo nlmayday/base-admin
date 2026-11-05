@@ -6,6 +6,8 @@ export type Pagination = {
   currentPage: number;
   pageSize: number;
   total: number;
+  /** 总数只数到了上限（见 Page.totalCapped） */
+  totalCapped: boolean;
 };
 
 export type UsePagedTable<T> = {
@@ -32,7 +34,8 @@ export function usePagedTable<T>(
   const pagination = reactive<Pagination>({
     currentPage: 1,
     pageSize: defaultPageSize(),
-    total: 0
+    total: 0,
+    totalCapped: false
   });
 
   async function reload(): Promise<void> {
@@ -44,6 +47,7 @@ export function usePagedTable<T>(
       });
       rows.value = data?.list ?? [];
       pagination.total = data?.total ?? 0;
+      pagination.totalCapped = data?.totalCapped ?? false;
     } catch {
       // 错误提示已由 http 拦截器统一处理
       rows.value = [];

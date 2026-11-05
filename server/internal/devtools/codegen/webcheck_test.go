@@ -35,6 +35,7 @@ func TestGeneratedWebChecks(t *testing.T) {
 		{taskTable(), taskSpec("zzcgtask")},
 		{gameTable(), func() Spec { s := gameSpec(); s.Module = "zzcggame"; return s }()},
 		{ledgerTable(), func() Spec { s := ledgerSpec(); s.Module = "zzcgledger"; return s }()},
+		{customerTable(), Spec{Module: "zzcgcap", Resource: "customer", Name: "客户", NewModule: true, CountCap: 2500}},
 		{bannerWithOptions(), Spec{Module: "zzcgbanner", Resource: "banner", Name: "横幅", NewModule: true,
 			Children: bannerWithOptions().Children[0].Spec.asList()}},
 		{ticketTable(), Spec{Module: "zzcgticket", Resource: "ticket", Name: "工单", NewModule: true}},

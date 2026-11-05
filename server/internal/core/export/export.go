@@ -12,6 +12,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"base-admin/server/internal/platform/database"
 	"base-admin/server/internal/platform/httpx"
 )
 
@@ -40,17 +41,18 @@ func MaxRows(ctx context.Context, db *gorm.DB) int {
 	return n
 }
 
-// Check counts the rows of q and refuses an export larger than the limit;
-// it returns the limit, to bound the read that follows.
+// Check refuses an export larger than the limit and returns the limit, to
+// bound the read that follows. It counts at most limit+1 rows, so a table
+// of millions is not counted in full only to learn it is too large.
 func Check(ctx context.Context, db, q *gorm.DB) (int, error) {
 	maxRows := MaxRows(ctx, db)
-	var total int64
-	if err := q.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+	total, err := database.CountAtMost(q, maxRows+1)
+	if err != nil {
 		return 0, err
 	}
 	if total > int64(maxRows) {
 		return 0, httpx.NewError(http.StatusUnprocessableEntity, httpx.CodeValidation,
-			fmt.Sprintf("数据量过大（%d 条，导出上限 %d 条），请缩小查询范围", total, maxRows))
+			fmt.Sprintf("数据量过大（超过导出上限 %d 条），请缩小查询范围", maxRows))
 	}
 	return maxRows, nil
 }

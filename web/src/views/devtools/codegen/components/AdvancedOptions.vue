@@ -101,6 +101,21 @@ function addChildField(c: ChildModel): void {
         />
         <span class="hint">{列名} 换成该行的值；不填为默认文案</span>
       </el-form-item>
+      <el-form-item label="总数上限">
+        <el-input-number
+          v-model="model.countCap"
+          :min="100"
+          :max="1000000"
+          :step="10000"
+          :controls="false"
+          placeholder="不限"
+          class="w-[140px]!"
+        />
+        <span class="hint">
+          大表（百万行以上）填如
+          10000：列表总数最多数到这么多条，超过时提示加筛选，只能翻到这么多条
+        </span>
+      </el-form-item>
       <el-form-item label="默认排序">
         <el-input
           v-model="model.orderBy"

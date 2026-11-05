@@ -74,7 +74,8 @@ const emptyAdvanced = (): AdvancedModel => ({
   orderBy: "",
   noCreate: false,
   noDelete: false,
-  deleteConfirm: ""
+  deleteConfirm: "",
+  countCap: undefined
 });
 const advanced = ref<AdvancedModel>(emptyAdvanced());
 /** 字段配置：defaults 是后端给出的默认值，fields 是当前编辑的副本 */
@@ -172,7 +173,8 @@ async function restoreLast(): Promise<void> {
     orderBy: req.orderBy ?? "",
     noCreate: req.noCreate ?? false,
     noDelete: req.noDelete ?? false,
-    deleteConfirm: req.deleteConfirm ?? ""
+    deleteConfirm: req.deleteConfirm ?? "",
+    countCap: req.countCap
   };
   result.value = last.result;
 }
@@ -289,7 +291,8 @@ function request(): CodegenRequest {
     ...(!a.readOnly && a.noDelete ? { noDelete: true } : {}),
     ...(!a.readOnly && !a.noDelete && a.deleteConfirm.trim()
       ? { deleteConfirm: a.deleteConfirm.trim() }
-      : {})
+      : {}),
+    ...(a.countCap ? { countCap: a.countCap } : {})
   };
 }
 
@@ -314,6 +317,7 @@ const command = computed(() => {
   if (req.noCreate) parts.push("-no-create");
   if (req.noDelete) parts.push("-no-delete");
   if (req.deleteConfirm) parts.push(`-delete-confirm '${req.deleteConfirm}'`);
+  if (req.countCap) parts.push(`-count-cap ${req.countCap}`);
   if (req.children?.length) {
     parts.push(`-children '${JSON.stringify(req.children)}'`);
   }

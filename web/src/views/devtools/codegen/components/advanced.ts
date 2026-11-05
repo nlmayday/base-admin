@@ -66,6 +66,8 @@ export type AdvancedModel = {
   noDelete: boolean;
   /** 删除确认文案，{列名} 换成该行的值 */
   deleteConfirm: string;
+  /** 大表的列表总数最多数到这么多条；undefined 为不限 */
+  countCap: number | undefined;
 };
 
 /** 提交给后端的子表配置：只保留所选键来源的项，去掉空值 */

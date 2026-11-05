@@ -50,11 +50,22 @@ type Spec struct {
 	// DeleteConfirm is the delete confirmation, {column} standing for the
 	// row's value: "删除分类「{code}」？大厅将不再显示该 Tab。"
 	DeleteConfirm string `json:"deleteConfirm,omitempty"`
+	// CountCap bounds the list's count on a large table: it counts at most
+	// CountCap+1 rows (COUNT(*) of millions of rows takes seconds), returns
+	// CountCap with totalCapped when there are more, and pages only through
+	// the first CountCap rows. 0: count every row.
+	CountCap int `json:"countCap,omitempty"`
 	// NoCreate and NoDelete leave out create and delete (route, permission
 	// and button), e.g. games are taken off sale, never deleted.
 	NoCreate bool `json:"noCreate,omitempty"`
 	NoDelete bool `json:"noDelete,omitempty"`
 }
+
+// Bounds of Spec.CountCap.
+const (
+	MinCountCap = 100
+	MaxCountCap = 1000000
+)
 
 // plainColumns are the columns that lose their standard role under s: a
 // status with options of its own (FieldOption.Dict), deleted_at when soft
@@ -98,6 +109,9 @@ func (s Spec) Problems() []Problem {
 	}
 	if !resourcePattern.MatchString(s.Resource) || len(s.Resource) > 40 {
 		add("resource", "资源名须为小写字母开头的 kebab-case，如 customer、sales-order")
+	}
+	if s.CountCap != 0 && (s.CountCap < MinCountCap || s.CountCap > MaxCountCap) {
+		add("countCap", fmt.Sprintf("总数上限应在 %d 到 %d 之间，0 为不限", MinCountCap, MaxCountCap))
 	}
 	name := strings.TrimSpace(s.Name)
 	if name == "" || len([]rune(name)) > 20 || strings.ContainsAny(name, unsafeText) {

@@ -186,6 +186,8 @@ export type CodegenRequest = {
   noDelete?: boolean;
   /** 删除确认文案，{列名} 换成该行的值 */
   deleteConfirm?: string;
+  /** 大表的列表总数最多数到这么多条（100–1000000）；不传为不限 */
+  countCap?: number;
 };
 
 export type CodegenGenerateResult = {

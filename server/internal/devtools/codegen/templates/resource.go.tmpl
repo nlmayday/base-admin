@@ -261,12 +261,29 @@ func (m *Module) list[[.PluralUpper]](c *gin.Context) (any, error) {
 		return nil, err
 	}
 	q := apply[[.Upper]]Filter(m.scoped[[.PluralUpper]](c.Request.Context(), m.db), f)
+[[- if .CountCap]]
+	// A large table: count at most [[.CountCap]]+1 rows (COUNT(*) of millions
+	// takes seconds) and page only through the first [[.CountCap]].
+	total, err := database.CountAtMost(q, [[.CountCap]]+1)
+	if err != nil {
+		return nil, err
+	}
+	capped := total > [[.CountCap]]
+	if capped {
+		total = [[.CountCap]]
+	}
+	if pq.Offset() >= [[.CountCap]] {
+		return nil, err[[.Upper]]BeyondCap
+	}
+	limit := min(pq.PageSize, [[.CountCap]]-pq.Offset())
+[[- else]]
 	var total int64
 	if err := q.Session(&gorm.Session{}).Count(&total).Error; err != nil {
 		return nil, err
 	}
+[[- end]]
 	var rows [][[.Lower]]Row
-	if err := select[[.PluralUpper]](q).Order("[[.Order]]").Offset(pq.Offset()).Limit(pq.PageSize).Scan(&rows).Error; err != nil {
+	if err := select[[.PluralUpper]](q).Order("[[.Order]]").Offset(pq.Offset()).Limit([[if .CountCap]]limit[[else]]pq.PageSize[[end]]).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	views := make([][[.Lower]]View, len(rows))
@@ -282,10 +299,15 @@ func (m *Module) list[[.PluralUpper]](c *gin.Context) (any, error) {
 		return nil, err
 	}
 [[- end]][[end]]
-	return httpx.Page[[ "[" ]][[.Lower]]View]{List: views, Total: total, Page: pq.Page, PageSize: pq.PageSize}, nil
+	return httpx.Page[[ "[" ]][[.Lower]]View]{List: views, Total: total, Page: pq.Page, PageSize: pq.PageSize[[if .CountCap]], TotalCapped: capped[[end]]}, nil
 }
 
 var err[[.Upper]]NotFound = httpx.NotFound("[[.Name]]不存在")
+[[- if .CountCap]]
+
+// err[[.Upper]]BeyondCap: a page past the first [[.CountCap]] rows of the list.
+var err[[.Upper]]BeyondCap = httpx.BadRequest("只能查看前 [[.CountCapRows]]，请加筛选条件")
+[[- end]]
 [[- if not .ReadOnly]]
 
 // err[[.Upper]]TooLong: a value is longer than its column (on MySQL a text

@@ -231,6 +231,8 @@ type tmplData struct {
 	Features     []string
 	Formats      bool
 	NeedsStrings bool
+	// CountCapRows reads Spec.CountCap in a message: "1 万条", "2500 条".
+	CountCapRows string
 	// DeleteConfirmTS is the delete confirmation (a TypeScript template
 	// literal over row), "" for the default.
 	DeleteConfirmTS string
@@ -451,7 +453,8 @@ func (d *tmplData) derive() {
 	for _, f := range d.RelationFields {
 		f.RelLookup = true
 	}
-	d.NeedsDatabase = !d.ReadOnly || strings.Contains(d.Columns, "database.")
+	d.NeedsDatabase = !d.ReadOnly || d.CountCap > 0 || strings.Contains(d.Columns, "database.")
+	d.CountCapRows = countCapRows(d.CountCap)
 	for _, f := range d.ExportFields {
 		if f.Dict == "" || f.Role == roleStatus || f.Relation != "" || (f.Role == roleDept && d.DeptJoin) {
 			continue
@@ -994,4 +997,13 @@ func (l *selectList) goExpr() string {
 		return "``"
 	}
 	return strings.Join(l.segs, " + ")
+}
+
+// countCapRows writes a row count for the list's messages: whole ten
+// thousands as 万 ("1 万条"), other counts as digits ("2500 条").
+func countCapRows(n int) string {
+	if n >= 10000 && n%10000 == 0 {
+		return fmt.Sprintf("%d 万条", n/10000)
+	}
+	return fmt.Sprintf("%d 条", n)
 }

@@ -63,6 +63,7 @@ func TestGeneratedGoCompiles(t *testing.T) {
 		{taskTable(), taskSpec("tasks")},
 		{levelTable(), Spec{Module: "lvl", Resource: "level", Name: "等级", NewModule: true, NoCreate: true, NoDelete: true}},
 		{ledgerTable(), ledgerSpec()},
+		{customerTable(), Spec{Module: "crmcap", Resource: "customer", Name: "客户", NewModule: true, CountCap: 2500}},
 		{ledgerTable(), Spec{Module: "ledgerns", Resource: "wallet-ledger", Name: "钱包流水", NewModule: true, ReadOnly: true,
 			Fields: []FieldOption{{Column: "user_id", Relation: ptr("short_id")}}}},
 		{bannerWithOptions(), Spec{Module: "bnr", Resource: "banner", Name: "横幅", NewModule: true,

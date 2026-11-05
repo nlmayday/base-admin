@@ -44,7 +44,7 @@ func ledgerTable() Table {
 
 func ledgerSpec() Spec {
 	return Spec{Module: "ledger", Resource: "wallet-ledger", Name: "钱包流水", NewModule: true, ReadOnly: true,
-		OrderBy: "created_at DESC, id DESC",
+		OrderBy: "created_at DESC, id DESC", CountCap: 10000,
 		Fields: []FieldOption{
 			{Column: "id", List: boolPtr(true), Search: SearchEq},
 			{Column: "user_id", Relation: ptr("short_id"), Search: SearchEq},
@@ -68,7 +68,7 @@ func TestOrderByAndCountWithoutJoins(t *testing.T) {
 	assert.Contains(t, src, "func selectWalletLedgers(q *gorm.DB) *gorm.DB {\n\tq = q.Joins(`LEFT JOIN lg_user r1 ON r1.id = t.user_id`)")
 	scoped := src[strings.Index(src, "func (m *Module) scopedWalletLedgers"):strings.Index(src, "func selectWalletLedgers")]
 	assert.NotContains(t, scoped, "Joins", "the count runs on the table alone")
-	assert.Contains(t, src, "q.Session(&gorm.Session{}).Count(&total)")
+	assert.Contains(t, src, "database.CountAtMost(q, 10000+1)", "counted before selectWalletLedgers adds the joins")
 
 	for _, bad := range []string{"created_at DOWN", "created_at; DROP", "id, id", "a,b,c,d,e,f", "`x`"} {
 		s := ledgerSpec()
@@ -489,3 +489,43 @@ func TestDisplayOptionProblems(t *testing.T) {
 }
 
 func boolFloat(v float64) *float64 { return &v }
+
+// A large table's list counts at most CountCap+1 rows, reports the cap with
+// totalCapped, refuses pages past it and says so on the page.
+func TestCountCap(t *testing.T) {
+	res, err := Generate(ledgerTable(), ledgerSpec())
+	require.NoError(t, err)
+	fs := files(t, res)
+	src := fs["wallet_ledger.go"]
+	assert.Contains(t, src, "total, err := database.CountAtMost(q, 10000+1)")
+	assert.Contains(t, src, "if pq.Offset() >= 10000 {\n\t\treturn nil, errWalletLedgerBeyondCap")
+	assert.Contains(t, src, "limit := min(pq.PageSize, 10000-pq.Offset())")
+	assert.Contains(t, src, ".Offset(pq.Offset()).Limit(limit).Scan(&rows)")
+	assert.Contains(t, src, "TotalCapped: capped}")
+	assert.Contains(t, src, `httpx.BadRequest("只能查看前 1 万条，请加筛选条件")`)
+	assert.NotContains(t, src, ".Count(&total)")
+	index := fs["index.vue"]
+	assert.Contains(t, index, `v-if="pagination.totalCapped"`)
+	assert.Contains(t, index, "超过 1 万条，只显示前 1 万条，请加筛选条件")
+
+	plain, err := Generate(customerTable(), customerSpec())
+	require.NoError(t, err)
+	src = files(t, plain)["customer.go"]
+	assert.Contains(t, src, "q.Session(&gorm.Session{}).Count(&total)", "no cap: the exact count")
+	assert.NotContains(t, src, "CountAtMost")
+	assert.NotContains(t, src, "TotalCapped")
+
+	assert.Equal(t, "2500 条", countCapRows(2500))
+	assert.Equal(t, "5 万条", countCapRows(50000))
+	assert.Equal(t, "12345 条", countCapRows(12345))
+
+	for _, bad := range []int{-1, 99, 1000001} {
+		s := ledgerSpec()
+		s.CountCap = bad
+		var fields []string
+		for _, p := range s.Problems() {
+			fields = append(fields, p.Field)
+		}
+		assert.Contains(t, fields, "countCap", "%d", bad)
+	}
+}

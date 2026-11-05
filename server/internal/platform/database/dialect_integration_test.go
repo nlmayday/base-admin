@@ -4,6 +4,7 @@ package database
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -266,4 +267,40 @@ func TestLockTimeoutRestoredAfterPanicAndNesting(t *testing.T) {
 		return nil
 	}))
 	assert.Equal(t, def, wait())
+}
+
+// CountAtMost stops at the limit, keeps the conditions and joins of the
+// query, and ignores its order and select list.
+func TestCountAtMost(t *testing.T) {
+	db := dialectDB(t)
+	for i := range 30 {
+		_, err := InsertID(db, `INSERT INTO t_parent (code, tags) VALUES (?, ?)`, fmt.Sprintf("c%02d", i), TextArray{})
+		require.NoError(t, err)
+	}
+	// A query a list handler would build: a session, reused after counting.
+	q := db.Table("t_parent").Select("id, code").Order("id DESC").Session(&gorm.Session{})
+
+	n, err := CountAtMost(q, 10)
+	require.NoError(t, err)
+	assert.EqualValues(t, 10, n, "stops at the limit")
+
+	n, err = CountAtMost(q, 100)
+	require.NoError(t, err)
+	assert.EqualValues(t, 30, n, "fewer rows than the limit: the exact count")
+
+	n, err = CountAtMost(q.Where("code LIKE ?", "c1%"), 100)
+	require.NoError(t, err)
+	assert.EqualValues(t, 10, n, "conditions are kept")
+
+	joined := db.Table("t_parent AS p").Joins("JOIN t_parent AS q2 ON q2.id = p.id").Where("p.code < ?", "c05")
+	n, err = CountAtMost(joined, 100)
+	require.NoError(t, err)
+	assert.EqualValues(t, 5, n, "joins are kept")
+
+	var rows []struct{ Code string }
+	require.NoError(t, q.Limit(3).Scan(&rows).Error)
+	assert.Equal(t, []struct{ Code string }{{"c29"}, {"c28"}, {"c27"}}, rows, "the query keeps its order and select after counting")
+
+	_, err = CountAtMost(q, 0)
+	assert.Error(t, err)
 }

@@ -56,6 +56,9 @@ type Page[T any] struct {
 	Total    int64 `json:"total"`
 	Page     int   `json:"page"`
 	PageSize int   `json:"pageSize"`
+	// TotalCapped: counting stopped at Total (a large table); there are
+	// more rows and only the first Total can be paged through.
+	TotalCapped bool `json:"totalCapped,omitempty"`
 }
 
 // PageQuery is a validated page request.

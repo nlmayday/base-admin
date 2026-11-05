@@ -20,6 +20,21 @@ import (
 //
 // The helpers below cover what has no shared spelling.
 
+// CountAtMost counts the rows of q, stopping at limit: SELECT COUNT(*) FROM
+// (SELECT 1 … LIMIT limit) reads at most limit rows, where COUNT(*) on a
+// table of millions reads them all. A result of limit means "limit or
+// more". q keeps its conditions and joins; its select list and order are
+// replaced.
+func CountAtMost(q *gorm.DB, limit int) (int64, error) {
+	if limit <= 0 {
+		return 0, errors.New("database: CountAtMost needs a positive limit")
+	}
+	sub := q.Session(&gorm.Session{}).Select("1").Order(nil).Limit(limit)
+	var n int64
+	err := q.Session(&gorm.Session{NewDB: true}).Table("(?) AS counted", sub).Count(&n).Error
+	return n, err
+}
+
 // InsertID runs an INSERT and returns the id the database generated for
 // the new row: RETURNING id on PostgreSQL, the insert id of the statement
 // on MySQL. query is a plain INSERT without a RETURNING clause.

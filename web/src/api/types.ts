@@ -10,6 +10,8 @@ export type Page<T> = {
   total: number;
   page: number;
   pageSize: number;
+  /** 大表只数到上限：total 即上限，后面还有更多行，只能翻到第 total 条 */
+  totalCapped?: boolean;
 };
 
 /** 1 = 启用，2 = 停用 */

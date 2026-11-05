@@ -54,6 +54,7 @@ type previewRequest struct {
 	NoCreate      bool                  `json:"noCreate,omitempty" doc:"不生成新增（接口、权限码、按钮）"`
 	NoDelete      bool                  `json:"noDelete,omitempty" doc:"不生成删除（接口、权限码、按钮），如只能下架不能删"`
 	DeleteConfirm string                `json:"deleteConfirm,omitempty" binding:"max=200" doc:"删除确认文案，{列名} 换成该行的值，如 删除分类「{code}」？"`
+	CountCap      int                   `json:"countCap,omitempty" doc:"大表的列表总数最多数到这么多条（如 10000），超过时返回上限并带 totalCapped，只能翻到这么多条；0 为不限"`
 }
 
 type generateRequest struct {
@@ -279,7 +280,7 @@ func (m *Module) prepare(c *gin.Context, req previewRequest) (codegen.Result, co
 	spec := codegen.Spec{Module: req.Module, Resource: req.Resource, Name: req.Name, ModuleTitle: req.ModuleTitle,
 		MenuTitle: req.MenuTitle, MenuSort: req.MenuSort,
 		Fields: req.Fields, KeyMode: req.KeyMode, ReadOnly: req.ReadOnly, SoftDelete: req.SoftDelete, Children: req.Children,
-		OrderBy: req.OrderBy, NoCreate: req.NoCreate, NoDelete: req.NoDelete, DeleteConfirm: req.DeleteConfirm}
+		OrderBy: req.OrderBy, NoCreate: req.NoCreate, NoDelete: req.NoDelete, DeleteConfirm: req.DeleteConfirm, CountCap: req.CountCap}
 	if problems := spec.Problems(); len(problems) > 0 {
 		return codegen.Result{}, spec, problemsError(problems)
 	}
@@ -497,6 +498,9 @@ func cliCommand(req previewRequest) string {
 	}
 	if req.DeleteConfirm != "" {
 		parts = append(parts, "-delete-confirm "+shellQuote(req.DeleteConfirm))
+	}
+	if req.CountCap != 0 {
+		parts = append(parts, fmt.Sprintf("-count-cap %d", req.CountCap))
 	}
 	if req.NoCreate {
 		parts = append(parts, "-no-create")
