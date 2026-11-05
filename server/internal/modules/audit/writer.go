@@ -97,7 +97,7 @@ func (e entry) kind() string {
 	return "operation"
 }
 
-// sink persists batches; the default writes to PostgreSQL.
+// sink persists batches; the default writes to the database.
 type sink interface {
 	insertLogins(ctx context.Context, rows []loginRow) error
 	insertOps(ctx context.Context, rows []opRow) error

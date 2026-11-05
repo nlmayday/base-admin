@@ -211,7 +211,7 @@ type scheduledJob struct {
 	CronExpr string
 }
 
-// reload replaces the schedule with the enabled jobs in PostgreSQL. Entries
+// reload replaces the schedule with the enabled jobs in the database. Entries
 // whose expression did not change keep their next fire time.
 func (s *scheduler) reload(ctx context.Context) error {
 	fp, err := s.loadFingerprint(ctx)
@@ -264,7 +264,7 @@ func (s *scheduler) loadFingerprint(ctx context.Context) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
-// resync reloads when PostgreSQL changed without a notification reaching
+// resync reloads when the database changed without a notification reaching
 // this instance, and fails runs whose instance died.
 func (s *scheduler) resync(ctx context.Context) {
 	fp, err := s.loadFingerprint(ctx)

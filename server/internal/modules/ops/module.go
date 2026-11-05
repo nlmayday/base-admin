@@ -41,7 +41,7 @@ type Deps struct {
 
 // Tuning holds scheduler and monitor intervals. Tests shorten them.
 type Tuning struct {
-	// ResyncInterval is how often the job list is compared with PostgreSQL
+	// ResyncInterval is how often the job list is compared with the database
 	// in case a pub/sub notification was missed (default 30s).
 	ResyncInterval time.Duration
 	// RetryBaseDelay and RetryMaxDelay bound the exponential backoff

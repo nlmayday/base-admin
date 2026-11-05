@@ -140,7 +140,7 @@ func (g *Guard) validate(ctx context.Context, sess Session) (*actor.Snapshot, er
 	return snap, nil
 }
 
-// trustedGen returns the mirrored generation, reloading it from PostgreSQL
+// trustedGen returns the mirrored generation, reloading it from the database
 // when missing (invariant I2: missing is never zero).
 func (g *Guard) trustedGen(ctx context.Context, uid int64) (int64, error) {
 	gen, found, err := g.sessions.GenMirror(ctx, uid)

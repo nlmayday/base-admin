@@ -18,7 +18,7 @@ const (
 )
 
 // Snapshot is the cached authorization view of a user. It is only a cache
-// of PostgreSQL data for authorization decisions and must never be used as
+// of database rows for authorization decisions and must never be used as
 // the source of user profile data (design doc 5.6).
 type Snapshot struct {
 	Version            int64              `json:"version"`

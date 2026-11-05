@@ -11,8 +11,10 @@ name: base-admin
 
 x-api-env: &api-env
   ADMIN_APP_ENV: prod
-  # The password is pasted into a URL: see prod.mysql.env.example.
-  ADMIN_DATABASE_URL: mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}
+  # The raw password goes in separately (the API encodes it into the URL),
+  # so it is the same value MySQL was initialized with, whatever it contains.
+  ADMIN_DATABASE_URL: mysql://${MYSQL_USER}@mysql:3306/${MYSQL_DATABASE}
+  ADMIN_DATABASE_PASSWORD: ${MYSQL_PASSWORD}
   ADMIN_REDIS_ADDR: redis:6379
   ADMIN_REDIS_PASSWORD: ${REDIS_PASSWORD}
   ADMIN_HTTP_ADDR: ":8080"
@@ -43,7 +45,7 @@ services:
     # Over TCP: the first-start initialization runs a server without
     # networking, which must not count as healthy.
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u$${MYSQL_USER} -p$${MYSQL_PASSWORD} --silent"]
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$${MYSQL_PASSWORD}\" mysqladmin ping -h 127.0.0.1 -u\"$${MYSQL_USER}\" --silent"]
       interval: 5s
       timeout: 3s
       retries: 60

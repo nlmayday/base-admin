@@ -49,7 +49,7 @@ type RevokeSpec struct {
 }
 
 // Revoke locks the user, raises the generation mirror to max(mirror, pg)+1,
-// stores it in PostgreSQL, applies the change and bumps the auth version, all
+// stores it in the database, applies the change and bumps the auth version, all
 // in one transaction. It returns the new generation.
 func (r *Revoker) Revoke(ctx context.Context, uid int64, spec RevokeSpec) (int64, error) {
 	var newGen, ver int64

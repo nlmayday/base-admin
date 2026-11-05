@@ -46,7 +46,7 @@ type AuthConfig struct {
 	// TouchInterval limits how often sliding expiry is written back.
 	TouchInterval time.Duration `mapstructure:"touch_interval"`
 	SnapshotTTL   time.Duration `mapstructure:"snapshot_ttl"`
-	// ReconcileInterval is how often PG and Redis auth versions are compared.
+	// ReconcileInterval is how often the database and Redis auth versions are compared.
 	ReconcileInterval time.Duration `mapstructure:"reconcile_interval"`
 	// LockTimeout bounds waiting for a user row lock in login/revocation.
 	LockTimeout        time.Duration `mapstructure:"lock_timeout"`
@@ -91,7 +91,11 @@ type HTTPConfig struct {
 // MySQL) and of the extra databases of the business modules.
 type DatabaseConfig struct {
 	// URL is a secret and must come from ADMIN_DATABASE_URL.
-	URL             string        `mapstructure:"url"`
+	URL string `mapstructure:"url"`
+	// Password, from ADMIN_DATABASE_PASSWORD, is the raw password, put into
+	// URL percent-encoded at load time (then cleared). Leave the password
+	// out of URL when it is set.
+	Password        string        `mapstructure:"password"`
 	MaxOpenConns    int           `mapstructure:"max_open_conns"`
 	MaxIdleConns    int           `mapstructure:"max_idle_conns"`
 	ConnMaxLifetime time.Duration `mapstructure:"conn_max_lifetime"`

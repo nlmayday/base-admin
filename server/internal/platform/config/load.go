@@ -14,7 +14,7 @@ const envPrefix = "ADMIN"
 
 // secretKeys must never be read from a config file.
 var secretKeys = []string{
-	"database.url", "redis.password", "bootstrap.admin_password",
+	"database.url", "database.password", "redis.password", "bootstrap.admin_password",
 	"file.s3.access_key", "file.s3.secret_key", "file.signing_key",
 }
 
@@ -41,6 +41,12 @@ func Load(path string) (Config, error) {
 	if err := v.Unmarshal(&cfg, strictDecoding); err != nil {
 		return Config{}, fmt.Errorf("decode config: %w", err)
 	}
+	dbURL, err := withDatabasePassword(cfg.Database.URL, cfg.Database.Password)
+	if err != nil {
+		return Config{}, fmt.Errorf("invalid config: %w", err)
+	}
+	cfg.Database.URL = dbURL
+	cfg.Database.Password = ""
 	biz, err := loadBiz(v.Get("biz"))
 	if err != nil {
 		return Config{}, err
@@ -122,6 +128,7 @@ func defaultValues() map[string]any {
 		"http.trusted_proxies":     []string{},
 
 		"database.url":                  "",
+		"database.password":             "",
 		"database.max_open_conns":       20,
 		"database.max_idle_conns":       10,
 		"database.conn_max_lifetime":    30 * time.Minute,

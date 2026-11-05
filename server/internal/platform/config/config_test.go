@@ -61,6 +61,7 @@ func TestLoadRejectsSecretsInFile(t *testing.T) {
 	cases := map[string]string{
 		"database url":   "database:\n  url: postgres://x\n",
 		"redis password": "redis:\n  password: secret\n",
+		"db password":    "database:\n  password: secret\n",
 	}
 	for name, content := range cases {
 		t.Run(name, func(t *testing.T) {
