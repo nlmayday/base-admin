@@ -260,6 +260,13 @@ function addChildField(c: ChildModel): void {
               class="w-[100px]!"
             />
             <el-checkbox v-model="c.listKeys">列表显示已填的键</el-checkbox>
+            <el-input
+              v-if="c.listKeys"
+              v-model="c.listKeysLabel"
+              :placeholder="`列名，默认 已填${c.label || ''}`"
+              maxlength="20"
+              class="w-[150px]!"
+            />
             <el-button link type="danger" @click="model.children.splice(i, 1)">
               删除
             </el-button>

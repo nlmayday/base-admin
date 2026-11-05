@@ -50,6 +50,8 @@ type ChildSpec struct {
 	// ListKeys adds a list column with the keys whose rows are filled in
 	// (已填语言).
 	ListKeys bool `json:"listKeys,omitempty"`
+	// ListKeysLabel heads that column (default 「已填」 + Label).
+	ListKeysLabel string `json:"listKeysLabel,omitempty"`
 }
 
 // childData is the template model of a child table.
@@ -78,6 +80,8 @@ type childData struct {
 	KeyFromTable bool
 	KeySelect    string
 	KeyOrder     string
+	// ListKeysLabel heads the list column of the filled keys.
+	ListKeysLabel string
 	// ViewConvert: the row and the view have the same fields.
 	ViewConvert bool
 }
@@ -100,8 +104,11 @@ func buildChild(ct ChildTable, mainTable string, pk *Field) (*childData, error) 
 		if msg := keyTableProblem(s); msg != "" {
 			return nil, fmt.Errorf("子表 %s：%s", t.Name, msg)
 		}
-	case strings.ContainsAny(s.Label, unsafeText) || utf8.RuneCountInString(s.Label) > 20:
-		return nil, fmt.Errorf("子表 %s：label 最长 20 个字符，且不能包含引号、反斜杠、尖括号或花括号", t.Name)
+	}
+	for name, v := range map[string]string{"label": s.Label, "listKeysLabel": s.ListKeysLabel} {
+		if strings.ContainsAny(v, unsafeText) || utf8.RuneCountInString(v) > 20 {
+			return nil, fmt.Errorf("子表 %s：%s 最长 20 个字符，且不能包含引号、反斜杠、尖括号或花括号", t.Name, name)
+		}
 	}
 	fkCol, ok := t.Column(s.ForeignKey)
 	if !ok {
@@ -123,6 +130,10 @@ func buildChild(ct ChildTable, mainTable string, pk *Field) (*childData, error) 
 	d.GoName, d.JSONName = goExported(rest), lowerCamel(rest)
 	if d.Label == "" {
 		d.Label = rest
+	}
+	d.ListKeysLabel = strings.TrimSpace(s.ListKeysLabel)
+	if d.ListKeysLabel == "" {
+		d.ListKeysLabel = "已填" + d.Label
 	}
 	if s.KeyTable != "" {
 		d.KeyFromTable = true

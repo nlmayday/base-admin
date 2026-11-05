@@ -414,6 +414,14 @@ func (d *tmplData) derive() {
 	if d.ReadOnly {
 		d.OptionRelations = d.RelationSearch
 	}
+	// A lookup variable only where it is used (an options route or a check
+	// on save): unused ones fail make lint.
+	for _, f := range d.OptionRelations {
+		f.RelLookup = true
+	}
+	for _, f := range d.RelationFields {
+		f.RelLookup = true
+	}
 	d.NeedsDatabase = !d.ReadOnly || strings.Contains(d.Columns, "database.")
 	for _, f := range d.ExportFields {
 		if f.Dict == "" || f.Role == roleStatus || f.Relation != "" || (f.Role == roleDept && d.DeptJoin) {

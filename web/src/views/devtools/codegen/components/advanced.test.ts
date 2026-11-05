@@ -49,6 +49,7 @@ describe("childSpecs", () => {
       {
         ...base,
         listKeys: true,
+        listKeysLabel: " 已填语言 ",
         fieldRows: [
           {
             column: " image_url ",
@@ -70,6 +71,7 @@ describe("childSpecs", () => {
       }
     ]);
     expect(spec.listKeys).toBe(true);
+    expect(spec.listKeysLabel).toBe("已填语言");
     expect(spec.fields).toEqual([
       {
         column: "image_url",

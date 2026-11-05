@@ -55,6 +55,12 @@ func (d *tmplData) deriveRelations() {
 		f.LabelColumn, f.LabelGo, f.LabelJSON = label, goExported(label), lowerCamel(label)
 		f.RelVar = d.Lower + f.GoName + "Lookup"
 		f.RelNumber = slices.Contains(f.ref.NumberLabels, f.Relation)
+		// 客户名称 reads well; 玩家 ID名称 (short_id) or 玩法家族名称 (the
+		// family code itself) do not: name the shown column instead.
+		f.LabelDoc = f.Label + "名称"
+		if f.RelNumber || f.Relation == f.ref.key() {
+			f.LabelDoc = f.Label + "（" + f.ref.Table + "." + f.Relation + "）"
+		}
 		target := []string{fmt.Sprintf("Table: %q", f.ref.Table)}
 		if k := f.ref.key(); k != "id" {
 			target = append(target, fmt.Sprintf("Key: %q", k))

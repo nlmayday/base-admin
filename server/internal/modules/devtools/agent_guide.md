@@ -153,7 +153,7 @@
   - `upload`：`image` / `files` / `""`
   - `refTable`、`refKey`、`relation`：没有外键时手动声明关联，如
     `{"column": "user_id", "refTable": "lg_user", "relation": "nickname"}`（`refKey` 默认 `id`）。本列与关联列同为 bigint 或同为文本
-    （如 `{"column": "game_type", "refTable": "lg_game_family", "refKey": "family", "relation": "name"}`）；
+    （如 `{"column": "game_type", "refTable": "lg_game_family", "refKey": "family", "relation": "name"}`，显示列也可以就是 `family` 本身）；
     显示列可以是整数列（如 `"relation": "short_id"`，按编号精确匹配，走索引）；列表搜索栏能选到已删除的记录，表单不能
   - `createOnly`：`true` 时新增时填写、编辑时只读（如游戏编码），编辑接口不修改它
   - `hint`：表单输入框下方的说明文字（最长 200 字）
@@ -170,7 +170,7 @@
   `"keyTable": "lg_language", "keyValueColumn": "code", "keyLabelColumn": "name", "keyFilter": "enabled = 1", "keySortColumn": "sort", "keyRequiredColumn": "required"`，
   `keyRequiredColumn` 为真的键必须填写。`keyFilter` 原样写进生成的代码，两种数据库都要用时写 `enabled = TRUE`（`enabled = 1` 只适用于 MySQL）。
   保存只替换请求中出现的键（全部为空的行删除），其他键的行保留（如未启用语言的翻译）。
-  子表的 `fields` 可配置 `label`、`form`（`false` 不进表单）、`upload`（`image`）、`hint`；`"listKeys": true` 时列表增加「已填<label>」列。
+  子表的 `fields` 可配置 `label`、`form`（`false` 不进表单）、`upload`（`image`）、`hint`；`"listKeys": true` 时列表增加「已填<label>」列，列名可用 `listKeysLabel` 另起（最长 20 字）。
   - `relation`：外键字段显示被引用表的哪一列；`""` 改为直接输入 ID
 - `force`（仅 generate）：覆盖已存在的文件。
 
