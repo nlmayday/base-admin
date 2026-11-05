@@ -78,6 +78,12 @@ func mysqlConfig(cfg config.DatabaseConfig, appName string, multiStatements bool
 // parseMySQLURL turns mysql://user:pass@host:port/db?params into a driver
 // config; the query parameters are the driver's options.
 func parseMySQLURL(u *url.URL) (*mysql.Config, error) {
+	if u.User == nil || u.User.Username() == "" {
+		return nil, errors.New("parse database url: the mysql url must name a user, as mysql://user:pass@host:3306/name")
+	}
+	if u.Hostname() == "" {
+		return nil, errors.New("parse database url: the mysql url must name a host, as mysql://user:pass@host:3306/name")
+	}
 	dbName := strings.TrimPrefix(u.Path, "/")
 	if dbName == "" || strings.Contains(dbName, "/") {
 		return nil, errors.New("parse database url: the mysql url must name one database, as mysql://user:pass@host:3306/name")

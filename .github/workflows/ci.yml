@@ -77,6 +77,18 @@ jobs:
         options: >-
           --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -padmin --silent"
           --health-interval 2s --health-timeout 3s --health-retries 60
+      # Only for the schema parity check against the MySQL migrations.
+      postgres:
+        image: postgres:17.11-alpine
+        env:
+          POSTGRES_USER: admin
+          POSTGRES_PASSWORD: admin
+          POSTGRES_DB: base_admin
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U admin -d base_admin"
+          --health-interval 2s --health-timeout 3s --health-retries 30
       redis:
         image: redis:7.4.12-alpine
         ports:
@@ -106,6 +118,12 @@ jobs:
 
       - name: Test (unit + integration)
         run: make test-integration
+
+      - name: Schema parity with PostgreSQL (columns, indexes, keys, checks)
+        run: make test-schema-parity
+        env:
+          PARITY_PG_URL: postgres://admin:admin@127.0.0.1:5432/base_admin?sslmode=disable
+          MYSQL_DATABASE_URL: mysql://app:app@127.0.0.1:3306/base_admin
 
   web:
     runs-on: ubuntu-latest

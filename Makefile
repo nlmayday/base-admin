@@ -9,6 +9,8 @@ GOLANGCI_LINT := go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$
 ADMIN_DATABASE_URL      ?= postgres://admin:admin@127.0.0.1:15432/base_admin?sslmode=disable
 # The optional MySQL of compose.dev.yaml, used by the *-mysql targets.
 MYSQL_DATABASE_URL      ?= mysql://admin:admin@127.0.0.1:13307/base_admin
+# The PostgreSQL side of test-schema-parity.
+PARITY_PG_URL           ?= postgres://admin:admin@127.0.0.1:15432/base_admin?sslmode=disable
 ADMIN_REDIS_ADDR        ?= 127.0.0.1:16380
 ADMIN_TEST_DATABASE_URL ?= $(ADMIN_DATABASE_URL)
 # Tests lease free Redis databases 1-15 and never touch database 0 or ones
@@ -25,7 +27,7 @@ export ADMIN_AUTH_COOKIE_SECURE ADMIN_BOOTSTRAP_ADMIN_PASSWORD
 API_URL ?= http://127.0.0.1:8080
 
 .PHONY: help deps-up deps-down run migrate-up new-migration migrate-version codegen-web-check build test test-integration cover lint fmt ci \
-	deps-up-mysql run-mysql migrate-up-mysql test-integration-mysql \
+	deps-up-mysql run-mysql migrate-up-mysql test-integration-mysql test-schema-parity \
 	web-install web-dev web-check web-build e2e
 
 help: ## List targets
@@ -69,6 +71,10 @@ test-integration: ## Unit + integration tests (needs deps-up)
 
 test-integration-mysql: ## Unit + integration tests on the local MySQL (needs deps-up-mysql)
 	cd $(SERVER_DIR) && ADMIN_TEST_DATABASE_URL=$(MYSQL_DATABASE_URL) go test -race -tags integration ./...
+
+test-schema-parity: ## Compare the tables, columns, indexes and keys the PostgreSQL and MySQL migrations build (needs deps-up and deps-up-mysql)
+	cd $(SERVER_DIR) && ADMIN_TEST_PG_URL='$(PARITY_PG_URL)' ADMIN_TEST_MYSQL_URL='$(MYSQL_DATABASE_URL)' \
+		go test -count=1 -tags 'integration parity' -run TestSchemaParity ./internal/platform/dbmigrate/
 
 cover: ## Coverage report including integration tests (needs deps-up)
 	cd $(SERVER_DIR) && go test -tags integration -coverpkg=./internal/...,./cmd/... -coverprofile=coverage.out \

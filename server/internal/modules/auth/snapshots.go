@@ -24,7 +24,7 @@ const SuperAdminRole = "super_admin"
 var ErrUserNotFound = errors.New("user not found")
 
 // Snapshots loads auth snapshots from Redis, rebuilding them from
-// PostgreSQL on a miss. Concurrent rebuilds of the same key are merged.
+// the database on a miss. Concurrent rebuilds of the same key are merged.
 type Snapshots struct {
 	db       *gorm.DB
 	rdb      *redis.Client
@@ -95,7 +95,7 @@ type roleRow struct {
 	DataScope string
 }
 
-// Build reads the authorization view of uid from PostgreSQL.
+// Build reads the authorization view of uid from the database.
 func Build(ctx context.Context, db *gorm.DB, uid int64) (*actor.Snapshot, error) {
 	db = db.WithContext(ctx)
 	var u userRow

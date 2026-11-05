@@ -40,7 +40,7 @@ type meView struct {
 }
 
 // Me renders the actor in ctx; it is also the auth module's MeFunc. User
-// data comes from PostgreSQL, authorization data from the snapshot.
+// data comes from the database, authorization data from the snapshot.
 func (m *Module) Me(ctx context.Context) (any, error) {
 	snap := actor.From(ctx).Snapshot
 	var u struct {

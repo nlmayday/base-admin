@@ -20,7 +20,7 @@
 
 设计要点：
 - **模块化单体**：每个功能都是一个 `module.Module`，自带权限码、菜单、路由和定时任务。启动时校验，未加保护或未声明的路由会导致启动失败。
-- **Redis 不透明会话**：通过 PostgreSQL 中的会话代数实现撤销；CSRF 防护采用 Origin 校验加绑定会话的双重提交令牌。
+- **Redis 不透明会话**：通过主数据库（PostgreSQL 或 MySQL）中的会话代数实现撤销；CSRF 防护采用 Origin 校验加绑定会话的双重提交令牌。
 - **权限**：权限码之间有依赖关系，每个查询都带数据范围，角色和部门有防越权规则。
 
 ## 环境要求
@@ -71,6 +71,7 @@ API_URL=http://127.0.0.1:18080 make web-dev
 | 变量 | 用途 |
 |---|---|
 | `ADMIN_DATABASE_URL` | 数据库连接地址（必填）：`postgres://…` 或 `mysql://…`，协议头决定用哪种数据库 |
+| `ADMIN_DATABASE_PASSWORD` | 可选，数据库原始密码（含 `@ : / # %` 等也不用编码）；设置后 `ADMIN_DATABASE_URL` 里不写密码，如 `mysql://admin@mysql:3306/base_admin` |
 | `ADMIN_REDIS_PASSWORD` | Redis 密码 |
 | `ADMIN_BOOTSTRAP_ADMIN_PASSWORD` | 没有任何用户时用它创建第一个超级管理员（12–72 个字符） |
 | `ADMIN_FILE_SIGNING_KEY` | 文件签名链接的 HMAC 密钥，至少 32 字节（生产环境必填） |
@@ -80,10 +81,10 @@ API_URL=http://127.0.0.1:18080 make web-dev
 
 ## 部署
 
-`deploy/docker/compose.prod.yaml` 启动整套服务：
-- PostgreSQL 和 Redis（设置了密码，`noeviction`，开启 AOF）；
+`deploy/docker/compose.prod.yaml` 启动整套服务（用 MySQL 时换成 `compose.prod.mysql.yaml`）：
+- PostgreSQL（或 MySQL 8.4）和 Redis（设置了密码，`noeviction`，开启 AOF）；
 - 一次性的 `migrate` 服务；
-- 后端：distroless 非 root 镜像，根文件系统只读，不授予任何 capability；健康检查执行 `admin health ready`（检查 PostgreSQL 和 Redis 能否连通）；
+- 后端：distroless 非 root 镜像，根文件系统只读，不授予任何 capability；健康检查执行 `admin health ready`（检查数据库和 Redis 能否连通）；
 - nginx：提供前端页面（`/static/` 下带哈希的文件缓存一年，`index.html` 不缓存）并代理 `/api`；健康检查 `/healthz`。
 
 镜像版本固定到补丁版本。依赖升级直接提交到 main，不走 PR；`security.yml` 每周扫描漏洞，发现问题时再升级。
@@ -111,7 +112,7 @@ docker compose -f deploy/docker/compose.prod.mysql.yaml --env-file deploy/docker
 - 每套部署使用独立的 Redis 逻辑库，淘汰策略用 `noeviction` 或 `volatile-*`。
 - 设置 `ADMIN_FILE_SIGNING_KEY`。
 - 监控端口（`metrics.addr`）不要暴露到公网。
-- 定期备份 PostgreSQL（以及 `files` 卷或 S3 存储桶），并演练恢复；执行 `migrate up` 前先做快照。这套部署不包含备份任务。
+- 定期备份主数据库（PostgreSQL 或 MySQL，以及 `files` 卷或 S3 存储桶），并演练恢复；执行 `migrate up` 前先做快照。这套部署不包含备份任务。
 
 ## 命令
 
@@ -165,7 +166,8 @@ scripts/new-project.sh github.com/acme/crm/server "Acme CRM" acme-crm
 
 - `make test`：单元测试，不依赖任何外部服务。
 - `make test-integration`：再加上带 `integration` 标签的测试，连接 Compose 启动的服务运行。
-  - 每个测试创建并删除自己的 PostgreSQL 数据库，并临时租用一个 Redis 逻辑库，结束时清空归还。
+  - 每个测试创建并删除自己的数据库（`make test-integration-mysql` 在 MySQL 上跑同一套），并临时租用一个 Redis 逻辑库，结束时清空归还。
+  - `make test-schema-parity`：PostgreSQL 和 MySQL 各建一个库跑完迁移，对照表、列（类型、可空、自增）、索引、外键和 CHECK 数量；有意的差异写在测试里并注明原因。
   - 只会用 1–15 号库里空的或测试留下的库，不碰 0 号库和存有其他数据的库，所以可以和开发环境共用 Redis，也可以同时跑多份测试。开发服务请用 0 号库（默认）或已有数据的库。
   - 缺少环境变量时这些测试会失败，而不是跳过。
 - `make web-check`：前端 lint（只检查）、类型检查和 Vitest 单元测试（`pnpm test`；开发时用 `pnpm test:watch`）。

@@ -68,6 +68,10 @@ func TestMySQLConfigRejectsBadURLs(t *testing.T) {
 		"mysql://u:secret@h/db?parseTime=false",
 		"mysql://u:secret@h/db?sql_mode=ANSI",
 		"mysql://u:secret@h/db?multiStatements=true",
+		"mysql://localhost/base_admin",
+		"mysql://:secret@h/db",
+		"mysql://u:secret@/db",
+		"mysql://u:secret@:3306/db",
 	} {
 		_, err := mysqlConfig(config.DatabaseConfig{URL: bad}, "x", false)
 		require.Error(t, err, bad)

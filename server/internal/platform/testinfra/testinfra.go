@@ -43,7 +43,13 @@ func requireEnv(t *testing.T, key string) string {
 // ADMIN_TEST_DATABASE_URL (postgres:// or mysql://).
 func Database(t *testing.T) config.DatabaseConfig {
 	t.Helper()
-	adminURL := requireEnv(t, "ADMIN_TEST_DATABASE_URL")
+	return DatabaseAt(t, requireEnv(t, "ADMIN_TEST_DATABASE_URL"))
+}
+
+// DatabaseAt is Database on the server of adminURL, for tests that need a
+// PostgreSQL and a MySQL database at once (schema parity).
+func DatabaseAt(t *testing.T, adminURL string) config.DatabaseConfig {
+	t.Helper()
 	isMySQL := strings.HasPrefix(adminURL, "mysql://")
 
 	b := make([]byte, 6)
@@ -52,7 +58,7 @@ func Database(t *testing.T) config.DatabaseConfig {
 
 	u, err := url.Parse(adminURL)
 	if err != nil {
-		t.Fatalf("ADMIN_TEST_DATABASE_URL must be a URL: %v", err)
+		t.Fatal("the test database admin URL is malformed")
 	}
 	create, drop := postgresDDL(name)
 	if isMySQL {

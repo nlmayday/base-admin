@@ -10,7 +10,10 @@ name: base-admin
 
 x-api-env: &api-env
   ADMIN_APP_ENV: prod
-  ADMIN_DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+  # The raw password goes in separately (the API encodes it into the URL),
+  # so it is the same value PostgreSQL was initialized with, whatever it contains.
+  ADMIN_DATABASE_URL: postgres://${POSTGRES_USER}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+  ADMIN_DATABASE_PASSWORD: ${POSTGRES_PASSWORD}
   ADMIN_REDIS_ADDR: redis:6379
   ADMIN_REDIS_PASSWORD: ${REDIS_PASSWORD}
   ADMIN_HTTP_ADDR: ":8080"

@@ -13,7 +13,7 @@ import (
 	"base-admin/server/internal/platform/database"
 )
 
-// Versions mirrors the global auth version from PostgreSQL (the source of
+// Versions mirrors the global auth version from the database (the source of
 // truth) into Redis. Changes are bounded-delay eventually consistent; see
 // design doc 5.6.
 type Versions struct {
@@ -28,7 +28,7 @@ func NewVersions(db *gorm.DB, rdb *redis.Client, logger *zap.Logger) *Versions {
 }
 
 // Current returns the mirrored version. A missing mirror is a cache miss,
-// never zero: it is reloaded from PostgreSQL.
+// never zero: it is reloaded from the database.
 func (v *Versions) Current(ctx context.Context) (int64, error) {
 	ver, err := v.rdb.Get(ctx, versionKey).Int64()
 	if err == nil {
@@ -40,7 +40,7 @@ func (v *Versions) Current(ctx context.Context) (int64, error) {
 	return v.Reconcile(ctx)
 }
 
-// Reconcile copies the PostgreSQL version into Redis if Redis is behind.
+// Reconcile copies the database version into Redis if Redis is behind.
 func (v *Versions) Reconcile(ctx context.Context) (int64, error) {
 	var ver int64
 	if err := v.db.WithContext(ctx).Raw("SELECT version FROM sys_auth_version WHERE id = 1").Scan(&ver).Error; err != nil {
@@ -102,7 +102,7 @@ func (v *Versions) Mutate(ctx context.Context, fn func(tx *gorm.DB) error) error
 	return nil
 }
 
-// RunReconciler compares PostgreSQL and Redis every interval until ctx ends.
+// RunReconciler compares the database and Redis every interval until ctx ends.
 func (v *Versions) RunReconciler(ctx context.Context, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
