@@ -68,9 +68,13 @@ var [[.Lower]]Scope = datascope.Spec{[[if .ScopeDept]]DeptColumn: "[[.ScopeDept]
 
 var [[.Lower]]Permissions = []perm.Def{
 	{Code: "[[.PermPrefix]]:view", Name: "查看[[.Name]]", Menu: "[[.MenuCode]]"},
-[[- if not .ReadOnly]]
+[[- if .CanCreate]]
 	{Code: "[[.PermPrefix]]:create", Name: "新增[[.Name]]", Menu: "[[.MenuCode]]"},
+[[- end]]
+[[- if not .ReadOnly]]
 	{Code: "[[.PermPrefix]]:update", Name: "编辑[[.Name]]", Menu: "[[.MenuCode]]"},
+[[- end]]
+[[- if .CanDelete]]
 	{Code: "[[.PermPrefix]]:delete", Name: "删除[[.Name]]", Menu: "[[.MenuCode]]"},
 [[- end]]
 	{Code: "[[.PermPrefix]]:export", Name: "导出[[.Name]]", Menu: "[[.MenuCode]]"},
@@ -89,22 +93,26 @@ func (m *Module) [[.Lower]]Routes(r *module.Router) {
 	g.GET("", access.Perm("[[.PermPrefix]]:view"), handle(m.list[[.PluralUpper]])).Doc(module.Doc{Summary: "[[.Name]]列表", Query: [[.Lower]]Filter{}, Response: httpx.Page[[ "[" ]][[.Lower]]View]{}})
 	g.GET("/export", access.Perm("[[.PermPrefix]]:export"), m.export[[.PluralUpper]]).Doc(module.Doc{Summary: "导出[[.Name]]", Query: [[.Lower]]Filter{}, Sensitive: true})
 	g.GET("/:id", access.Perm("[[.PermPrefix]]:view"), handle(m.get[[.Upper]])).Doc(module.Doc{Summary: "[[.Name]]详情", Response: [[.Lower]]View{}})
-[[- if not .ReadOnly]]
+[[- if .CanCreate]]
 	g.POST("", access.Perm("[[.PermPrefix]]:create"), handle(m.create[[.Upper]])).Doc(module.Doc{Summary: "新增[[.Name]]", Body: [[.Lower]]Request{}, Response: [[.Lower]]View{}})
+[[- end]]
+[[- if not .ReadOnly]]
 	g.PUT("/:id", access.Perm("[[.PermPrefix]]:update"), handle(m.update[[.Upper]])).Doc(module.Doc{Summary: "编辑[[.Name]]", Body: [[.Lower]]Request{}, Response: [[.Lower]]View{}})
+[[- end]]
+[[- if .CanDelete]]
 	g.DELETE("/:id", access.Perm("[[.PermPrefix]]:delete"), handle(m.delete[[.Upper]])).Doc(module.Doc{Summary: "删除[[.Name]]"})
 [[- end]]
 [[- range .Children]][[if .KeyFromTable]]
 	g.GET("/options/[[.JSONName]]Keys", access.Perm("[[$.PermPrefix]]:view"), handle(m.[[$.Lower]][[.GoName]]KeyOptions)).Doc(module.Doc{Summary: "[[.Label]]的[[.Key.Label]]列表", Description: "来自 [[.Spec.KeyTable]]；required 为必须填写", Response: [][[$.Lower]][[.GoName]]Key{}})
 [[- end]][[end]]
 [[- range .OptionRelations]]
-	g.GET("/options/[[.JSONName]]", access.Perm("[[$.PermPrefix]]:view"), handle(m.[[$.Lower]][[.GoName]]Options)).Doc(module.Doc{Summary: "[[.Label]]选项", Description: "keyword 按名称搜索，最多 50 条", Response: []lookup.Option{}})
+	g.GET("/options/[[.JSONName]]", access.Perm("[[$.PermPrefix]]:view"), handle(m.[[$.Lower]][[.GoName]]Options)).Doc(module.Doc{Summary: "[[.Label]]选项", Description: "keyword 按[[if .RelNumber]]编号精确[[else]]名称[[end]]搜索，最多 50 条；deleted=1 时包含已删除的记录（搜索栏用）", Response: []lookup.Option{}})
 [[- end]]
 }
 [[- range .OptionRelations]]
 
 func (m *Module) [[$.Lower]][[.GoName]]Options(c *gin.Context) (any, error) {
-	return [[.RelVar]].Options(c.Request.Context(), m.db, c.Query("keyword"))
+	return [[.RelVar]].Find(c.Request.Context(), m.db, lookup.Query{Keyword: c.Query("keyword"), Deleted: c.Query("deleted") == "1"})
 }
 [[- end]]
 
@@ -121,6 +129,10 @@ type [[.Lower]]View struct {
 [[- range .Children]]
 	// [[.GoName]] is filled by the detail (and after a write), not by the list.
 	[[.GoName]] [][[$.Lower]][[.GoName]]View `json:"[[.JSONName]],omitempty" doc:"[[.Label]]"`
+[[- if .Spec.ListKeys]]
+	// [[.GoName]]Keys are the [[.Key.Label]] values with a [[.Label]] row, filled by the list.
+	[[.GoName]]Keys []string `json:"[[.JSONName]]Keys,omitempty" doc:"已填[[.Label]]的[[.Key.Label]]（列表返回）"`
+[[- end]]
 [[- end]]
 }
 
@@ -143,6 +155,9 @@ func [[.Lower]]Columns(db *gorm.DB) string {
 }
 
 func (r [[.Lower]]Row) view() [[.Lower]]View {
+[[- if .ViewConvert]]
+	return [[.Lower]]View(r)
+[[- else]]
 	return [[.Lower]]View{
 [[- range .Fields]]
 		[[.GoName]]: [[.ViewExpr]],
@@ -154,6 +169,7 @@ func (r [[.Lower]]Row) view() [[.Lower]]View {
 		[[.LabelGo]]: r.[[.LabelGo]],
 [[- end]]
 	}
+[[- end]]
 }
 
 type [[.Lower]]Filter struct {
@@ -163,15 +179,10 @@ type [[.Lower]]Filter struct {
 }
 
 // scoped[[.PluralUpper]] starts a query over the [[.Name]] rows visible to the
-// caller, narrowed by [[.Lower]]Restrict ([[.FileBase]]_ext.go).
+// caller, narrowed by [[.Lower]]Restrict ([[.FileBase]]_ext.go). It has no
+// joins, so counting stays on the table; select[[.PluralUpper]] adds them.
 func (m *Module) scoped[[.PluralUpper]](ctx context.Context, db *gorm.DB) *gorm.DB {
 	q := db.WithContext(ctx).Table([[.Lower]]Table + " AS t")
-[[- if .DeptJoin]]
-	q = q.Joins("LEFT JOIN sys_departments d ON d.id = t.dept_id")
-[[- end]]
-[[- range .Relations]]
-	q = q.Joins(`LEFT JOIN [[.RelTable]] [[.RelAlias]] ON [[.RelAlias]].[[.RelKey]] = t.[[.Quoted]]`)
-[[- end]]
 [[- if .SoftDelete]]
 	q = q.Where("t.deleted_at IS NULL")
 [[- end]]
@@ -181,6 +192,18 @@ func (m *Module) scoped[[.PluralUpper]](ctx context.Context, db *gorm.DB) *gorm.
 [[- else]]
 	return q
 [[- end]]
+}
+
+// select[[.PluralUpper]] selects the columns of the [[.Name]] rows of q[[if .HasJoins]], joining
+// the tables names are shown from (by key: the joins add no rows)[[end]].
+func select[[.PluralUpper]](q *gorm.DB) *gorm.DB {
+[[- if .DeptJoin]]
+	q = q.Joins("LEFT JOIN sys_departments d ON d.id = t.dept_id")
+[[- end]]
+[[- range .Relations]]
+	q = q.Joins(`LEFT JOIN [[.RelTable]] [[.RelAlias]] ON [[.RelAlias]].[[.RelKey]] = t.[[.Quoted]]`)
+[[- end]]
+	return q.Select([[.Lower]]Columns(q))
 }
 
 func apply[[.Upper]]Filter(q *gorm.DB, f [[.Lower]]Filter) *gorm.DB {
@@ -213,13 +236,18 @@ func (m *Module) list[[.PluralUpper]](c *gin.Context) (any, error) {
 		return nil, err
 	}
 	var rows [][[.Lower]]Row
-	if err := q.Select([[.Lower]]Columns(q)).Order("[[.Order]]").Offset(pq.Offset()).Limit(pq.PageSize).Scan(&rows).Error; err != nil {
+	if err := select[[.PluralUpper]](q).Order("[[.Order]]").Offset(pq.Offset()).Limit(pq.PageSize).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	views := make([][[.Lower]]View, len(rows))
 	for i, r := range rows {
 		views[i] = r.view()
 	}
+[[- range .Children]][[if .Spec.ListKeys]]
+	if err := list[[$.Upper]][[.GoName]]Keys(c.Request.Context(), m.db, views); err != nil {
+		return nil, err
+	}
+[[- end]][[end]]
 	return httpx.Page[[ "[" ]][[.Lower]]View]{List: views, Total: total, Page: pq.Page, PageSize: pq.PageSize}, nil
 }
 
@@ -253,7 +281,7 @@ func parse[[.Upper]]Key(c *gin.Context) ([[.KeyGo]], error) {
 // load[[.Upper]] reads one visible row; rows outside the data scope are 404.
 func (m *Module) load[[.Upper]](ctx context.Context, db *gorm.DB, key [[.KeyGo]]) ([[.Lower]]View, error) {
 	var rows [][[.Lower]]Row
-	if err := m.scoped[[.PluralUpper]](ctx, db).Select([[.Lower]]Columns(db)).Where("t.[[.PK.Quoted]] = ?", key).Scan(&rows).Error; err != nil {
+	if err := select[[.PluralUpper]](m.scoped[[.PluralUpper]](ctx, db).Where("t.[[.PK.Quoted]] = ?", key)).Scan(&rows).Error; err != nil {
 		return [[.Lower]]View{}, err
 	}
 	if len(rows) == 0 {
@@ -290,12 +318,16 @@ type [[$.Lower]][[.GoName]]Row struct {
 }
 
 func (r [[$.Lower]][[.GoName]]Row) view() [[$.Lower]][[.GoName]]View {
+[[- if .ViewConvert]]
+	return [[$.Lower]][[.GoName]]View(r)
+[[- else]]
 	return [[$.Lower]][[.GoName]]View{
 		[[.Key.GoName]]: r.[[.Key.GoName]],
 [[- range .Fields]]
 		[[.GoName]]: [[.ViewExpr]],
 [[- end]]
 	}
+[[- end]]
 }
 
 [[- if .KeyFromTable]]
@@ -336,6 +368,36 @@ func load[[$.Upper]][[.GoName]](ctx context.Context, db *gorm.DB, key [[$.KeyGo]
 	}
 	return out, nil
 }
+[[- if .Spec.ListKeys]]
+
+// list[[$.Upper]][[.GoName]]Keys fills the [[.Key.Label]] values that have a [[.Label]] row
+// into the listed views (one query for the page).
+func list[[$.Upper]][[.GoName]]Keys(ctx context.Context, db *gorm.DB, views [][[$.Lower]]View) error {
+	if len(views) == 0 {
+		return nil
+	}
+	parents := make([][[$.KeyGo]], len(views))
+	for i, v := range views {
+		parents[i] = [[$.PK.KeyOfView "v"]]
+	}
+	var rows []struct {
+		Parent [[$.KeyGo]]
+		Value  [[.Key.RowType]]
+	}
+	if err := db.WithContext(ctx).Table("[[.Table]]").Select("[[.FK.Quoted]] AS parent, [[.Key.Quoted]] AS value").
+		Where("[[.FK.Quoted]] IN ?", parents).Order("[[.Key.Quoted]]").Scan(&rows).Error; err != nil {
+		return err
+	}
+	keys := map[[ "[" ]][[$.KeyGo]]][]string{}
+	for _, r := range rows {
+		keys[r.Parent] = append(keys[r.Parent], fmt.Sprint(r.Value))
+	}
+	for i := range views {
+		views[i].[[.GoName]]Keys = keys[parents[i]]
+	}
+	return nil
+}
+[[- end]]
 [[- end]]
 
 func (m *Module) get[[.Upper]](c *gin.Context) (any, error) {
@@ -375,9 +437,12 @@ func (r [[$.Lower]][[.GoName]]Request) empty() bool {
 }
 
 [[- if .KeyFromTable]]
-// save[[$.Upper]][[.GoName]] replaces the [[.Label]] rows of a [[$.Name]] with rows,
-// in the caller's transaction. The keys must be values of [[.Spec.KeyTable]]
-// and appear once; the required ones must be filled in.
+// save[[$.Upper]][[.GoName]] writes the [[.Label]] rows of a [[$.Name]] given in rows, in the
+// caller's transaction: the row of each given [[.Key.Label]] is replaced (one
+// with every field empty is removed), rows of other [[.Key.Label]] values, such
+// as those [[.Spec.KeyTable]] no longer lists, are kept. The keys must be
+// values of [[.Spec.KeyTable]] and appear once; the required ones must be
+// filled in.
 func (m *Module) save[[$.Upper]][[.GoName]](ctx context.Context, tx *gorm.DB, key [[$.KeyGo]], rows [][[$.Lower]][[.GoName]]Request) error {
 	keys, err := load[[$.Upper]][[.GoName]]Keys(ctx, tx)
 	if err != nil {
@@ -387,7 +452,7 @@ func (m *Module) save[[$.Upper]][[.GoName]](ctx context.Context, tx *gorm.DB, ke
 	for _, k := range keys {
 		allowed[k.Value] = true
 	}
-	seen, filled := map[string]bool{}, map[string]bool{}
+	seen := map[string]bool{}
 	for i, r := range rows {
 		field := fmt.Sprintf("[[.JSONName]][%d].[[.Key.JSONName]]", i)
 		k := fmt.Sprint(r.[[.Key.GoName]])
@@ -397,17 +462,33 @@ func (m *Module) save[[$.Upper]][[.GoName]](ctx context.Context, tx *gorm.DB, ke
 		case !allowed[k]:
 			return fieldError(field, "请选择有效的[[.Key.Label]]")
 		}
-		seen[k], filled[k] = true, !r.empty()
+		seen[k] = true
+[[- template "childUploads" .]]
+	}
+	if err := m.write[[$.Upper]][[.GoName]](tx, key, rows); err != nil {
+		return err
+	}
+	var stored [][[.Key.RowType]]
+	if err := tx.Table("[[.Table]]").Where("[[.FK.Quoted]] = ?", key).Pluck("[[.Key.Quoted]]", &stored).Error; err != nil {
+		return err
+	}
+	filled := map[string]bool{}
+	for _, k := range stored {
+		filled[fmt.Sprint(k)] = true
 	}
 	for _, k := range keys {
 		if k.Required && !filled[k.Value] {
 			return fieldError("[[.JSONName]]", k.Label+"的[[.Label]]必须填写")
 		}
 	}
+	return nil
+}
 [[- else]]
-// save[[$.Upper]][[.GoName]] replaces the [[.Label]] rows of a [[$.Name]] with rows,
-// in the caller's transaction. The keys must be items of dictionary
-// [[.Spec.KeyDict]] and appear once.
+// save[[$.Upper]][[.GoName]] writes the [[.Label]] rows of a [[$.Name]] given in rows, in the
+// caller's transaction: the row of each given [[.Key.Label]] is replaced (one
+// with every field empty is removed), rows of other [[.Key.Label]] values, such
+// as those of disabled dictionary items, are kept. The keys must be items of
+// dictionary [[.Spec.KeyDict]] and appear once.
 func (m *Module) save[[$.Upper]][[.GoName]](ctx context.Context, tx *gorm.DB, key [[$.KeyGo]], rows [][[$.Lower]][[.GoName]]Request) error {
 	seen := map[string]bool{}
 	for i, r := range rows {
@@ -420,9 +501,22 @@ func (m *Module) save[[$.Upper]][[.GoName]](ctx context.Context, tx *gorm.DB, ke
 		if err := checkDict(ctx, m.dict, [[goString .Spec.KeyDict]], field, [[goString .Key.Label]], r.[[.Key.GoName]]); err != nil {
 			return err
 		}
+[[- template "childUploads" .]]
 	}
+	return m.write[[$.Upper]][[.GoName]](tx, key, rows)
+}
 [[- end]]
-	if err := tx.Exec(`DELETE FROM [[.Table]] WHERE [[.FK.Quoted]] = ?`, key).Error; err != nil {
+
+// write[[$.Upper]][[.GoName]] replaces the [[.Label]] rows of the given [[.Key.Label]] values.
+func (m *Module) write[[$.Upper]][[.GoName]](tx *gorm.DB, key [[$.KeyGo]], rows [][[$.Lower]][[.GoName]]Request) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	given := make([][[.Key.ReqType]], len(rows))
+	for i, r := range rows {
+		given[i] = r.[[.Key.GoName]]
+	}
+	if err := tx.Exec(`DELETE FROM [[.Table]] WHERE [[.FK.Quoted]] = ? AND [[.Key.Quoted]] IN ?`, key, given).Error; err != nil {
 		return err
 	}
 	for _, r := range rows {
@@ -471,6 +565,7 @@ func [[.Lower]]Duplicate(constraint string) error {
 [[- end]]
 	return duplicateError(constraint, [[.Lower]]UniqueFields, [[goString (print .Name "已存在")]])
 }
+[[- if .CanCreate]]
 
 func (m *Module) create[[.Upper]](c *gin.Context) (any, error) {
 	var req [[.Lower]]Request
@@ -486,12 +581,12 @@ func (m *Module) create[[.Upper]](c *gin.Context) (any, error) {
 [[- range .RelationFields]]
 [[- if .Nullable]]
 	if req.[[.GoName]] != nil {
-		if err := check[[$.Upper]]Relation(ctx, m.db, [[.RelVar]], [[goString .JSONName]], [[goString .Label]], int64(*req.[[.GoName]])); err != nil {
+		if err := check[[$.Upper]]Relation(ctx, m.db, [[.RelVar]], [[goString .JSONName]], [[goString .Label]], [[.RelValuePtr]]); err != nil {
 			return nil, err
 		}
 	}
 [[- else]]
-	if err := check[[$.Upper]]Relation(ctx, m.db, [[.RelVar]], [[goString .JSONName]], [[goString .Label]], int64(req.[[.GoName]])); err != nil {
+	if err := check[[$.Upper]]Relation(ctx, m.db, [[.RelVar]], [[goString .JSONName]], [[goString .Label]], [[.RelValue]]); err != nil {
 		return nil, err
 	}
 [[- end]]
@@ -575,6 +670,7 @@ func (m *Module) create[[.Upper]](c *gin.Context) (any, error) {
 	m.[[.Lower]]Committed(ctx, opCreate, key, &view)
 	return view, nil
 }
+[[- end]]
 
 func (m *Module) update[[.Upper]](c *gin.Context) (any, error) {
 	key, err := parse[[.Upper]]Key(c)
@@ -596,25 +692,27 @@ func (m *Module) update[[.Upper]](c *gin.Context) (any, error) {
 	}
 [[- end]]
 	ctx := c.Request.Context()
-[[- range .CheckDictFields]]
+[[- range .CheckDictFields]][[if not .CreateOnly]]
 	if err := checkDict(ctx, m.dict, [[goString .Dict]], [[goString .JSONName]], [[goString .Label]], req.[[.GoName]]); err != nil {
 		return nil, err
 	}
 [[- end]]
-[[- range .RelationFields]]
+[[- end]]
+[[- range .RelationFields]][[if not .CreateOnly]]
 [[- if .Nullable]]
 	if req.[[.GoName]] != nil {
-		if err := check[[$.Upper]]Relation(ctx, m.db, [[.RelVar]], [[goString .JSONName]], [[goString .Label]], int64(*req.[[.GoName]])); err != nil {
+		if err := check[[$.Upper]]Relation(ctx, m.db, [[.RelVar]], [[goString .JSONName]], [[goString .Label]], [[.RelValuePtr]]); err != nil {
 			return nil, err
 		}
 	}
 [[- else]]
-	if err := check[[$.Upper]]Relation(ctx, m.db, [[.RelVar]], [[goString .JSONName]], [[goString .Label]], int64(req.[[.GoName]])); err != nil {
+	if err := check[[$.Upper]]Relation(ctx, m.db, [[.RelVar]], [[goString .JSONName]], [[goString .Label]], [[.RelValue]]); err != nil {
 		return nil, err
 	}
 [[- end]]
 [[- end]]
-[[- range .UploadFields]]
+[[- end]]
+[[- range .UploadFields]][[if not .CreateOnly]]
 [[- if eq .Upload "files"]]
 	if msg := attachment.RefsProblem(req.[[.GoName]]); msg != "" {
 		return nil, fieldError([[goString .JSONName]], msg)
@@ -631,21 +729,26 @@ func (m *Module) update[[.Upper]](c *gin.Context) (any, error) {
 	}
 [[- end]]
 [[- end]]
-	sets := map[string]any{
-[[- range .UpdateFields]]
-		"[[.Column]]": [[.UpdateArg]],
 [[- end]]
-[[- if .UpdatedBy]]
-		"updated_by": actor.From(ctx).UserID(),
-[[- end]]
-[[- if .UpdatedAt]]
-		"updated_at": gorm.Expr("CURRENT_TIMESTAMP(6)"),
-[[- end]]
-	}
 	var view [[.Lower]]View
 	err = database.RunTx(ctx, m.db, func(tx *gorm.DB) error {
-		if _, err := m.load[[.Upper]](ctx, tx, key); err != nil {
+		old, err := m.load[[.Upper]](ctx, tx, key)
+		if err != nil {
 			return err
+		}
+		if err := m.[[.Lower]]BeforeUpdateHook(ctx, tx, old, &req); err != nil {
+			return err
+		}
+		sets := map[string]any{
+[[- range .UpdateFields]]
+			"[[.Column]]": [[.UpdateArg]],
+[[- end]]
+[[- if .UpdatedBy]]
+			"updated_by": actor.From(ctx).UserID(),
+[[- end]]
+[[- if .UpdatedAt]]
+			"updated_at": gorm.Expr("CURRENT_TIMESTAMP(6)"),
+[[- end]]
 		}
 [[- if .Version]]
 		// Optimistic locking (design doc 8.1): the row must still have the
@@ -682,7 +785,6 @@ func (m *Module) update[[.Upper]](c *gin.Context) (any, error) {
 			}
 		}
 [[- end]]
-		var err error
 		view, err = [[if .Dept]]m.reload[[else]]m.load[[end]][[.Upper]](ctx, tx, key)
 		if err != nil {
 			return err
@@ -695,6 +797,7 @@ func (m *Module) update[[.Upper]](c *gin.Context) (any, error) {
 	m.[[.Lower]]Committed(ctx, opUpdate, key, &view)
 	return view, nil
 }
+[[- if .CanDelete]]
 
 func (m *Module) delete[[.Upper]](c *gin.Context) (any, error) {
 	key, err := parse[[.Upper]]Key(c)
@@ -703,7 +806,11 @@ func (m *Module) delete[[.Upper]](c *gin.Context) (any, error) {
 	}
 	ctx := c.Request.Context()
 	err = database.RunTx(ctx, m.db, func(tx *gorm.DB) error {
-		if _, err := m.load[[.Upper]](ctx, tx, key); err != nil {
+		old, err := m.load[[.Upper]](ctx, tx, key)
+		if err != nil {
+			return err
+		}
+		if err := m.[[.Lower]]BeforeDeleteHook(ctx, tx, old); err != nil {
 			return err
 		}
 [[- if .SoftDelete]]
@@ -717,7 +824,7 @@ func (m *Module) delete[[.Upper]](c *gin.Context) (any, error) {
 			return err
 		}
 [[- end]]
-		err := tx.Exec(`DELETE FROM [[.Table]] WHERE [[.PK.Quoted]] = ?`, key).Error
+		err = tx.Exec(`DELETE FROM [[.Table]] WHERE [[.PK.Quoted]] = ?`, key).Error
 		if database.IsForeignKeyViolation(err) {
 			return httpx.Conflict("[[.Name]]已被引用，不能删除")
 		}
@@ -733,6 +840,7 @@ func (m *Module) delete[[.Upper]](c *gin.Context) (any, error) {
 	m.[[.Lower]]Committed(ctx, opDelete, key, nil)
 	return nil, nil
 }
+[[- end]]
 
 // [[.Lower]]Committer is implemented by [[.Lower]]AfterCommit in
 // [[.FileBase]]_ext.go; extension files written before the hook existed
@@ -754,6 +862,36 @@ func (m *Module) [[.Lower]]Committed(ctx context.Context, op string, key [[.KeyG
 		afterCommitFailed(ctx, [[goString .Resource]], op, key, err)
 	}
 }
+
+// [[.Lower]]BeforeUpdater is implemented by [[.Lower]]BeforeUpdate in
+// [[.FileBase]]_ext.go (optional, like [[.Lower]]Committer).
+type [[.Lower]]BeforeUpdater interface {
+	[[.Lower]]BeforeUpdate(ctx context.Context, tx *gorm.DB, old [[.Lower]]View, req *[[.Lower]]Request) error
+}
+
+// [[.Lower]]BeforeUpdateHook runs [[.Lower]]BeforeUpdate, if there is one.
+func (m *Module) [[.Lower]]BeforeUpdateHook(ctx context.Context, tx *gorm.DB, old [[.Lower]]View, req *[[.Lower]]Request) error {
+	if h, ok := any(m).([[.Lower]]BeforeUpdater); ok {
+		return h.[[.Lower]]BeforeUpdate(ctx, tx, old, req)
+	}
+	return nil
+}
+[[- if .CanDelete]]
+
+// [[.Lower]]BeforeDeleter is implemented by [[.Lower]]BeforeDelete in
+// [[.FileBase]]_ext.go (optional).
+type [[.Lower]]BeforeDeleter interface {
+	[[.Lower]]BeforeDelete(ctx context.Context, tx *gorm.DB, old [[.Lower]]View) error
+}
+
+// [[.Lower]]BeforeDeleteHook runs [[.Lower]]BeforeDelete, if there is one.
+func (m *Module) [[.Lower]]BeforeDeleteHook(ctx context.Context, tx *gorm.DB, old [[.Lower]]View) error {
+	if h, ok := any(m).([[.Lower]]BeforeDeleter); ok {
+		return h.[[.Lower]]BeforeDelete(ctx, tx, old)
+	}
+	return nil
+}
+[[- end]]
 [[- end]]
 
 func (m *Module) export[[.PluralUpper]](c *gin.Context) {
@@ -778,7 +916,7 @@ func (m *Module) export[[.PluralUpper]](c *gin.Context) {
 	}
 [[- end]]
 	var rows [][[.Lower]]Row
-	if err := q.Select([[.Lower]]Columns(q)).Order("[[.Order]]").Limit(maxRows).Scan(&rows).Error; err != nil {
+	if err := select[[.PluralUpper]](q).Order("[[.Order]]").Limit(maxRows).Scan(&rows).Error; err != nil {
 		httpx.Fail(c, err)
 		return
 	}
@@ -830,7 +968,7 @@ func [[.Lower]]Label(labels map[string]string, v string) string {
 [[- if .RelationFields]]
 
 // check[[.Upper]]Relation rejects an id that is not a visible row of target.
-func check[[.Upper]]Relation(ctx context.Context, db *gorm.DB, target lookup.Target, field, label string, id int64) error {
+func check[[.Upper]]Relation(ctx context.Context, db *gorm.DB, target lookup.Target, field, label string, id any) error {
 	ok, err := target.Exists(ctx, db, id)
 	if err != nil {
 		return err
@@ -840,4 +978,23 @@ func check[[.Upper]]Relation(ctx context.Context, db *gorm.DB, target lookup.Tar
 	}
 	return nil
 }
+[[- end]]
+
+[[- define "childUploads"]]
+[[- $c := .]]
+[[- range .Fields]][[if eq .Upload "image"]]
+[[- if .Nullable]]
+		if r.[[.GoName]] != nil {
+			if msg := attachment.URLProblem(*r.[[.GoName]]); msg != "" {
+				return fieldError(fmt.Sprintf("[[$c.JSONName]][%d].[[.JSONName]]", i), msg)
+			}
+		}
+[[- else]]
+		if r.[[.GoName]] != "" {
+			if msg := attachment.URLProblem(r.[[.GoName]]); msg != "" {
+				return fieldError(fmt.Sprintf("[[$c.JSONName]][%d].[[.JSONName]]", i), msg)
+			}
+		}
+[[- end]]
+[[- end]][[end]]
 [[- end]]

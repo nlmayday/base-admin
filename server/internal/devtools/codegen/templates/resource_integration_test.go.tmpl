@@ -79,6 +79,24 @@ func call[[.Upper]](t *testing.T, h http.Handler, method, path string, body any)
 	return rec.Code, env
 }
 
+[[- if and .RequiredRelations .CanCreate]]
+
+// [[.Lower]]RelationSample picks an existing row for a required relation
+// field; with none in the referenced table the test is skipped.
+func [[.Lower]]RelationSample(t *testing.T, h http.Handler, field string) string {
+	t.Helper()
+	status, env := call[[.Upper]](t, h, http.MethodGet, "/api/v1[[.URLPath]]/options/"+field, nil)
+	require.Equal(t, http.StatusOK, status, string(env.Data))
+	var options []struct {
+		ID string `json:"id"`
+	}
+	require.NoError(t, json.Unmarshal(env.Data, &options))
+	if len(options) == 0 {
+		t.Skip("the table " + field + " refers to has no rows: add one in the test to run it")
+	}
+	return options[0].ID
+}
+[[- end]]
 [[- if .ReadOnly]]
 
 func Test[[.Upper]]ReadOnly(t *testing.T) {
@@ -92,6 +110,24 @@ func Test[[.Upper]]ReadOnly(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, status)
 	status, _ = call[[.Upper]](t, h, http.MethodPost, base, map[string]any{})
 	assert.Equal(t, http.StatusNotFound, status, "a read-only module has no create route")
+}
+[[- else if not .CanCreate]]
+
+func Test[[.Upper]]NoCreate(t *testing.T) {
+	h := new[[.Upper]]TestServer(t)
+	const base = "/api/v1[[.URLPath]]"
+	status, env := call[[.Upper]](t, h, http.MethodGet, base+"?page=1&pageSize=10", nil)
+	require.Equal(t, http.StatusOK, status, string(env.Data))
+	status, _ = call[[.Upper]](t, h, http.MethodGet, base+"/export", nil)
+	assert.Equal(t, http.StatusOK, status)
+	status, _ = call[[.Upper]](t, h, http.MethodGet, base+"/[[.MissingKey]]", nil)
+	assert.Equal(t, http.StatusNotFound, status)
+	status, _ = call[[.Upper]](t, h, http.MethodPost, base, map[string]any{})
+	assert.Equal(t, http.StatusNotFound, status, "creating is turned off: no route")
+[[- if .CanDelete]]
+	status, _ = call[[.Upper]](t, h, http.MethodDelete, base+"/[[.MissingKey]]", nil)
+	assert.Equal(t, http.StatusNotFound, status)
+[[- end]]
 }
 [[- else]]
 
@@ -107,6 +143,10 @@ func Test[[.Upper]]CRUD(t *testing.T) {
 		"[[.JSONName]]": []any{map[string]any{"[[.Key.JSONName]]": [[.KeySample]][[range .Fields]], "[[.JSONName]]": [[.SampleValue]][[end]]}},
 [[- end]][[end]]
 	}
+
+[[- range .RequiredRelations]]
+	payload["[[.JSONName]]"] = [[$.Lower]]RelationSample(t, h, "[[.JSONName]]")
+[[- end]]
 
 	status, env := call[[.Upper]](t, h, http.MethodPost, base, payload)
 	require.Equal(t, http.StatusOK, status, string(env.Data))
@@ -154,13 +194,20 @@ func Test[[.Upper]]CRUD(t *testing.T) {
 	status, _ = call[[.Upper]](t, h, http.MethodGet, base+"/export", nil)
 	assert.Equal(t, http.StatusOK, status)
 
+[[- if .CanDelete]]
 	status, _ = call[[.Upper]](t, h, http.MethodDelete, base+"/"+key, nil)
 	require.Equal(t, http.StatusOK, status)
 	status, _ = call[[.Upper]](t, h, http.MethodGet, base+"/"+key, nil)
 	assert.Equal(t, http.StatusNotFound, status)
+[[- else]]
+	status, _ = call[[.Upper]](t, h, http.MethodDelete, base+"/"+key, nil)
+	assert.Equal(t, http.StatusNotFound, status, "deleting is turned off: no route")
+	status, _ = call[[.Upper]](t, h, http.MethodGet, base+"/"+key, nil)
+	assert.Equal(t, http.StatusOK, status)
+[[- end]]
 }
 [[- end]]
-[[- if and .OmittableDefaults (not .ReadOnly)]]
+[[- if and .OmittableDefaults .CanCreate]]
 
 func Test[[.Upper]]CreateWithDefaults(t *testing.T) {
 	h := new[[.Upper]]TestServer(t)
@@ -171,11 +218,14 @@ func Test[[.Upper]]CreateWithDefaults(t *testing.T) {
 		"[[.JSONName]]": [[.SampleValue]],
 [[- end]]
 	}
+[[- range .RequiredRelations]]
+	payload["[[.JSONName]]"] = [[$.Lower]]RelationSample(t, h, "[[.JSONName]]")
+[[- end]]
 	status, env := call[[.Upper]](t, h, http.MethodPost, "/api/v1[[.URLPath]]", payload)
 	require.Equal(t, http.StatusOK, status, string(env.Data))
 }
 [[- end]]
-[[- if .HasRequired]]
+[[- if and .HasRequired .CanCreate]]
 
 func Test[[.Upper]]Validation(t *testing.T) {
 	h := new[[.Upper]]TestServer(t)

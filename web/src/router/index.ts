@@ -25,7 +25,13 @@ import {
   createRouter
 } from "vue-router";
 import { ErrorCode, hasErrorCode } from "@/utils/http/errors";
-import { LOGIN_PATH, FORCE_PASSWORD_PATH, SERVER_ERROR_PATH } from "./paths";
+import {
+  LOGIN_PATH,
+  FORCE_PASSWORD_PATH,
+  SERVER_ERROR_PATH,
+  HOME_PATH,
+  WELCOME_PATH
+} from "./paths";
 
 /** 自动导入全部静态路由，无需再手动引入！匹配 src/router/modules 目录（任何嵌套级别）中具有 .ts 扩展名的所有文件，除了 remaining.ts 文件
  * 如何匹配所有文件请看：https://github.com/mrmlnc/fast-glob#basic-syntax
@@ -199,11 +205,40 @@ async function authGuard(
     openLink(to.name as string);
     return false;
   }
-  // 开启隐藏首页后在浏览器地址栏手动输入首页welcome路由则跳转到404页面
-  if (VITE_HIDE_HOME === "true" && to.fullPath === "/welcome") {
-    return { path: "/404-not-found" };
+  // 默认首页（「/」跳转到 VITE_HOME_PATH）不存在或无权限，及隐藏首页后手输 /welcome：
+  // 改去工作台（未隐藏时）或第一个菜单
+  const badHome =
+    to.path === HOME_PATH &&
+    HOME_PATH !== WELCOME_PATH &&
+    to.name === "PageNotFound";
+  const hiddenWelcome = VITE_HIDE_HOME === "true" && to.path === WELCOME_PATH;
+  if (badHome || hiddenWelcome) {
+    // 手输的 /welcome 先去默认首页（它不可用时再按 badHome 处理）
+    const home =
+      hiddenWelcome && HOME_PATH !== WELCOME_PATH ? HOME_PATH : fallbackHome();
+    if (home && home !== to.path) return { path: home, replace: true };
   }
   return true;
+}
+
+/** 第一个可见的菜单页（不含工作台） */
+function firstMenuPath(menus: RouteRecordRaw[]): string {
+  for (const m of menus) {
+    if (m.meta?.showLink === false) continue;
+    if (m.children?.length) {
+      const p = firstMenuPath(m.children);
+      if (p) return p;
+    } else if (m.path && m.path !== WELCOME_PATH && !isUrl(m.path)) {
+      return m.path;
+    }
+  }
+  return "";
+}
+
+/** 默认首页不可用时的去处：工作台（未隐藏时），否则第一个菜单 */
+function fallbackHome(): string {
+  if (VITE_HIDE_HOME !== "true") return WELCOME_PATH;
+  return firstMenuPath(usePermissionStoreHook().wholeMenus as RouteRecordRaw[]);
 }
 
 router.beforeEach(async (to, from) => {

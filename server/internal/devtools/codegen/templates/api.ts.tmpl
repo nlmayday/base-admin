@@ -49,6 +49,10 @@ export type [[.TSUpper]] = {
 [[- range .Children]]
   /** [[.Label]]：详情接口返回，列表不返回 */
   [[.JSONName]]?: [[$.TSUpper]][[.GoName]][];
+[[- if .Spec.ListKeys]]
+  /** 已填[[.Label]]的[[.Key.Label]]：列表接口返回 */
+  [[.JSONName]]Keys?: string[];
+[[- end]]
 [[- end]]
 };
 
@@ -92,17 +96,22 @@ export const [[.Lower]]Key = (row: [[.TSUpper]]): string => String(row.[[.PK.JSO
 export const get[[.TSUpper]] = (id: string) =>
   http.get<[[.TSUpper]]>(`[[.URLPath]]/${enc(id)}`);
 [[- if not .ReadOnly]]
+[[- if .CanCreate]]
 
 export const create[[.TSUpper]] = (data: [[.TSUpper]]Payload) =>
   http.post<[[.TSUpper]]>("[[.URLPath]]", data);
+[[- end]]
 
 export const update[[.TSUpper]] = (
   id: string,
   data: [[.TSUpper]][[if .Version]]Update[[end]]Payload
 ) => http.put<[[.TSUpper]]>(`[[.URLPath]]/${enc(id)}`, data);
 
+[[- if .CanDelete]]
+
 export const delete[[.TSUpper]] = (id: string) =>
   http.delete<null>(`[[.URLPath]]/${enc(id)}`);
+[[- end]]
 [[- end]]
 
 export const export[[.TSPluralUpper]] = (filter: [[.TSUpper]]Filter) =>
@@ -115,7 +124,10 @@ export const list[[$.TSUpper]][[.GoName]]Keys = () =>
 [[- end]][[end]]
 [[- range .OptionRelations]]
 
-/** [[.Label]]选项：按关键字搜索 [[.RelTable]] */
-export const [[.RelOptionsTS]] = (keyword: string) =>
-  http.get<LookupOption[]>("/[[$.URLName]]/options/[[.JSONName]]", { keyword });
+/** [[.Label]]选项：按[[if .RelNumber]]编号[[else]]关键字[[end]]搜索 [[.RelTable]]；deleted 为 true 时包含已删除的记录（搜索栏用） */
+export const [[.RelOptionsTS]] = (keyword: string, deleted = false) =>
+  http.get<LookupOption[]>("/[[$.URLName]]/options/[[.JSONName]]", {
+    keyword,
+    deleted: deleted ? 1 : undefined
+  });
 [[- end]]

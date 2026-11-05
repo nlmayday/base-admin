@@ -4,6 +4,7 @@ package lookup
 
 import (
 	"context"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -46,13 +47,37 @@ func TestTarget(t *testing.T) {
 	found, err := users.Options(ctx, db, "爱丽")
 	require.NoError(t, err)
 	require.Len(t, found, 1)
-	assert.EqualValues(t, alice, found[0].ID)
+	assert.Equal(t, strconv.FormatInt(alice, 10), found[0].ID)
 	found, err = users.Options(ctx, db, "_%")
 	require.NoError(t, err)
 	require.Len(t, found, 1, "LIKE wildcards are literal")
-	assert.EqualValues(t, bob, found[0].ID)
+	assert.Equal(t, strconv.FormatInt(bob, 10), found[0].ID)
 
-	ok, err := users.Exists(ctx, db, alice)
+	// A search form also lists soft-deleted rows, marked.
+	found, err = users.Find(ctx, db, Query{Keyword: "爱丽", Deleted: true})
+	require.NoError(t, err)
+	require.Len(t, found, 2)
+	assert.Equal(t, Option{ID: strconv.FormatInt(gone, 10), Label: "爱丽丝二号（已删除）", Deleted: true}, found[1])
+
+	// An integer label is matched exactly (its index), never with LIKE.
+	byID := Target{Table: "sys_users", Label: "id", NumberLabel: true, SoftDelete: true}
+	found, err = byID.Find(ctx, db, Query{Keyword: strconv.FormatInt(bob, 10)})
+	require.NoError(t, err)
+	assert.Equal(t, []Option{{ID: strconv.FormatInt(bob, 10), Label: strconv.FormatInt(bob, 10)}}, found)
+	found, err = byID.Find(ctx, db, Query{Keyword: "bob"})
+	require.NoError(t, err)
+	assert.Empty(t, found)
+
+	// A text key (a code).
+	byName := Target{Table: "sys_users", Key: "username", Label: "nickname", SoftDelete: true}
+	found, err = byName.Options(ctx, db, "鲍勃")
+	require.NoError(t, err)
+	assert.Equal(t, []Option{{ID: "bob", Label: "鲍勃_%"}}, found)
+	ok, err := byName.Exists(ctx, db, "bob")
+	require.NoError(t, err)
+	assert.True(t, ok)
+
+	ok, err = users.Exists(ctx, db, alice)
 	require.NoError(t, err)
 	assert.True(t, ok)
 	ok, err = users.Exists(ctx, db, gone)

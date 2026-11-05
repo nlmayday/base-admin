@@ -33,7 +33,9 @@ import { getDictOptions } from "@/api/system/dict";
 [[- end]]
 import {
   [[.Lower]]Key,
+[[- if .CanCreate]]
   create[[.TSUpper]],
+[[- end]]
 [[- if .Children]]
   get[[.TSUpper]],
 [[- end]]
@@ -185,8 +187,10 @@ async function submit(): Promise<void> {
 [[- else]]
       await update[[.TSUpper]]([[.Lower]]Key(props.row), toPayload());
 [[- end]]
+[[- if .CanCreate]]
     } else {
       await create[[.TSUpper]](toPayload());
+[[- end]]
     }
     message(isEdit.value ? "[[.Name]]已更新" : "[[.Name]]已创建", { type: "success" });
     visible.value = false;
@@ -225,14 +229,14 @@ async function submit(): Promise<void> {
         :error="fieldErrors.[[.JSONName]]"
       >
 [[- if eq .Widget "status"]]
-        <el-radio-group v-model="form.[[.JSONName]]">
+        <el-radio-group v-model="form.[[.JSONName]]"[[.DisabledAttr]]>
           <el-radio v-for="o in STATUS_OPTIONS" :key="o.value" :value="o.value">
             {{ o.label }}
           </el-radio>
         </el-radio-group>
 [[- else if eq .Widget "dept"]]
         <el-tree-select
-          v-model="form.[[.JSONName]]"
+          v-model="form.[[.JSONName]]"[[.DisabledAttr]]
           :data="deptTree"
           :props="DEPT_TREE_PROPS"
           node-key="id"
@@ -245,7 +249,7 @@ async function submit(): Promise<void> {
         />
 [[- else if eq .Widget "dict"]]
         <el-select
-          v-model="form.[[.JSONName]]"
+          v-model="form.[[.JSONName]]"[[.DisabledAttr]]
           placeholder="请选择[[.Label]]"
           clearable
           class="w-full"
@@ -259,7 +263,7 @@ async function submit(): Promise<void> {
         </el-select>
 [[- else if eq .Widget "relation"]]
         <ReRemoteSelect
-          v-model="form.[[.JSONName]]"
+          v-model="form.[[.JSONName]]"[[.DisabledAttr]]
           :fetch="[[.RelOptionsTS]]"
           :label="props.row?.[[.LabelJSON]]"
           placeholder="输入关键字搜索[[.Label]]"
@@ -270,12 +274,12 @@ async function submit(): Promise<void> {
 [[- else if eq .Widget "files"]]
         <ReFileUpload v-model="form.[[.JSONName]]" />
 [[- else if eq .Widget "number"]]
-        <el-input-number v-model="form.[[.JSONName]]"[[if .CreateOnly]] :disabled="isEdit"[[end]] class="w-[200px]!" />
+        <el-input-number v-model="form.[[.JSONName]]"[[.DisabledAttr]] class="w-[200px]!" />
 [[- else if eq .Widget "switch"]]
-        <el-switch v-model="form.[[.JSONName]]" />
+        <el-switch v-model="form.[[.JSONName]]"[[.DisabledAttr]] />
 [[- else if eq .Widget "datetime"]]
         <el-date-picker
-          v-model="form.[[.JSONName]]"
+          v-model="form.[[.JSONName]]"[[.DisabledAttr]]
           type="datetime"
           value-format="YYYY-MM-DDTHH:mm:ssZ"
           placeholder="选择时间"
@@ -284,7 +288,7 @@ async function submit(): Promise<void> {
         <ReUtcHint :value="form.[[.JSONName]]" />
 [[- else if eq .Widget "date"]]
         <el-date-picker
-          v-model="form.[[.JSONName]]"
+          v-model="form.[[.JSONName]]"[[.DisabledAttr]]
           type="date"
           value-format="YYYY-MM-DD"
           placeholder="选择日期"
@@ -299,8 +303,9 @@ async function submit(): Promise<void> {
           :disabled="isEdit"[[end]]
         />
 [[- else]]
-        <el-input v-model="form.[[.JSONName]]"[[if .MaxLen]] maxlength="[[.MaxLen]]"[[end]][[if .CreateOnly]] :disabled="isEdit"[[end]] />
+        <el-input v-model="form.[[.JSONName]]"[[if .MaxLen]] maxlength="[[.MaxLen]]"[[end]][[.DisabledAttr]] />
 [[- end]]
+[[- template "formHint" .]]
       </el-form-item>
 [[- end]]
 [[- range $c := .Children]]
@@ -326,9 +331,19 @@ async function submit(): Promise<void> {
             <el-date-picker v-model="row.[[.JSONName]]" type="date" value-format="YYYY-MM-DD" class="w-full!" />
 [[- else if eq .Widget "datetime"]]
             <el-date-picker v-model="row.[[.JSONName]]" type="datetime" value-format="YYYY-MM-DDTHH:mm:ssZ" class="w-full!" />
+[[- else if eq .Widget "image"]]
+[[- if .Nullable]]
+            <ReImageUpload
+              :model-value="row.[[.JSONName]] ?? ''"
+              @update:model-value="(v: string) => (row.[[.JSONName]] = v || null)"
+            />
+[[- else]]
+            <ReImageUpload v-model="row.[[.JSONName]]" />
+[[- end]]
 [[- else]]
             <el-input v-model="row.[[.JSONName]]"[[if .MaxLen]] maxlength="[[.MaxLen]]"[[end]] />
 [[- end]]
+[[- template "formHint" .]]
           </el-form-item>
 [[- end]]
         </el-tab-pane>
@@ -354,3 +369,11 @@ async function submit(): Promise<void> {
     </template>
   </el-dialog>
 </template>
+
+[[- define "formHint"]]
+[[- if .Hint]]
+        <div class="w-full text-xs leading-5 text-[var(--el-text-color-secondary)]">
+          [[.Hint]]
+        </div>
+[[- end]]
+[[- end]]

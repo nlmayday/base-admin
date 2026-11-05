@@ -1,7 +1,6 @@
 import { storeToRefs } from "pinia";
 import { getConfig } from "@/config";
 import { emitter } from "@/utils/mitt";
-import { getTopMenu } from "@/router/utils";
 import { useFullscreen } from "@vueuse/core";
 import type { routeMetaType } from "../types";
 import { useRouter, useRoute } from "vue-router";
@@ -90,8 +89,9 @@ export function useNav() {
     router.push(ACCOUNT_PATH);
   }
 
+  /** 回到默认首页（路由守卫解析 VITE_HOME_PATH） */
   function backTopMenu() {
-    router.push(getTopMenu()?.path);
+    router.push("/");
   }
 
   function onPanel() {

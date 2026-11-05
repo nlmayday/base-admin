@@ -43,6 +43,13 @@ type ChildSpec struct {
 	KeyRequiredColumn string `json:"keyRequiredColumn,omitempty"`
 	// Label names the section in the form, e.g. 多语言.
 	Label string `json:"label,omitempty"`
+	// Fields customizes the child's columns like the main fields: label,
+	// form (false leaves a nullable or defaulted column out), upload
+	// ("image" for an image URL column) and hint.
+	Fields []FieldOption `json:"fields,omitempty"`
+	// ListKeys adds a list column with the keys whose rows are filled in
+	// (已填语言).
+	ListKeys bool `json:"listKeys,omitempty"`
 }
 
 // childData is the template model of a child table.
@@ -71,6 +78,8 @@ type childData struct {
 	KeyFromTable bool
 	KeySelect    string
 	KeyOrder     string
+	// ViewConvert: the row and the view have the same fields.
+	ViewConvert bool
 }
 
 // childStandard are columns a child table keeps without the form.
@@ -158,6 +167,10 @@ func buildChild(ct ChildTable, mainTable string, pk *Field) (*childData, error) 
 	default:
 		return nil, fmt.Errorf("子表 %s 的主键须为 (%s, %s)，或一个自增 / bigint 的 id", t.Name, s.ForeignKey, s.KeyColumn)
 	}
+	opts, err := childOptions(t, s)
+	if err != nil {
+		return nil, err
+	}
 	for _, c := range t.Columns {
 		switch {
 		case c.Name == s.ForeignKey || c.Name == s.KeyColumn || c.Name == d.IDColumn || slices.Contains(childStandard, c.Name):
@@ -167,10 +180,19 @@ func buildChild(ct ChildTable, mainTable string, pk *Field) (*childData, error) 
 		}
 		ti, ok := mapType(c)
 		f := newField(c, ti)
+		o, hasOpt := opts[c.Name]
 		switch {
 		case !ok || !f.Writable:
 			if !c.Nullable && !c.HasDefault() {
 				return nil, fmt.Errorf("子表 %s 的列 %s 不能为空且没有默认值，生成器无法填写", t.Name, c.Name)
+			}
+			if hasOpt {
+				return nil, fmt.Errorf("子表 %s 的列 %s 不能编辑，不能配置", t.Name, c.Name)
+			}
+			continue
+		case hasOpt && o.Form != nil && !*o.Form:
+			if !c.Nullable && !c.HasDefault() {
+				return nil, fmt.Errorf("子表 %s 的列 %s 不能为空且没有默认值，必须在表单中", t.Name, c.Name)
 			}
 			continue
 		}
@@ -179,6 +201,15 @@ func buildChild(ct ChildTable, mainTable string, pk *Field) (*childData, error) 
 			f.Widget = "input" // roles and pickers of the main form do not apply here
 		}
 		f.Binding = strings.TrimPrefix(strings.TrimPrefix(f.Binding, "required"), ",")
+		if hasOpt {
+			if l := strings.TrimSpace(o.Label); l != "" {
+				f.Label, f.Doc = l, structTagValue(l)
+			}
+			f.Hint = strings.TrimSpace(o.Hint)
+			if o.Upload != nil && *o.Upload == UploadImage {
+				f.Upload, f.Widget = UploadImage, "image"
+			}
+		}
 		d.Fields = append(d.Fields, f)
 	}
 	if len(d.Fields) == 0 {
@@ -324,4 +355,37 @@ func (c *childData) KeySourceLabel() string {
 		return "表 " + c.Spec.KeyTable
 	}
 	return "字典 " + c.Spec.KeyDict
+}
+
+// childOptions checks the field options of child spec s against table t;
+// the error is Chinese.
+func childOptions(t Table, s ChildSpec) (map[string]FieldOption, error) {
+	out := map[string]FieldOption{}
+	for _, o := range s.Fields {
+		c, ok := t.Column(o.Column)
+		name := strings.TrimSpace(o.Label)
+		switch {
+		case !ok || o.Column == s.ForeignKey || o.Column == s.KeyColumn:
+			return nil, fmt.Errorf("子表 %s：字段 %s 不存在或不能配置", t.Name, o.Column)
+		case out[o.Column].Column != "":
+			return nil, fmt.Errorf("子表 %s：字段 %s 重复配置", t.Name, o.Column)
+		case o.List != nil || o.Export != nil || o.Search != "" || o.Dict != nil || o.Relation != nil || o.RefTable != "" || o.CreateOnly:
+			return nil, fmt.Errorf("子表 %s：字段 %s 只能配置 label、form、upload、hint", t.Name, o.Column)
+		case o.Label != "" && (name == "" || utf8.RuneCountInString(name) > 20 || strings.ContainsAny(name, unsafeText)):
+			return nil, fmt.Errorf("子表 %s：字段 %s 的中文名最长 20 个字符，且不能包含引号、反斜杠、尖括号或花括号", t.Name, o.Column)
+		case hintProblem(o.Column, o.Hint) != "":
+			return nil, fmt.Errorf("子表 %s：%s", t.Name, hintProblem(o.Column, o.Hint))
+		case o.Upload != nil && *o.Upload != "" && *o.Upload != UploadImage:
+			return nil, fmt.Errorf("子表 %s：字段 %s 只支持图片上传（upload 为 image）", t.Name, o.Column)
+		case o.Upload != nil && *o.Upload == UploadImage && !imageColumn(c):
+			return nil, fmt.Errorf("子表 %s：字段 %s 上传图片需要长度不小于 255 的文本字段", t.Name, o.Column)
+		}
+		out[o.Column] = o
+	}
+	return out, nil
+}
+
+// imageColumn reports a text column long enough for an image URL.
+func imageColumn(c Column) bool {
+	return c.UDT == "text" || (c.UDT == "varchar" && (c.MaxLength == 0 || c.MaxLength >= 255))
 }

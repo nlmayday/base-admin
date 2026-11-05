@@ -231,8 +231,10 @@ func TestTableSpecRoundTrip(t *testing.T) {
 func TestLoadDeclaredRefsAndChildren(t *testing.T) {
 	db := openDB(t)
 	ddl := []string{
-		`CREATE TABLE lg_user (id bigint PRIMARY KEY, nickname varchar(32) NOT NULL)`,
-		`CREATE TABLE lg_item (id bigint PRIMARY KEY, code varchar(32) NOT NULL, owner bigint)`,
+		`CREATE TABLE lg_user (id bigint PRIMARY KEY, short_id integer NOT NULL, nickname varchar(32) NOT NULL)`,
+		`CREATE TABLE lg_family (family varchar(32) PRIMARY KEY, name varchar(32) NOT NULL)`,
+		`CREATE TABLE lg_counter (id bigint PRIMARY KEY, n integer NOT NULL)`,
+		`CREATE TABLE lg_item (id bigint PRIMARY KEY, code varchar(32) NOT NULL, owner bigint, family varchar(32))`,
 		`CREATE TABLE lg_item_i18n (item_id bigint NOT NULL, lang varchar(8) NOT NULL, name varchar(64) NOT NULL,
 			PRIMARY KEY (item_id, lang))`,
 	}
@@ -256,11 +258,26 @@ func TestLoadDeclaredRefsAndChildren(t *testing.T) {
 	src := fileByPath(t, res, "/item.go").Content
 	assert.Contains(t, src, "LEFT JOIN lg_user r1 ON r1.id = t.owner")
 	assert.Contains(t, src, "saveItemI18n")
+	assert.Equal(t, []string{"short_id"}, owner.Ref.NumberLabels)
+
+	// A text code (game_type → lg_family.family) and an integer label.
+	short := "short_id"
+	tb, err = Load(context.Background(), db, "lg_item", Spec{Fields: []FieldOption{
+		{Column: "family", RefTable: "lg_family", RefKey: "family"},
+		{Column: "owner", RefTable: "lg_user", Relation: &short},
+	}})
+	require.NoError(t, err)
+	family, _ := tb.Column("family")
+	require.NotNil(t, family.Ref)
+	assert.Equal(t, &Ref{Table: "lg_family", Key: "family", Labels: []string{"name"}}, family.Ref)
 
 	for _, bad := range []FieldOption{
 		{Column: "owner", RefTable: "lg_nope"},
 		{Column: "code", RefTable: "lg_user"},
 		{Column: "owner", RefTable: "lg_user", RefKey: "nickname"},
+		{Column: "family", RefTable: "lg_user"},
+		{Column: "owner", RefTable: "lg_family", RefKey: "family"},
+		{Column: "owner", RefTable: "lg_counter"},
 	} {
 		_, err := Load(context.Background(), db, "lg_item", Spec{Fields: []FieldOption{bad}})
 		assert.ErrorIs(t, err, ErrSpec, "%+v", bad)

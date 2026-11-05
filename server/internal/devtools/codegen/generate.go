@@ -210,6 +210,20 @@ type tmplData struct {
 	// OmittableDefaults: a NOT NULL column with a default may be omitted
 	// on create (tested with the required fields only).
 	OmittableDefaults bool
+	// CanCreate and CanDelete: the module creates and deletes rows (not
+	// read-only, no Spec.NoCreate or NoDelete).
+	CanCreate, CanDelete bool
+	// HasJoins: the select joins tables to show names (departments,
+	// relations); counts go without them.
+	HasJoins bool
+	// ViewConvert: the row and the view have the same fields, so the view
+	// is a conversion of the row (staticcheck S1016).
+	ViewConvert bool
+	// ListKeys: some child shows its filled keys in the list.
+	ListKeys bool
+	// RequiredRelations are relation fields the create must set (the test
+	// picks an existing row).
+	RequiredRelations []*Field
 
 	DeptJoin, Scope, NeedsActor, NeedsUID, HasRequired, TableHasTime bool
 	StatusSearch, DeptSearch, TextSearch, StatusInTable              bool
@@ -366,6 +380,18 @@ func (d *tmplData) derive() {
 	if d.Sort != nil {
 		d.Order = "t.sort, t." + d.PK.Quoted + " DESC"
 	}
+	if terms, _ := parseOrderBy(d.OrderBy); len(terms) > 0 {
+		parts := make([]string, len(terms))
+		for i, o := range terms {
+			parts[i] = "t." + quoteIdent(o.Column)
+			if o.Desc {
+				parts[i] += " DESC"
+			}
+		}
+		d.Order = strings.Join(parts, ", ")
+	}
+	d.CanCreate = !d.ReadOnly && !d.NoCreate
+	d.CanDelete = !d.ReadOnly && !d.NoDelete
 	d.deriveUploads()
 	for _, f := range d.Fields {
 		d.FormDateTime = d.FormDateTime || (f.Writable && f.Widget == "datetime")
@@ -377,6 +403,7 @@ func (d *tmplData) derive() {
 		}
 	}
 	d.deriveRelations()
+	d.HasJoins = d.DeptJoin || len(d.Relations) > 0
 	d.deriveColumns()
 	d.deriveDefaults()
 	d.deriveInsert()
@@ -399,6 +426,22 @@ func (d *tmplData) derive() {
 		}
 	}
 	d.deriveDisplay()
+	d.ViewConvert = len(d.Children) == 0
+	for _, f := range d.Fields {
+		d.ViewConvert = d.ViewConvert && f.ViewType == f.RowType && f.ViewExpr == "r."+f.GoName
+	}
+	for _, c := range d.Children {
+		d.ListKeys = d.ListKeys || c.Spec.ListKeys
+		c.ViewConvert = c.Key.ViewType == c.Key.RowType
+		for _, f := range c.Fields {
+			c.ViewConvert = c.ViewConvert && f.ViewType == f.RowType && f.ViewExpr == "r."+f.GoName
+		}
+		for _, f := range c.Fields {
+			if f.Upload == UploadImage {
+				d.NeedsAttachment, d.FormImage = true, true
+			}
+		}
+	}
 	for _, f := range d.Fields {
 		if f.Dict == "" {
 			continue
@@ -431,6 +474,11 @@ func (d *tmplData) derive() {
 		}
 	}
 	d.IndexDictImport, d.FormDictImport = dictImports(d.IndexDicts), dictImports(d.DictFields)
+	for _, c := range d.Children {
+		if c.Spec.ListKeys && !c.KeyFromTable && !strings.Contains(d.IndexDictImport, "useDict") {
+			d.IndexDictImport = strings.TrimPrefix(d.IndexDictImport+", useDict", ", ")
+		}
+	}
 }
 
 // dictSource is the TypeScript call that yields f's options; comment
@@ -664,7 +712,7 @@ func (d *tmplData) deriveLists() {
 		}
 		f.InTable = tableColumn(f) && shown < 8
 		if f.listOverride != nil {
-			f.InTable = *f.listOverride && (f.Role != roleID || f.CreateOnly)
+			f.InTable = *f.listOverride // the key too: an order or round number
 		}
 		if f.InTable {
 			shown++
@@ -701,7 +749,7 @@ func exported(f *Field, key bool) bool {
 }
 
 func tableColumn(f *Field) bool {
-	if f.CreateOnly {
+	if f.Role == roleID && f.CreateOnly {
 		return true // a typed-in key names the row
 	}
 	switch f.Role {
@@ -745,12 +793,18 @@ func (d *tmplData) deriveDisplay() {
 
 func (d *tmplData) permissions() []perm.Def {
 	out := make([]perm.Def, 0, 5)
-	actions := []struct{ action, verb string }{
-		{"view", "查看"}, {"create", "新增"}, {"update", "编辑"}, {"delete", "删除"}, {"export", "导出"},
+	type action struct{ action, verb string }
+	actions := []action{{"view", "查看"}}
+	if d.CanCreate {
+		actions = append(actions, action{"create", "新增"})
 	}
-	if d.ReadOnly {
-		actions = []struct{ action, verb string }{{"view", "查看"}, {"export", "导出"}}
+	if !d.ReadOnly {
+		actions = append(actions, action{"update", "编辑"})
 	}
+	if d.CanDelete {
+		actions = append(actions, action{"delete", "删除"})
+	}
+	actions = append(actions, action{"export", "导出"})
 	for _, a := range actions {
 		out = append(out, perm.Def{Code: d.PermPrefix + ":" + a.action, Name: a.verb + d.Name, Menu: d.MenuCode})
 	}
@@ -788,11 +842,22 @@ func (d *tmplData) notes() []string {
 	switch {
 	case d.ReadOnly:
 		notes = append(notes, "只读模块：只生成列表、详情和导出，没有表单和新增、编辑、删除接口")
+
 	case d.KeyGenerated:
 		notes = append(notes, "主键 "+d.PK.Column+" 由程序生成：新增时调用模块的 NextID（Deps.NewID，默认 ids.Next 雪花 ID）；"+
 			"与其他服务共用该表时，在 modules.go 里传入同一个 ID 生成器")
 	case d.KeyInput:
 		notes = append(notes, "主键 "+d.PK.Column+" 在新增时填写，之后不能修改")
+	}
+	if !d.ReadOnly && (!d.CanCreate || !d.CanDelete) {
+		var off []string
+		if !d.CanCreate {
+			off = append(off, "新增")
+		}
+		if !d.CanDelete {
+			off = append(off, "删除")
+		}
+		notes = append(notes, "已关闭"+strings.Join(off, "和")+"：不生成对应的接口、权限码和按钮")
 	}
 	for _, c := range d.Children {
 		notes = append(notes, fmt.Sprintf("子表 %s 随%s一起编辑：表单按%s的每一项列出一行，全部为空的行不保存；详情接口返回 %s",

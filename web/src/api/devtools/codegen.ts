@@ -45,8 +45,14 @@ export type CodegenFieldInfo = {
   relation: string;
   /** 外键指向的表 */
   relationTable: string;
-  /** 可作为显示列的文本列 */
+  /** 可作为显示列的列（文本列在前，整数列如玩家短 ID 在后，按编号精确搜索） */
   relationLabels: string[];
+  /** 可设为「仅新增时填写」（在表单中、不是主键和上传字段） */
+  createOnlyAllowed: boolean;
+  /** 新增时填写，编辑时只读 */
+  createOnly: boolean;
+  /** 表单输入框下方的说明文字（最长 200 字） */
+  hint: string;
 };
 
 export type UploadMode = "" | "image" | "files";
@@ -69,9 +75,13 @@ export type CodegenFieldOption = {
   dict?: string;
   upload?: UploadMode;
   relation?: string;
-  /** 不依赖外键声明的关联：本列（bigint）指向 refTable.refKey（默认 id），relation 为显示列 */
+  /** 不依赖外键声明的关联：本列（bigint 或文本）指向 refTable.refKey（默认 id），relation 为显示列 */
   refTable?: string;
   refKey?: string;
+  /** 新增时填写，编辑时只读 */
+  createOnly?: boolean;
+  /** 表单输入框下方的说明文字 */
+  hint?: string;
 };
 
 /** 主键来源：auto 数据库自增，generated 程序生成（雪花 ID），input 新增时填写；空为按列自动判断 */
@@ -97,6 +107,10 @@ export type CodegenChild = {
   keyRequiredColumn?: string;
   /** 表单中的分组标题，如 多语言 */
   label?: string;
+  /** 子表字段配置：label 中文名、form 是否在表单、upload（image 图片上传）、hint 说明 */
+  fields?: CodegenFieldOption[];
+  /** 列表增加「已填…」列，显示已填写的键 */
+  listKeys?: boolean;
 };
 
 export type CodegenTable = {
@@ -125,6 +139,12 @@ export type CodegenRequest = {
   /** false：deleted_at 作为普通时间字段（如注销时间），列出全部行，删除即删除行 */
   softDelete?: boolean;
   children?: CodegenChild[];
+  /** 列表和导出的排序，如 created_at DESC, id DESC；空为 sort 后主键倒序 */
+  orderBy?: string;
+  /** 不生成新增（接口、权限码、按钮） */
+  noCreate?: boolean;
+  /** 不生成删除（接口、权限码、按钮），如只能下架不能删 */
+  noDelete?: boolean;
 };
 
 export type CodegenGenerateResult = {

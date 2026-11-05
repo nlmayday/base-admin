@@ -80,5 +80,15 @@ func (m *Module) Routes(r *module.Router) {
 	// codegen:routes — 代码生成器在此行之上加入新资源
 }
 
+var _ module.RoleProvider = (*Module)(nil)
+
+// Roles declares the roles this module needs with their default
+// permissions (codes or prefixes such as "[[.Pkg]]:*"); startup creates a
+// missing role once and later grants only permission codes that are new,
+// so administrators keep what they changed. For example:
+//
+//	{Code: "[[.Pkg]]_ops", Name: "运营", DataScope: "all", Permissions: []string{"[[.Pkg]]:*"}}
+func (m *Module) Roles() []module.RoleDef { return nil }
+
 // Seed implements module.Module; the module has no seed data.
 func (m *Module) Seed(context.Context, *gorm.DB) error { return nil }

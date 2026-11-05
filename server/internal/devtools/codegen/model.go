@@ -41,6 +41,15 @@ type Spec struct {
 	// account was closed): every row is listed and delete removes the row.
 	// nil or true: a nullable deleted_at hides deleted rows.
 	SoftDelete *bool `json:"softDelete,omitempty"`
+	// OrderBy is the order of the list and the export: columns of the table
+	// with ASC or DESC, such as "created_at DESC, id DESC" (index them for
+	// large tables). Default: sort (when the table has it), then the key
+	// descending.
+	OrderBy string `json:"orderBy,omitempty"`
+	// NoCreate and NoDelete leave out create and delete (route, permission
+	// and button), e.g. games are taken off sale, never deleted.
+	NoCreate bool `json:"noCreate,omitempty"`
+	NoDelete bool `json:"noDelete,omitempty"`
 }
 
 // plainColumns are the columns that lose their standard role under s: a
@@ -107,6 +116,12 @@ func (s Spec) Problems() []Problem {
 	}
 	if s.ReadOnly && len(s.Children) > 0 {
 		add("children", "只读模块不能编辑子表")
+	}
+	if s.ReadOnly && (s.NoCreate || s.NoDelete) {
+		add("readOnly", "只读模块本来就没有新增和删除，不用再设 noCreate、noDelete")
+	}
+	if _, err := parseOrderBy(s.OrderBy); err != nil {
+		add("orderBy", err.Error())
 	}
 	return out
 }
@@ -201,7 +216,12 @@ type Field struct {
 	RelAlias, RelTable, RelLabelSQL, RelVar string
 	RelKey                                  string
 	RelTarget, RelOptionsTS                 string
-	LabelColumn, LabelGo, LabelJSON         string
+	// RelValue and RelValuePtr are the chosen key as lookup.Target takes it
+	// (of a NOT NULL and a nullable request field); RelNumber: the label is
+	// an integer column, matched exactly.
+	RelValue, RelValuePtr           string
+	RelNumber                       bool
+	LabelColumn, LabelGo, LabelJSON string
 	// DictSource is the TypeScript expression that yields the options
 	// (useDict or staticDict).
 	DictSource string
@@ -262,8 +282,11 @@ type Field struct {
 	canWrite, mustWrite bool
 	listOverride        *bool
 	exportOverride      *bool
-	// CreateOnly: set on create, never changed (a typed-in primary key).
+	// CreateOnly: set on create, never changed (a typed-in primary key,
+	// or FieldOption.CreateOnly).
 	CreateOnly bool
+	// Hint is the help text under the form input (FieldOption.Hint).
+	Hint string
 }
 
 func newField(c Column, ti typeInfo) *Field {
@@ -436,7 +459,7 @@ func (f *Field) tsText() {
 
 // sample returns a Go literal accepted by the request binding.
 func (f *Field) sample() string {
-	if f.CreateOnly && f.Kind == kindString {
+	if f.Role == roleID && f.Kind == kindString {
 		return goString("k1") // a path segment in the test
 	}
 	switch f.Upload {
@@ -470,4 +493,59 @@ func (f *Field) sample() string {
 		return `"127.0.0.1"`
 	}
 	return "1"
+}
+
+// DisabledAttr disables the form input of a create-only field when
+// editing.
+func (f *Field) DisabledAttr() string {
+	if f.CreateOnly {
+		return ` :disabled="isEdit"`
+	}
+	return ""
+}
+
+// orderTerm is one column of Spec.OrderBy.
+type orderTerm struct {
+	Column string
+	Desc   bool
+}
+
+// parseOrderBy reads "created_at DESC, id"; the error is Chinese.
+func parseOrderBy(s string) ([]orderTerm, error) {
+	if strings.TrimSpace(s) == "" {
+		return nil, nil
+	}
+	var out []orderTerm
+	for _, part := range strings.Split(s, ",") {
+		words := strings.Fields(part)
+		if len(words) == 0 || len(words) > 2 || !identifierPattern.MatchString(words[0]) {
+			return nil, errors.New("orderBy 须为「列名 [ASC|DESC]」，多个用逗号分隔，如 created_at DESC, id DESC")
+		}
+		t := orderTerm{Column: words[0]}
+		if len(words) == 2 {
+			switch strings.ToUpper(words[1]) {
+			case "ASC":
+			case "DESC":
+				t.Desc = true
+			default:
+				return nil, errors.New("orderBy 的排序方向只能是 ASC 或 DESC")
+			}
+		}
+		if slices.ContainsFunc(out, func(o orderTerm) bool { return o.Column == t.Column }) {
+			return nil, errors.New("orderBy 中列 " + t.Column + " 重复")
+		}
+		out = append(out, t)
+	}
+	if len(out) > 5 {
+		return nil, errors.New("orderBy 最多 5 列")
+	}
+	return out, nil
+}
+
+// KeyOfView is the Go expression of key field f of view v as the key type.
+func (f *Field) KeyOfView(v string) string {
+	if f.Kind == kindID {
+		return "int64(" + v + "." + f.GoName + ")"
+	}
+	return v + "." + f.GoName
 }

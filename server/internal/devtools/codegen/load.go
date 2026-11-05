@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
 	"gorm.io/gorm"
 )
@@ -62,15 +63,15 @@ func Load(ctx context.Context, db *gorm.DB, table string, spec Spec) (Table, err
 }
 
 // declareRef makes column o.Column a relation to o.RefTable, as a foreign
-// key would: the key column (o.RefKey, default id) must be a bigint, and so
-// must the column.
+// key would: the key column (o.RefKey, default id) and the column are both
+// bigints or both text (a code such as a game family).
 func declareRef(ctx context.Context, db *gorm.DB, t Table, o FieldOption) (Table, error) {
 	i := slices.IndexFunc(t.Columns, func(c Column) bool { return c.Name == o.Column })
 	switch {
 	case i < 0:
 		return t, specError("字段 %s 不存在", o.Column)
-	case t.Columns[i].UDT != "int8":
-		return t, specError("字段 %s 声明关联时须为 bigint", o.Column)
+	case t.Columns[i].UDT != "int8" && !textUDT(t.Columns[i].UDT):
+		return t, specError("字段 %s 声明关联时须为 bigint 或文本", o.Column)
 	case !identifierPattern.MatchString(o.RefTable) || (o.RefKey != "" && !identifierPattern.MatchString(o.RefKey)):
 		return t, specError("字段 %s 的关联表或关联列名无效", o.Column)
 	}
@@ -86,8 +87,13 @@ func declareRef(ctx context.Context, db *gorm.DB, t Table, o FieldOption) (Table
 		key = "id"
 	}
 	kc, ok := ref.Column(key)
-	if !ok || kc.UDT != "int8" {
-		return t, specError("关联表 %s 没有 bigint 列 %s", o.RefTable, key)
+	switch {
+	case !ok:
+		return t, specError("关联表 %s 没有列 %s", o.RefTable, key)
+	case t.Columns[i].UDT == "int8" && kc.UDT != "int8":
+		return t, specError("关联表 %s 的 %s 不是 bigint，与字段 %s 的类型不一致", o.RefTable, key, o.Column)
+	case textUDT(t.Columns[i].UDT) && !textUDT(kc.UDT):
+		return t, specError("关联表 %s 的 %s 不是文本，与字段 %s 的类型不一致", o.RefTable, key, o.Column)
 	}
 	cols := make([]refColumn, len(ref.Columns))
 	for j, c := range ref.Columns {
@@ -97,18 +103,24 @@ func declareRef(ctx context.Context, db *gorm.DB, t Table, o FieldOption) (Table
 	if key != "id" {
 		r.Key = key
 	}
-	r.Labels = slices.DeleteFunc(r.Labels, func(l string) bool { return l == key })
-	if len(r.Labels) == 0 {
-		return t, specError("关联表 %s 没有可显示的文本列", o.RefTable)
-	}
-	if o.Relation != nil && *o.Relation != "" && !slices.Contains(r.Labels, *o.Relation) {
-		return t, specError("关联表 %s 没有文本列 %s", o.RefTable, *o.Relation)
+	notKey := func(l string) bool { return l == key }
+	r.Labels = slices.DeleteFunc(r.Labels, notKey)
+	r.NumberLabels = slices.DeleteFunc(r.NumberLabels, notKey)
+	switch {
+	case len(r.Labels) == 0 && len(r.NumberLabels) == 0:
+		return t, specError("关联表 %s 没有可显示的列", o.RefTable)
+	case o.Relation != nil && *o.Relation != "" && !slices.Contains(r.Labels, *o.Relation) && !slices.Contains(r.NumberLabels, *o.Relation):
+		return t, specError("关联表 %s 没有可显示的列 %s（文本或整数列）", o.RefTable, *o.Relation)
+	case len(r.Labels) == 0 && (o.Relation == nil || *o.Relation == ""):
+		return t, specError("关联表 %s 没有文本列：用 relation 指定显示的整数列（%s）", o.RefTable, strings.Join(r.NumberLabels, "、"))
 	}
 	cols2 := slices.Clone(t.Columns)
 	cols2[i].Ref = r
 	t.Columns = cols2
 	return t, nil
 }
+
+func textUDT(udt string) bool { return udt == "varchar" || udt == "text" || udt == "bpchar" }
 
 // checkKeyTable verifies that the key table of a child has the named
 // columns and that the filter is a valid condition there.

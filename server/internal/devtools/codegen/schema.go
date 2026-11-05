@@ -41,12 +41,15 @@ type Column struct {
 type Ref struct {
 	Table string
 	// Labels are the text columns that can name a row, best first
-	// (name, title, ...); empty when there is none.
-	Labels []string
+	// (name, title, ...); empty when there is none. NumberLabels are the
+	// integer columns that can (a player's short id); they are never the
+	// default and are searched by exact value.
+	Labels       []string
+	NumberLabels []string
 	// SoftDelete: the table has deleted_at, so deleted rows are hidden.
 	SoftDelete bool
-	// Key is the referenced bigint column ("" for id); set by declared
-	// relations (FieldOption.RefTable).
+	// Key is the referenced column ("" for id): a bigint, or a text key
+	// of declared relations (FieldOption.RefTable).
 	Key string
 }
 
@@ -161,7 +164,10 @@ func refOf(table string, cols []refColumn) *Ref {
 		switch {
 		case c.Name == "deleted_at":
 			ref.SoftDelete = true
-		case (c.UDT != "varchar" && c.UDT != "text" && c.UDT != "bpchar") || sensitiveColumn(c.Name):
+		case sensitiveColumn(c.Name):
+		case (c.UDT == "int2" || c.UDT == "int4" || c.UDT == "int8") && c.Name != "id":
+			ref.NumberLabels = append(ref.NumberLabels, c.Name)
+		case c.UDT != "varchar" && c.UDT != "text" && c.UDT != "bpchar":
 		case slices.Contains(labelPreference, c.Name):
 			preferred = append(preferred, c.Name)
 		default:

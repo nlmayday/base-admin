@@ -34,8 +34,9 @@ func TestDescribeDefaults(t *testing.T) {
 	assert.Equal(t, []string{SearchNone}, by["version"].SearchModes)
 	_, deleted := by["deleted_at"]
 	assert.False(t, deleted, "soft delete column is not listed")
-	_, id := by["id"]
-	assert.False(t, id, "the primary key is not listed")
+	assert.False(t, by["id"].List, "the key is listed on the page, off by default")
+	assert.True(t, by["id"].FormLocked)
+	assert.Equal(t, []string{SearchNone, SearchEq}, by["id"].SearchModes, "an order number can be searched")
 }
 
 func TestFieldProblems(t *testing.T) {

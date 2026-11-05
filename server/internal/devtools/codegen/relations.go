@@ -14,10 +14,10 @@ import (
 // relationLabels lists the label columns f can show, or nothing when f
 // is not a relation candidate.
 func relationLabels(f *Field) []string {
-	if f.ref == nil || f.Kind != kindID || f.Role != "" || !f.canWrite {
+	if f.ref == nil || (f.Kind != kindID && f.Kind != kindString) || f.Role != "" || !f.canWrite {
 		return []string{}
 	}
-	return slices.Clone(f.ref.Labels)
+	return slices.Concat(f.ref.Labels, f.ref.NumberLabels)
 }
 
 // relationTable is the table f refers to, or "".
@@ -32,8 +32,8 @@ func relationTable(f *Field) string {
 // label column.
 func (d *tmplData) defaultRelations() {
 	for _, f := range d.Fields {
-		if labels := relationLabels(f); len(labels) > 0 {
-			f.Relation = labels[0]
+		if len(relationLabels(f)) > 0 && len(f.ref.Labels) > 0 {
+			f.Relation = f.ref.Labels[0] // integer columns only when chosen
 		}
 	}
 }
@@ -54,9 +54,23 @@ func (d *tmplData) deriveRelations() {
 		f.RelKey = quoteIdent(f.ref.key())
 		f.LabelColumn, f.LabelGo, f.LabelJSON = label, goExported(label), lowerCamel(label)
 		f.RelVar = d.Lower + f.GoName + "Lookup"
-		f.RelTarget = fmt.Sprintf("lookup.Target{Table: %q, Label: %q, SoftDelete: %v}", f.ref.Table, f.Relation, f.ref.SoftDelete)
+		f.RelNumber = slices.Contains(f.ref.NumberLabels, f.Relation)
+		target := []string{fmt.Sprintf("Table: %q", f.ref.Table)}
 		if k := f.ref.key(); k != "id" {
-			f.RelTarget = fmt.Sprintf("lookup.Target{Table: %q, Key: %q, Label: %q, SoftDelete: %v}", f.ref.Table, k, f.Relation, f.ref.SoftDelete)
+			target = append(target, fmt.Sprintf("Key: %q", k))
+		}
+		target = append(target, fmt.Sprintf("Label: %q", f.Relation))
+		if f.RelNumber {
+			target = append(target, "NumberLabel: true")
+		}
+		target = append(target, fmt.Sprintf("SoftDelete: %v", f.ref.SoftDelete))
+		f.RelTarget = "lookup.Target{" + strings.Join(target, ", ") + "}"
+		f.RelValue, f.RelValuePtr = "req."+f.GoName, "*req."+f.GoName
+		if f.Kind == kindID {
+			f.RelValue, f.RelValuePtr = "int64(req."+f.GoName+")", "int64(*req."+f.GoName+")"
+		}
+		if f.Kind == kindString && (f.Search == SearchLike || f.Search == SearchRange) {
+			f.Search = SearchEq // picked from the select
 		}
 		f.RelOptionsTS = "list" + d.TSUpper + upperCamel(strings.ReplaceAll(f.Column, "_", "-")) + "Options"
 		f.Widget, f.RuleTrig = "relation", "change"
@@ -70,18 +84,26 @@ func (d *tmplData) deriveRelations() {
 		if f.Writable {
 			d.RelationFields = append(d.RelationFields, f)
 		}
-		if f.mustWrite {
-			d.skipped = append(d.skipped, fmt.Sprintf("关联字段 %s 必填：生成的集成测试需把样例 ID 改成 %s 中已存在的记录", f.Column, f.ref.Table))
+		if f.mustWrite && f.Writable {
+			d.RequiredRelations = append(d.RequiredRelations, f)
+			d.skipped = append(d.skipped, fmt.Sprintf("关联字段 %s 必填：生成的集成测试从 %s 取一条已有记录，表为空时跳过", f.Column, f.ref.Table))
 		}
 	}
 }
 
-// relationSearch turns the ID search of relation fields into the select.
+// relationSearch turns the ID (or code) search of relation fields into
+// the select.
 func (d *tmplData) relationSearch() {
 	for _, f := range d.Relations {
-		if f.SearchWidget == "id" {
-			f.SearchWidget = "relation"
-			d.RelationSearch = append(d.RelationSearch, f)
+		switch {
+		case f.SearchWidget == "id":
+		case f.Kind == kindString && f.SearchWidget == "text":
+			// The select clears to null.
+			f.FilterTS, f.FilterInit = []string{f.JSONName + "?: string | null;"}, []string{f.JSONName + ": null"}
+		default:
+			continue
 		}
+		f.SearchWidget = "relation"
+		d.RelationSearch = append(d.RelationSearch, f)
 	}
 }

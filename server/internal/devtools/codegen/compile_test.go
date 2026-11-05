@@ -53,6 +53,18 @@ func TestGeneratedGoCompiles(t *testing.T) {
 		{dealTable(), Spec{Module: "crmrel", Resource: "deal", Name: "商机", NewModule: true,
 			Fields: []FieldOption{{Column: "customer_id", Search: SearchEq}}}},
 	}
+	// Items 9–24: text-keyed relation, create-only, no delete; no create;
+	// integer label, key in the list, order; child options and list keys.
+	cases = append(cases, []struct {
+		table Table
+		spec  Spec
+	}{
+		{gameTable(), gameSpec()},
+		{levelTable(), Spec{Module: "lvl", Resource: "level", Name: "等级", NewModule: true, NoCreate: true, NoDelete: true}},
+		{ledgerTable(), ledgerSpec()},
+		{bannerWithOptions(), Spec{Module: "bnr", Resource: "banner", Name: "横幅", NewModule: true,
+			Children: bannerWithOptions().Children[0].Spec.asList()}},
+	}...)
 	for _, c := range keyShapes("") {
 		cases = append(cases, struct {
 			table Table
