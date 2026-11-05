@@ -52,5 +52,5 @@ var menuDefs = []menu.Def{
 	page("iam.role", "角色管理", "/system/role", "system/role/index", "iam:role:view", "ri:admin-line", 2),
 	page("iam.dept", "部门管理", "/system/dept", "system/dept/index", "iam:dept:view", "ri:git-branch-line", 3),
 	page("iam.position", "岗位管理", "/system/position", "system/position/index", "iam:position:view", "ri:briefcase-line", 4),
-	page("iam.menu", "菜单管理", "/system/menu", "system/menu/index", "iam:menu:view", "ep:menu", 5),
+	page("iam.menu", "菜单管理", "/system/menu", "system/menu/index", "iam:menu:view", "ri:layout-grid-line", 5),
 }
