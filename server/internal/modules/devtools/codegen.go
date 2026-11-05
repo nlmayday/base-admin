@@ -38,21 +38,22 @@ func (m *Module) codegenTables(c *gin.Context) (any, error) {
 }
 
 type previewRequest struct {
-	Table       string                `json:"table" binding:"required,max=63" doc:"数据表名"`
-	Module      string                `json:"module" binding:"required,max=31" doc:"模块名（Go 包名），如 sales"`
-	Resource    string                `json:"resource" binding:"required,max=40" doc:"资源名（kebab-case），如 order"`
-	Name        string                `json:"name" binding:"required,max=20" doc:"中文名，如 订单"`
-	ModuleTitle string                `json:"moduleTitle" binding:"max=20" doc:"新模块的目录菜单标题"`
-	MenuTitle   string                `json:"menuTitle,omitempty" binding:"max=20" doc:"页面菜单标题，默认「中文名 + 管理」"`
-	MenuSort    *int                  `json:"menuSort,omitempty" doc:"页面菜单排序（0–9999，小的在前），默认 1"`
-	Fields      []codegen.FieldOption `json:"fields" binding:"max=200,dive" doc:"字段配置（中文名、列表、表单、搜索方式）；不传的字段使用默认值"`
-	KeyMode     string                `json:"keyMode,omitempty" binding:"omitempty,oneof=auto generated input" doc:"主键来源：auto 数据库自增，generated 程序生成（雪花 ID），input 新增时填写；不传按列自动判断"`
-	ReadOnly    bool                  `json:"readOnly,omitempty" doc:"只读：只生成列表、详情和导出"`
-	SoftDelete  *bool                 `json:"softDelete,omitempty" doc:"false 时 deleted_at 作为普通时间字段（如注销时间）：列出全部行，删除即删除行；不传或 true 时按软删除处理"`
-	Children    []codegen.ChildSpec   `json:"children,omitempty" binding:"max=5" doc:"随主表一起编辑的子表（如多语言表），每个键（如语言）一行"`
-	OrderBy     string                `json:"orderBy,omitempty" binding:"max=200" doc:"列表和导出的排序，如 created_at DESC, id DESC；不传为 sort 后主键倒序"`
-	NoCreate    bool                  `json:"noCreate,omitempty" doc:"不生成新增（接口、权限码、按钮）"`
-	NoDelete    bool                  `json:"noDelete,omitempty" doc:"不生成删除（接口、权限码、按钮），如只能下架不能删"`
+	Table         string                `json:"table" binding:"required,max=63" doc:"数据表名"`
+	Module        string                `json:"module" binding:"required,max=31" doc:"模块名（Go 包名），如 sales"`
+	Resource      string                `json:"resource" binding:"required,max=40" doc:"资源名（kebab-case），如 order"`
+	Name          string                `json:"name" binding:"required,max=20" doc:"中文名，如 订单"`
+	ModuleTitle   string                `json:"moduleTitle" binding:"max=20" doc:"新模块的目录菜单标题"`
+	MenuTitle     string                `json:"menuTitle,omitempty" binding:"max=20" doc:"页面菜单标题，默认「中文名 + 管理」"`
+	MenuSort      *int                  `json:"menuSort,omitempty" doc:"页面菜单排序（0–9999，小的在前），默认 1"`
+	Fields        []codegen.FieldOption `json:"fields" binding:"max=200,dive" doc:"字段配置（中文名、列表、表单、搜索方式）；不传的字段使用默认值"`
+	KeyMode       string                `json:"keyMode,omitempty" binding:"omitempty,oneof=auto generated input" doc:"主键来源：auto 数据库自增，generated 程序生成（雪花 ID），input 新增时填写；不传按列自动判断"`
+	ReadOnly      bool                  `json:"readOnly,omitempty" doc:"只读：只生成列表、详情和导出"`
+	SoftDelete    *bool                 `json:"softDelete,omitempty" doc:"false 时 deleted_at 作为普通时间字段（如注销时间）：列出全部行，删除即删除行；不传或 true 时按软删除处理"`
+	Children      []codegen.ChildSpec   `json:"children,omitempty" binding:"max=5" doc:"随主表一起编辑的子表（如多语言表），每个键（如语言）一行"`
+	OrderBy       string                `json:"orderBy,omitempty" binding:"max=200" doc:"列表和导出的排序，如 created_at DESC, id DESC；不传为 sort 后主键倒序"`
+	NoCreate      bool                  `json:"noCreate,omitempty" doc:"不生成新增（接口、权限码、按钮）"`
+	NoDelete      bool                  `json:"noDelete,omitempty" doc:"不生成删除（接口、权限码、按钮），如只能下架不能删"`
+	DeleteConfirm string                `json:"deleteConfirm,omitempty" binding:"max=200" doc:"删除确认文案，{列名} 换成该行的值，如 删除分类「{code}」？"`
 }
 
 type generateRequest struct {
@@ -278,7 +279,7 @@ func (m *Module) prepare(c *gin.Context, req previewRequest) (codegen.Result, co
 	spec := codegen.Spec{Module: req.Module, Resource: req.Resource, Name: req.Name, ModuleTitle: req.ModuleTitle,
 		MenuTitle: req.MenuTitle, MenuSort: req.MenuSort,
 		Fields: req.Fields, KeyMode: req.KeyMode, ReadOnly: req.ReadOnly, SoftDelete: req.SoftDelete, Children: req.Children,
-		OrderBy: req.OrderBy, NoCreate: req.NoCreate, NoDelete: req.NoDelete}
+		OrderBy: req.OrderBy, NoCreate: req.NoCreate, NoDelete: req.NoDelete, DeleteConfirm: req.DeleteConfirm}
 	if problems := spec.Problems(); len(problems) > 0 {
 		return codegen.Result{}, spec, problemsError(problems)
 	}
@@ -493,6 +494,9 @@ func cliCommand(req previewRequest) string {
 	}
 	if req.OrderBy != "" {
 		parts = append(parts, "-order-by "+shellQuote(req.OrderBy))
+	}
+	if req.DeleteConfirm != "" {
+		parts = append(parts, "-delete-confirm "+shellQuote(req.DeleteConfirm))
 	}
 	if req.NoCreate {
 		parts = append(parts, "-no-create")

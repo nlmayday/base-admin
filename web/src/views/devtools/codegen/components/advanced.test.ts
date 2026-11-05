@@ -72,6 +72,37 @@ describe("childSpecs", () => {
     ]);
     expect(spec.listKeys).toBe(true);
     expect(spec.listKeysLabel).toBe("已填语言");
+    const [more] = childSpecs([
+      {
+        ...base,
+        requiredText: "name， title",
+        hint: " 英文必填 ",
+        columns: [
+          { key: "en", field: "name", label: "名称(英文)" },
+          { key: "", field: "x", label: "y" }
+        ],
+        fieldRows: [
+          {
+            column: "name",
+            label: "",
+            image: false,
+            hidden: false,
+            hint: "",
+            search: true,
+            placeholder: "名称"
+          }
+        ]
+      }
+    ]);
+    expect(more.requiredFields).toEqual(["name", "title"]);
+    expect(more.hint).toBe("英文必填");
+    expect(more.columns).toEqual([
+      { key: "en", field: "name", label: "名称(英文)" }
+    ]);
+    expect(more.fields).toEqual([
+      { column: "name", search: "like", placeholder: "名称" }
+    ]);
+    expect(childModels([more])[0].requiredText).toBe("name, title");
     expect(spec.fields).toEqual([
       {
         column: "image_url",
@@ -88,9 +119,19 @@ describe("childSpecs", () => {
         label: "图片",
         image: true,
         hidden: false,
-        hint: "不填用主图"
+        hint: "不填用主图",
+        search: false,
+        placeholder: ""
       },
-      { column: "badge_text", label: "", image: false, hidden: true, hint: "" }
+      {
+        column: "badge_text",
+        label: "",
+        image: false,
+        hidden: true,
+        hint: "",
+        search: false,
+        placeholder: ""
+      }
     ]);
   });
 

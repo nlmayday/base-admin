@@ -59,6 +59,32 @@ type FieldOption struct {
 	// Hint is a help text shown under the form input (up to 200
 	// characters), for what does not fit in the label.
 	Hint string `json:"hint,omitempty"`
+	// Format displays the list column: FormatCoins, FormatSigned,
+	// FormatCents, FormatPermille, FormatMilli (with Suffix) or FormatImage;
+	// the export keeps the stored value.
+	Format string `json:"format,omitempty"`
+	Suffix string `json:"suffix,omitempty"`
+	// RelationExtra is a second column of the referenced table shown with
+	// the relation's label, e.g. short_id with nickname.
+	RelationExtra string `json:"relationExtra,omitempty"`
+	// SearchDefault fills the search field initially and on reset.
+	SearchDefault *Scalar `json:"searchDefault,omitempty"`
+	// Default is the value of the field in a new form.
+	Default *Scalar `json:"default,omitempty"`
+	// Min, Max and Step bound a number input (and the request).
+	Min  *float64 `json:"min,omitempty"`
+	Max  *float64 `json:"max,omitempty"`
+	Step *float64 `json:"step,omitempty"`
+	// Placeholder is shown in the empty form input.
+	Placeholder string `json:"placeholder,omitempty"`
+	// ShowWhen shows the form field only for some values of another one.
+	ShowWhen *ShowWhen `json:"showWhen,omitempty"`
+	// Required false lets a NOT NULL text column be saved empty.
+	Required *bool `json:"required,omitempty"`
+	// ShowIf "feature:<name>" shows the field (list and form) only while
+	// the module's featureEnabled(ctx, name) is true; while it is off an
+	// update keeps the stored value.
+	ShowIf string `json:"showIf,omitempty"`
 }
 
 // maxHint bounds FieldOption.Hint.
@@ -117,6 +143,11 @@ type FieldInfo struct {
 	CreateOnlyAllowed bool   `json:"createOnlyAllowed"`
 	CreateOnly        bool   `json:"createOnly"`
 	Hint              string `json:"hint"`
+	// TextRequired: a required text column, which may be allowed to be
+	// empty (FieldOption.Required false).
+	TextRequired bool `json:"textRequired"`
+	// Numeric: a number column (formats, min, max, step).
+	Numeric bool `json:"numeric"`
 }
 
 // kindNames are the column types shown on the codegen page.
@@ -147,6 +178,7 @@ func Describe(t Table) ([]FieldInfo, error) {
 			Upload: f.Upload, UploadModes: uploadModes(f),
 			Relation: f.Relation, RelationTable: relationTable(f), RelationLabels: relationLabels(f),
 			CreateOnlyAllowed: f.canWrite && f.Role != roleID && f.Upload == "",
+			TextRequired:      f.Kind == kindString && f.Required && f.Role != roleID, Numeric: f.Kind.numeric() || f.Kind == kindDecimal,
 		})
 	}
 	return out, nil
@@ -287,6 +319,9 @@ func (s Spec) FieldProblems(t Table) []Problem {
 		if msg := hintProblem(o.Column, o.Hint); msg != "" {
 			add(msg)
 		}
+		for _, msg := range extrasProblems(s, byColumn, f, o) {
+			add(msg)
+		}
 		if o.CreateOnly {
 			switch {
 			case f.Role == roleID:
@@ -309,6 +344,9 @@ func (s Spec) FieldProblems(t Table) []Problem {
 				add("字段 " + o.Column + " 使用上传后不能搜索")
 			}
 		}
+	}
+	if msg := deleteConfirmProblem(s.DeleteConfirm, byColumn); msg != "" {
+		out = append(out, Problem{Field: "deleteConfirm", Message: msg})
 	}
 	if terms, err := parseOrderBy(s.OrderBy); err == nil {
 		for _, o := range terms {
@@ -367,6 +405,7 @@ func (d *tmplData) applyOptions() {
 			f.Search = o.Search
 		}
 		f.Hint = strings.TrimSpace(o.Hint)
+		f.applyExtras(o)
 		if o.CreateOnly && f.Role != roleID {
 			f.CreateOnly = true
 		}
@@ -523,11 +562,16 @@ func (f *Field) rangeCode(col, param string) {
 	case kindDate, kindTime:
 		lo, hi, loParam, hiParam = f.GoName+"Start", f.GoName+"End", param+"Start", param+"End"
 		f.SearchWidget = "dateRange"
-		f.FilterGo = fmt.Sprintf("%s string `form:%q binding:\"omitempty,datetime=2006-01-02\" doc:\"%s起始日期\"`\n\t%s string `form:%q binding:\"omitempty,datetime=2006-01-02\" doc:\"%s截止日期（含）\"`",
-			lo, loParam, f.Doc, hi, hiParam, f.Doc)
-		// Dates in the server's time zone; the end day is included.
-		f.FilterApply = fmt.Sprintf("if d, err := time.ParseInLocation(time.DateOnly, f.%s, time.Local); err == nil {\n\t\tq = q.Where(%q, d)\n\t}\n"+
-			"\tif d, err := time.ParseInLocation(time.DateOnly, f.%s, time.Local); err == nil {\n\t\tq = q.Where(%q, d.AddDate(0, 0, 1))\n\t}",
+		utc := ""
+		if f.Kind == kindTime {
+			utc = "（UTC）"
+		}
+		f.FilterGo = fmt.Sprintf("%s string `form:%q binding:\"omitempty,datetime=2006-01-02\" doc:\"%s起始日期%s\"`\n\t%s string `form:%q binding:\"omitempty,datetime=2006-01-02\" doc:\"%s截止日期（含）%s\"`",
+			lo, loParam, f.Doc, utc, hi, hiParam, f.Doc, utc)
+		// UTC days, like the times of the API and the export; the end day
+		// is included.
+		f.FilterApply = fmt.Sprintf("if d, err := time.ParseInLocation(time.DateOnly, f.%s, time.UTC); err == nil {\n\t\tq = q.Where(%q, d)\n\t}\n"+
+			"\tif d, err := time.ParseInLocation(time.DateOnly, f.%s, time.UTC); err == nil {\n\t\tq = q.Where(%q, d.AddDate(0, 0, 1))\n\t}",
 			lo, col+" >= ?", hi, col+" < ?")
 		f.FilterTS = []string{loParam + "?: string;", hiParam + "?: string;"}
 		f.FilterQuery = []string{loParam + "=2026-01-01", hiParam + "=2026-12-31"}

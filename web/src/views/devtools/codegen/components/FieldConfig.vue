@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { computed } from "vue";
+import FieldExtras from "./FieldExtras.vue";
 import {
   OPTIONS_FROM_COMMENT,
   SEARCH_MODE_LABELS,
@@ -14,6 +16,7 @@ defineProps<{ loading: boolean; dicts: CodegenDict[] }>();
 /** 当前配置；父组件持有默认值，用于计算差异和「恢复默认」 */
 const fields = defineModel<CodegenFieldInfo[]>({ required: true });
 const emit = defineEmits<{ (e: "reset"): void }>();
+const columnNames = computed(() => fields.value.map(f => f.column));
 
 const UNSAFE_RE = /["'`\\<>{}]/;
 
@@ -104,6 +107,11 @@ function labelError(f: CodegenFieldInfo): string {
       size="small"
       max-height="420"
     >
+      <el-table-column type="expand" width="36">
+        <template #default="{ $index }">
+          <FieldExtras v-model="fields[$index]" :columns="columnNames" />
+        </template>
+      </el-table-column>
       <el-table-column label="字段" min-width="170">
         <template #default="{ row }">
           <div class="leading-tight">

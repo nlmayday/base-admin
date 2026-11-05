@@ -31,6 +31,9 @@ type Target struct {
 	SoftDelete  bool
 	Key         string
 	NumberLabel bool
+	// Extra is a second column shown after the label ("100001（玩家甲）")
+	// and searched with LIKE.
+	Extra string
 }
 
 func (t Target) key() string {
@@ -47,6 +50,8 @@ type Option struct {
 	Label string `json:"label"`
 	// Deleted: a soft-deleted row, listed only for Query.Deleted.
 	Deleted bool `json:"deleted,omitempty"`
+	// Extra is Target.Extra's value, already in Label.
+	Extra string `json:"-"`
 }
 
 // Query narrows Find.
@@ -60,7 +65,8 @@ type Query struct {
 }
 
 func (t Target) query(ctx context.Context, db *gorm.DB, deleted bool) (*gorm.DB, error) {
-	if !identPattern.MatchString(t.Table) || !identPattern.MatchString(t.Label) || !identPattern.MatchString(t.key()) {
+	if !identPattern.MatchString(t.Table) || !identPattern.MatchString(t.Label) || !identPattern.MatchString(t.key()) ||
+		(t.Extra != "" && !identPattern.MatchString(t.Extra)) {
 		return nil, fmt.Errorf("lookup: invalid target %s.%s", t.Table, t.Label)
 	}
 	q := db.WithContext(ctx).Table(`"` + t.Table + `" AS x`)
@@ -84,25 +90,37 @@ func (t Target) Find(ctx context.Context, db *gorm.DB, q Query) ([]Option, error
 	}
 	col := `x."` + t.Label + `"`
 	label := `COALESCE(` + database.CastText(db, col) + `, '')`
+	extra := `COALESCE(` + database.CastText(db, `x."`+t.Extra+`"`) + `, '')`
 	out := []Option{}
 	if kw := strings.TrimSpace(q.Keyword); kw != "" {
-		if t.NumberLabel {
-			n, err := strconv.ParseInt(kw, 10, 64)
-			if err != nil {
-				return out, nil // not a number: nothing matches
-			}
-			tx = tx.Where(col+" = ?", n)
-		} else {
-			tx = tx.Where(`LOWER(`+label+`) LIKE LOWER(?)`, "%"+escapeLike(kw)+"%")
+		like := "%" + escapeLike(kw) + "%"
+		n, numErr := strconv.ParseInt(kw, 10, 64)
+		switch {
+		case t.NumberLabel && numErr == nil:
+			tx = tx.Where(col+" = ?", n) // the label's index
+		case t.NumberLabel && t.Extra != "":
+			tx = tx.Where(`LOWER(`+extra+`) LIKE LOWER(?)`, like)
+		case t.NumberLabel:
+			return out, nil // not a number: nothing matches
+		case t.Extra != "":
+			tx = tx.Where(`(LOWER(`+label+`) LIKE LOWER(?) OR LOWER(`+extra+`) LIKE LOWER(?))`, like, like)
+		default:
+			tx = tx.Where(`LOWER(`+label+`) LIKE LOWER(?)`, like)
 		}
 	}
 	sel := database.CastText(db, "x."+t.key()) + " AS id, " + label + " AS label"
+	if t.Extra != "" {
+		sel += ", " + extra + " AS extra"
+	}
 	if t.SoftDelete && q.Deleted {
 		sel += ", x.deleted_at IS NOT NULL AS deleted"
 	}
 	// The raw column orders by its index where there is one.
 	err = tx.Select(sel).Order(col + ", x." + t.key()).Limit(MaxOptions).Scan(&out).Error
 	for i := range out {
+		if out[i].Extra != "" {
+			out[i].Label += "（" + out[i].Extra + "）"
+		}
 		if out[i].Deleted {
 			out[i].Label += "（已删除）"
 		}

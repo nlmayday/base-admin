@@ -68,6 +68,15 @@ func TestTarget(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, found)
 
+	// A second column: shown after the label, searched too.
+	withName := Target{Table: "sys_users", Label: "id", NumberLabel: true, Extra: "nickname", SoftDelete: true}
+	found, err = withName.Find(ctx, db, Query{Keyword: "鲍勃"})
+	require.NoError(t, err)
+	assert.Equal(t, []Option{{ID: strconv.FormatInt(bob, 10), Label: strconv.FormatInt(bob, 10) + "（鲍勃_%）", Extra: "鲍勃_%"}}, found)
+	found, err = withName.Find(ctx, db, Query{Keyword: strconv.FormatInt(alice, 10)})
+	require.NoError(t, err)
+	require.Len(t, found, 1, "a number still matches the label exactly")
+
 	// A text key (a code).
 	byName := Target{Table: "sys_users", Key: "username", Label: "nickname", SoftDelete: true}
 	found, err = byName.Options(ctx, db, "鲍勃")

@@ -26,6 +26,7 @@ import CodeBlock from "../shared/CodeBlock.vue";
 import PreviewPanel from "./components/PreviewPanel.vue";
 import FieldConfig from "./components/FieldConfig.vue";
 import AdvancedOptions from "./components/AdvancedOptions.vue";
+import { fieldExtras } from "./components/extras";
 import {
   childModels,
   childSpecs,
@@ -72,7 +73,8 @@ const emptyAdvanced = (): AdvancedModel => ({
   children: [],
   orderBy: "",
   noCreate: false,
-  noDelete: false
+  noDelete: false,
+  deleteConfirm: ""
 });
 const advanced = ref<AdvancedModel>(emptyAdvanced());
 /** 字段配置：defaults 是后端给出的默认值，fields 是当前编辑的副本 */
@@ -169,7 +171,8 @@ async function restoreLast(): Promise<void> {
     children: childModels(req.children ?? []),
     orderBy: req.orderBy ?? "",
     noCreate: req.noCreate ?? false,
-    noDelete: req.noDelete ?? false
+    noDelete: req.noDelete ?? false,
+    deleteConfirm: req.deleteConfirm ?? ""
   };
   result.value = last.result;
 }
@@ -230,6 +233,7 @@ function fieldOptions(): CodegenFieldOption[] {
     if ((f.relation ?? "") !== d.relation) o.relation = f.relation ?? "";
     if (f.createOnly && f.form) o.createOnly = true;
     if (f.hint?.trim()) o.hint = f.hint.trim();
+    Object.assign(o, fieldExtras(f));
     if (Object.keys(o).length > 1) out.push(o);
   }
   return out;
@@ -282,7 +286,10 @@ function request(): CodegenRequest {
     ...(children.length ? { children } : {}),
     ...(a.orderBy.trim() ? { orderBy: a.orderBy.trim() } : {}),
     ...(!a.readOnly && a.noCreate ? { noCreate: true } : {}),
-    ...(!a.readOnly && a.noDelete ? { noDelete: true } : {})
+    ...(!a.readOnly && a.noDelete ? { noDelete: true } : {}),
+    ...(!a.readOnly && !a.noDelete && a.deleteConfirm.trim()
+      ? { deleteConfirm: a.deleteConfirm.trim() }
+      : {})
   };
 }
 
@@ -306,6 +313,7 @@ const command = computed(() => {
   if (req.orderBy) parts.push(`-order-by '${req.orderBy}'`);
   if (req.noCreate) parts.push("-no-create");
   if (req.noDelete) parts.push("-no-delete");
+  if (req.deleteConfirm) parts.push(`-delete-confirm '${req.deleteConfirm}'`);
   if (req.children?.length) {
     parts.push(`-children '${JSON.stringify(req.children)}'`);
   }

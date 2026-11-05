@@ -92,6 +92,15 @@ function addChildField(c: ChildModel): void {
           不生成对应的接口、权限码和按钮，如游戏只能下架不能删
         </span>
       </el-form-item>
+      <el-form-item v-if="!model.readOnly && !model.noDelete" label="删除确认">
+        <el-input
+          v-model="model.deleteConfirm"
+          placeholder="如 删除分类「{code}」？大厅将不再显示该 Tab。"
+          maxlength="100"
+          class="w-[360px]!"
+        />
+        <span class="hint">{列名} 换成该行的值；不填为默认文案</span>
+      </el-form-item>
       <el-form-item label="默认排序">
         <el-input
           v-model="model.orderBy"
@@ -289,6 +298,13 @@ function addChildField(c: ChildModel): void {
                 />
                 <el-checkbox v-model="f.image">图片上传</el-checkbox>
                 <el-checkbox v-model="f.hidden">不在表单</el-checkbox>
+                <el-checkbox v-model="f.search">列表模糊搜索</el-checkbox>
+                <el-input
+                  v-model="f.placeholder"
+                  placeholder="占位提示"
+                  maxlength="50"
+                  class="w-[120px]!"
+                />
                 <el-input
                   v-model="f.hint"
                   placeholder="表单说明，如 不填时用主图"
@@ -301,6 +317,53 @@ function addChildField(c: ChildModel): void {
               </div>
               <el-button link type="primary" @click="addChildField(c)">
                 配置子表字段
+              </el-button>
+              <div class="mt-1 flex flex-wrap items-center gap-1">
+                <el-input
+                  v-model="c.requiredText"
+                  placeholder="必填字段，如 name, title（逗号分隔）"
+                  class="w-[260px]!"
+                />
+                <el-input
+                  v-model="c.hint"
+                  placeholder="表单说明，如 英文必填"
+                  maxlength="200"
+                  class="w-[220px]!"
+                />
+              </div>
+              <div
+                v-for="(col, k) in c.columns ?? []"
+                :key="`col-${k}`"
+                class="mt-1 flex flex-wrap items-center gap-1"
+              >
+                <el-input
+                  v-model="col.key"
+                  placeholder="键，如 en"
+                  class="w-[90px]!"
+                />
+                <el-input
+                  v-model="col.field"
+                  placeholder="字段，如 name"
+                  class="w-[120px]!"
+                />
+                <el-input
+                  v-model="col.label"
+                  placeholder="列名，如 名称(英文)"
+                  maxlength="20"
+                  class="w-[140px]!"
+                />
+                <el-button link type="danger" @click="c.columns?.splice(k, 1)">
+                  删除
+                </el-button>
+              </div>
+              <el-button
+                link
+                type="primary"
+                @click="
+                  (c.columns ??= []).push({ key: '', field: '', label: '' })
+                "
+              >
+                添加列表列（某个键的字段）
               </el-button>
             </div>
           </div>

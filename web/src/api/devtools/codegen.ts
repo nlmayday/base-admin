@@ -53,6 +53,37 @@ export type CodegenFieldInfo = {
   createOnly: boolean;
   /** 表单输入框下方的说明文字（最长 200 字） */
   hint: string;
+  /** 必填的文本字段（可设 required: false 允许保存空值） */
+  textRequired: boolean;
+  /** 数字字段（可用数字格式、min / max / step） */
+  numeric: boolean;
+} & CodegenFieldExtras;
+
+/** 列表显示格式：千分位、带符号千分位、美分、千分比、千分之一、图片缩略图 */
+export type CodegenFormat =
+  "" | "coins" | "signed" | "cents" | "permille" | "milli" | "image";
+
+/** 字段的显示、表单和搜索细节（不传为默认） */
+export type CodegenFieldExtras = {
+  format?: CodegenFormat;
+  /** milli 格式的后缀，如 x */
+  suffix?: string;
+  /** 关联表的第二个显示列，如 short_id 之外再显示 nickname */
+  relationExtra?: string;
+  /** 搜索项的默认值（重置也回到它） */
+  searchDefault?: string;
+  /** 新增表单中的默认值 */
+  default?: string;
+  min?: number;
+  max?: number;
+  step?: number;
+  placeholder?: string;
+  /** 另一个字段取这些值时才显示 */
+  showWhen?: { column: string; in: string[] };
+  /** false：必填的文本字段允许保存空值 */
+  required?: boolean;
+  /** feature:<开关名>：开关关闭时列表和表单都不显示 */
+  showIf?: string;
 };
 
 export type UploadMode = "" | "image" | "files";
@@ -82,7 +113,7 @@ export type CodegenFieldOption = {
   createOnly?: boolean;
   /** 表单输入框下方的说明文字 */
   hint?: string;
-};
+} & CodegenFieldExtras;
 
 /** 主键来源：auto 数据库自增，generated 程序生成（雪花 ID），input 新增时填写；空为按列自动判断 */
 export type CodegenKeyMode = "" | "auto" | "generated" | "input";
@@ -113,6 +144,12 @@ export type CodegenChild = {
   listKeys?: boolean;
   /** 该列的列名，默认「已填」+ label */
   listKeysLabel?: string;
+  /** 列表列：某个键的某个字段，如 lang=en 的 name */
+  columns?: { key: string; field: string; label: string }[];
+  /** 非空行（及必填键的行）这些字段必须填写 */
+  requiredFields?: string[];
+  /** 表单中子表标题下的说明 */
+  hint?: string;
 };
 
 export type CodegenTable = {
@@ -147,6 +184,8 @@ export type CodegenRequest = {
   noCreate?: boolean;
   /** 不生成删除（接口、权限码、按钮），如只能下架不能删 */
   noDelete?: boolean;
+  /** 删除确认文案，{列名} 换成该行的值 */
+  deleteConfirm?: string;
 };
 
 export type CodegenGenerateResult = {

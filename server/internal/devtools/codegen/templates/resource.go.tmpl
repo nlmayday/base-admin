@@ -13,7 +13,7 @@ import (
 [[- if and (ne .KeyGo "int64") (ne .KeyGo "string")]]
 	"strconv"
 [[- end]]
-[[- if or .TextSearch (and .KeyInput (not .ReadOnly))]]
+[[- if .NeedsStrings]]
 	"strings"
 [[- end]]
 	"time"
@@ -105,10 +105,25 @@ func (m *Module) [[.Lower]]Routes(r *module.Router) {
 [[- range .Children]][[if .KeyFromTable]]
 	g.GET("/options/[[.JSONName]]Keys", access.Perm("[[$.PermPrefix]]:view"), handle(m.[[$.Lower]][[.GoName]]KeyOptions)).Doc(module.Doc{Summary: "[[.Label]]的[[.Key.Label]]列表", Description: "来自 [[.Spec.KeyTable]]；required 为必须填写", Response: [][[$.Lower]][[.GoName]]Key{}})
 [[- end]][[end]]
+[[- if .Features]]
+	g.GET("/options/features", access.Perm("[[.PermPrefix]]:view"), handle(m.[[.Lower]]Features)).Doc(module.Doc{Summary: "[[.Name]]的功能开关", Description: "字段按开关显示：[[join .Features "、"]]", Response: map[string]bool{}})
+[[- end]]
 [[- range .OptionRelations]]
 	g.GET("/options/[[.JSONName]]", access.Perm("[[$.PermPrefix]]:view"), handle(m.[[$.Lower]][[.GoName]]Options)).Doc(module.Doc{Summary: "[[.Label]]选项", Description: "keyword 按[[if .RelNumber]]编号精确[[else]]名称[[end]]搜索，最多 50 条；deleted=1 时包含已删除的记录（搜索栏用）", Response: []lookup.Option{}})
 [[- end]]
 }
+[[- if .Features]]
+
+// [[.Lower]]Features reports the feature switches the page's fields follow.
+func (m *Module) [[.Lower]]Features(c *gin.Context) (any, error) {
+	ctx := c.Request.Context()
+	return map[string]bool{
+[[- range .Features]]
+		[[goString .]]: m.featureOn(ctx, [[goString .]]),
+[[- end]]
+	}, nil
+}
+[[- end]]
 [[- range .OptionRelations]]
 
 func (m *Module) [[$.Lower]][[.GoName]]Options(c *gin.Context) (any, error) {
@@ -125,8 +140,14 @@ type [[.Lower]]View struct {
 [[- end]]
 [[- range .Relations]]
 	[[.LabelGo]] string `json:"[[.LabelJSON]]" doc:"[[.LabelDoc]]"`
+[[- if .ExtraGo]]
+	[[.ExtraGo]] string `json:"[[.ExtraJSON]]" doc:"[[.Label]]（[[.RelTable]].[[.RelationExtra]]）"`
+[[- end]]
 [[- end]]
 [[- range .Children]]
+[[- range .ListColumns]]
+	[[.GoName]] string `json:"[[.JSONName]],omitempty" doc:"[[.Label]]（列表返回）"`
+[[- end]]
 	// [[.GoName]] is filled by the detail (and after a write), not by the list.
 	[[.GoName]] [][[$.Lower]][[.GoName]]View `json:"[[.JSONName]],omitempty" doc:"[[.Label]]"`
 [[- if .Spec.ListKeys]]
@@ -145,6 +166,9 @@ type [[.Lower]]Row struct {
 [[- end]]
 [[- range .Relations]]
 	[[.LabelGo]] string
+[[- if .ExtraGo]]
+	[[.ExtraGo]] string
+[[- end]]
 [[- end]]
 }
 
@@ -167,6 +191,9 @@ func (r [[.Lower]]Row) view() [[.Lower]]View {
 [[- end]]
 [[- range .Relations]]
 		[[.LabelGo]]: r.[[.LabelGo]],
+[[- if .ExtraGo]]
+		[[.ExtraGo]]: r.[[.ExtraGo]],
+[[- end]]
 [[- end]]
 	}
 [[- end]]
@@ -245,6 +272,10 @@ func (m *Module) list[[.PluralUpper]](c *gin.Context) (any, error) {
 	}
 [[- range .Children]][[if .Spec.ListKeys]]
 	if err := list[[$.Upper]][[.GoName]]Keys(c.Request.Context(), m.db, views); err != nil {
+		return nil, err
+	}
+[[- end]][[if .ListColumns]]
+	if err := list[[$.Upper]][[.GoName]]Columns(c.Request.Context(), m.db, views); err != nil {
 		return nil, err
 	}
 [[- end]][[end]]
@@ -398,6 +429,33 @@ func list[[$.Upper]][[.GoName]]Keys(ctx context.Context, db *gorm.DB, views [][[
 	return nil
 }
 [[- end]]
+[[- if .ListColumns]]
+
+// list[[$.Upper]][[.GoName]]Columns fills the list columns taken from [[.Label]] rows.
+func list[[$.Upper]][[.GoName]]Columns(ctx context.Context, db *gorm.DB, views [][[$.Lower]]View) error {
+	if len(views) == 0 {
+		return nil
+	}
+	parents := make([][[$.KeyGo]], len(views))
+	for i, v := range views {
+		parents[i] = [[$.PK.KeyOfView "v"]]
+	}
+[[- $c := .]]
+[[- range .ListColumns]]
+	[[.JSONName]], err := childValues(ctx, db, `[[$c.Table]]`, `[[$c.FK.Quoted]]`, `[[$c.Key.Quoted]]`, [[.KeyLit]], `[[.FieldSQL]]`, parents)
+	if err != nil {
+		return err
+	}
+[[- end]]
+	for i := range views {
+		k := fmt.Sprint(parents[i])
+[[- range .ListColumns]]
+		views[i].[[.GoName]] = [[.JSONName]][k]
+[[- end]]
+	}
+	return nil
+}
+[[- end]]
 [[- end]]
 
 func (m *Module) get[[.Upper]](c *gin.Context) (any, error) {
@@ -444,6 +502,13 @@ func (r [[$.Lower]][[.GoName]]Request) empty() bool {
 // values of [[.Spec.KeyTable]] and appear once; the required ones must be
 // filled in.
 func (m *Module) save[[$.Upper]][[.GoName]](ctx context.Context, tx *gorm.DB, key [[$.KeyGo]], rows [][[$.Lower]][[.GoName]]Request) error {
+[[- if .TrimFields]]
+	for i := range rows {
+[[- range .TrimFields]]
+		[[.TrimOnly "rows[i]"]]
+[[- end]]
+	}
+[[- end]]
 	keys, err := load[[$.Upper]][[.GoName]]Keys(ctx, tx)
 	if err != nil {
 		return err
@@ -490,6 +555,13 @@ func (m *Module) save[[$.Upper]][[.GoName]](ctx context.Context, tx *gorm.DB, ke
 // as those of disabled dictionary items, are kept. The keys must be items of
 // dictionary [[.Spec.KeyDict]] and appear once.
 func (m *Module) save[[$.Upper]][[.GoName]](ctx context.Context, tx *gorm.DB, key [[$.KeyGo]], rows [][[$.Lower]][[.GoName]]Request) error {
+[[- if .TrimFields]]
+	for i := range rows {
+[[- range .TrimFields]]
+		[[.TrimOnly "rows[i]"]]
+[[- end]]
+	}
+[[- end]]
 	seen := map[string]bool{}
 	for i, r := range rows {
 		field := fmt.Sprintf("[[.JSONName]][%d].[[.Key.JSONName]]", i)
@@ -535,6 +607,16 @@ func (m *Module) write[[$.Upper]][[.GoName]](tx *gorm.DB, key [[$.KeyGo]], rows 
 	return nil
 }
 [[- end]]
+[[- if .TrimFields]]
+
+// normalize trims the text fields; a required one left empty is refused.
+func (r *[[.Lower]]Request) normalize() error {
+[[- range .TrimFields]]
+	[[.TrimStmt "r" (goString .JSONName)]]
+[[- end]]
+	return nil
+}
+[[- end]]
 [[- if .Dept]]
 
 // reload[[.Upper]] re-reads a written row inside the transaction, so a row
@@ -572,6 +654,11 @@ func (m *Module) create[[.Upper]](c *gin.Context) (any, error) {
 	if err := httpx.BindJSON(c, &req); err != nil {
 		return nil, err
 	}
+[[- if .TrimFields]]
+	if err := req.normalize(); err != nil {
+		return nil, err
+	}
+[[- end]]
 	ctx := c.Request.Context()
 [[- range .CheckDictFields]]
 	if err := checkDict(ctx, m.dict, [[goString .Dict]], [[goString .JSONName]], [[goString .Label]], req.[[.GoName]]); err != nil {
@@ -681,6 +768,11 @@ func (m *Module) update[[.Upper]](c *gin.Context) (any, error) {
 	if err := httpx.BindJSON(c, &req); err != nil {
 		return nil, err
 	}
+[[- if .TrimFields]]
+	if err := req.normalize(); err != nil {
+		return nil, err
+	}
+[[- end]]
 [[- if .Version]]
 	if req.Version == nil {
 		return nil, fieldError("version", "不能为空")
@@ -750,6 +842,11 @@ func (m *Module) update[[.Upper]](c *gin.Context) (any, error) {
 			"updated_at": gorm.Expr("CURRENT_TIMESTAMP(6)"),
 [[- end]]
 		}
+[[- range .UpdateFields]][[if .Feature]]
+		if !m.featureOn(ctx, [[goString .Feature]]) {
+			delete(sets, [[goString .Column]]) // hidden while the feature is off: kept
+		}
+[[- end]][[end]]
 [[- if .Version]]
 		// Optimistic locking (design doc 8.1): the row must still have the
 		// version the client read.
@@ -937,7 +1034,7 @@ func (m *Module) export[[.PluralUpper]](c *gin.Context) {
 [[- else if and (eq .Role "dept_id") $.DeptJoin]]
 			csvValue(r.DeptName), // the department name instead of its ID
 [[- else if .Relation]]
-			csvValue(r.[[.LabelGo]]), // the [[.Label]] name instead of its ID
+			csvValue([[if .ExtraGo]]relationLabel(r.[[.LabelGo]], r.[[.ExtraGo]])[[else]]r.[[.LabelGo]][[end]]), // the [[.Label]] name instead of its ID
 [[- else if .Enum]]
 			[[$.Lower]]Label([[$.Lower]][[.GoName]]Labels, optionKey(r.[[.GoName]])), // the option instead of its value
 [[- else if .Dict]]
@@ -982,6 +1079,15 @@ func check[[.Upper]]Relation(ctx context.Context, db *gorm.DB, target lookup.Tar
 
 [[- define "childUploads"]]
 [[- $c := .]]
+[[- if .RequiredFields]]
+		if !r.empty() {
+[[- range .RequiredFields]]
+			if [[.BlankExpr "r"]] {
+				return fieldError(fmt.Sprintf("[[$c.JSONName]][%d].[[.JSONName]]", i), "不能为空")
+			}
+[[- end]]
+		}
+[[- end]]
 [[- range .Fields]][[if eq .Upload "image"]]
 [[- if .Nullable]]
 		if r.[[.GoName]] != nil {

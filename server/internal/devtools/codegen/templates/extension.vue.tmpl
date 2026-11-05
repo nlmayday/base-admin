@@ -1,21 +1,44 @@
 <script lang="ts">
+import type { [[.TSUpper]] } from "@/api/[[.Pkg]]/[[.Resource]]";
+
 /** 有行内扩展按钮时改为 true，列表的「操作」列才会显示 */
 export const hasRowActions = false;
+/** 改为 true 时在表格上方渲染 place="header"（说明、el-alert） */
+export const hasHeader = false;
+/** 改为 true 时每行可展开，展开区渲染 place="expand" */
+export const hasExpand = false;
+/** 由本文件渲染的列（字段名，如 "orderNo"），渲染 place="cell"、column 为字段名 */
+export const cellColumns: string[] = [];
+
+/** 返回 false 时该行不显示「编辑」按钮 */
+export function canEdit(row: [[.TSUpper]]): boolean {
+  return row !== null;
+}
+
+/** 返回 false 时该行不显示「删除」按钮 */
+export function canDelete(row: [[.TSUpper]]): boolean {
+  return row !== null;
+}
 </script>
 
 <script setup lang="ts">
-import type { [[.TSUpper]] } from "@/api/[[.Pkg]]/[[.Resource]]";
-
 /**
  * [[.Name]]列表的扩展：代码生成器只在本文件不存在时写入，重新生成（包括覆盖已有文件）
- * 都不会改动它，自定义的按钮写在这里。
+ * 都不会改动它，自定义的按钮和显示写在这里。
  * - place 为 "toolbar"：表格上方的按钮区
  * - place 为 "row"：每行的「操作」列，row 为当前行（同时把 hasRowActions 改为 true）
+ * - place 为 "header"：表格上方的说明区（hasHeader 为 true 时）
+ * - place 为 "expand"：展开行，row 为当前行（hasExpand 为 true 时）
+ * - place 为 "cell"：cellColumns 中的列，column 为字段名，row 为当前行
  * 修改了数据时 emit("reload") 刷新列表。
  */
 defineOptions({ name: "[[.ViewName]]Extension" });
 
-defineProps<{ place: "toolbar" | "row"; row?: [[.TSUpper]] }>();
+defineProps<{
+  place: "toolbar" | "row" | "header" | "expand" | "cell";
+  row?: [[.TSUpper]];
+  column?: string;
+}>();
 defineEmits<{ (e: "reload"): void }>();
 </script>
 
@@ -23,7 +46,11 @@ defineEmits<{ (e: "reload"): void }>();
   <!--
     例：
     <el-button v-if="place === 'toolbar'" @click="...">批量处理</el-button>
-    <el-button v-else link type="primary" @click="...">详情</el-button>
+    <el-button v-else-if="place === 'row'" link type="primary" @click="...">详情</el-button>
+    <el-alert v-else-if="place === 'header'" type="info" :closable="false" title="说明" />
+    <router-link v-else-if="place === 'cell' && column === 'orderNo'" :to="`/game/order?orderNo=${row?.orderNo}`">
+      {{ row?.orderNo }}
+    </router-link>
   -->
   <span v-if="false" />
 </template>
