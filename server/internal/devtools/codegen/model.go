@@ -3,6 +3,7 @@ package codegen
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 )
@@ -43,9 +44,12 @@ type Spec struct {
 	SoftDelete *bool `json:"softDelete,omitempty"`
 	// OrderBy is the order of the list and the export: columns of the table
 	// with ASC or DESC, such as "created_at DESC, id DESC" (index them for
-	// large tables). Default: sort (when the table has it), then the key
-	// descending.
+	// large tables), also compared to a value: "status = 0 DESC". Default:
+	// sort (when the table has it), then the key descending.
 	OrderBy string `json:"orderBy,omitempty"`
+	// DeleteConfirm is the delete confirmation, {column} standing for the
+	// row's value: "删除分类「{code}」？大厅将不再显示该 Tab。"
+	DeleteConfirm string `json:"deleteConfirm,omitempty"`
 	// NoCreate and NoDelete leave out create and delete (route, permission
 	// and button), e.g. games are taken off sale, never deleted.
 	NoCreate bool `json:"noCreate,omitempty"`
@@ -291,6 +295,18 @@ type Field struct {
 	CreateOnly bool
 	// Hint is the help text under the form input (FieldOption.Hint).
 	Hint string
+	// Display and form options (display.go): Format and Suffix of the
+	// list column, the relation's second shown column (Extra*), the input
+	// Placeholder and NumberAttrs (:min, :max, :step), ShowWhenTS (the form
+	// condition), Feature (FieldOption.ShowIf), Trim (text trimmed on save).
+	Format, Suffix, RelationExtra             string
+	ExtraColumn, ExtraGo, ExtraJSON, ExtraSQL string
+	Placeholder, NumberAttrs, ShowWhenTS      string
+	Feature                                   string
+	Trim                                      bool
+	showWhen                                  *ShowWhen
+	searchDefault, formDefault                *Scalar
+	emptyAllowed                              bool
 }
 
 func newField(c Column, ti typeInfo) *Field {
@@ -508,40 +524,52 @@ func (f *Field) DisabledAttr() string {
 	return ""
 }
 
-// orderTerm is one column of Spec.OrderBy.
+// orderTerm is one column of Spec.OrderBy; Value, when set, is an SQL
+// literal the column is compared to ("status = 0 DESC": rows with status 0
+// first).
 type orderTerm struct {
-	Column string
-	Desc   bool
+	Column, Value string
+	Desc          bool
 }
 
-// parseOrderBy reads "created_at DESC, id"; the error is Chinese.
+// orderTermPattern matches "col", "col DESC", "col = 0 DESC", "col = 'x'".
+var orderTermPattern = regexp.MustCompile(`(?i)^([a-z_][a-z0-9_]*)(?:\s*=\s*(-?[0-9]{1,18}|'[A-Za-z0-9_.-]{0,32}'|(?i:true|false)))?(?:\s+(ASC|DESC))?$`)
+
+// SQL is the ORDER BY term on the table alias t.
+func (o orderTerm) SQL() string {
+	out := "t." + quoteIdent(o.Column)
+	if o.Value != "" {
+		out += " = " + o.Value
+	}
+	if o.Desc {
+		out += " DESC"
+	}
+	return out
+}
+
+// parseOrderBy reads "created_at DESC, id" or "status = 0 DESC, id"; the
+// error is Chinese.
 func parseOrderBy(s string) ([]orderTerm, error) {
 	if strings.TrimSpace(s) == "" {
 		return nil, nil
 	}
 	var out []orderTerm
 	for _, part := range strings.Split(s, ",") {
-		words := strings.Fields(part)
-		if len(words) == 0 || len(words) > 2 || !identifierPattern.MatchString(words[0]) {
-			return nil, errors.New("orderBy 须为「列名 [ASC|DESC]」，多个用逗号分隔，如 created_at DESC, id DESC")
+		m := orderTermPattern.FindStringSubmatch(strings.TrimSpace(part))
+		if m == nil || strings.ToLower(m[1]) != m[1] {
+			return nil, errors.New("orderBy 须为「列名 [= 值] [ASC|DESC]」，多个用逗号分隔，如 status = 0 DESC, id DESC（值为整数、'文本'、true 或 false）")
 		}
-		t := orderTerm{Column: words[0]}
-		if len(words) == 2 {
-			switch strings.ToUpper(words[1]) {
-			case "ASC":
-			case "DESC":
-				t.Desc = true
-			default:
-				return nil, errors.New("orderBy 的排序方向只能是 ASC 或 DESC")
-			}
+		t := orderTerm{Column: m[1], Value: m[2], Desc: strings.EqualFold(m[3], "DESC")}
+		if strings.EqualFold(t.Value, "true") || strings.EqualFold(t.Value, "false") {
+			t.Value = strings.ToUpper(t.Value)
 		}
-		if slices.ContainsFunc(out, func(o orderTerm) bool { return o.Column == t.Column }) {
-			return nil, errors.New("orderBy 中列 " + t.Column + " 重复")
+		if slices.ContainsFunc(out, func(o orderTerm) bool { return o.Column == t.Column && o.Value == t.Value }) {
+			return nil, errors.New("orderBy 中 " + strings.TrimSpace(part) + " 重复")
 		}
 		out = append(out, t)
 	}
 	if len(out) > 5 {
-		return nil, errors.New("orderBy 最多 5 列")
+		return nil, errors.New("orderBy 最多 5 项")
 	}
 	return out, nil
 }

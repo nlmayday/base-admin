@@ -66,6 +66,15 @@ func (d *tmplData) deriveRelations() {
 			target = append(target, fmt.Sprintf("Key: %q", k))
 		}
 		target = append(target, fmt.Sprintf("Label: %q", f.Relation))
+		if f.RelationExtra != "" {
+			extra := strings.TrimSuffix(f.Column, "_id") + "_" + f.RelationExtra
+			if d.hasColumn(extra) || extra == label || extra == f.Column {
+				extra = f.Column + "_" + f.RelationExtra
+			}
+			f.ExtraColumn, f.ExtraGo, f.ExtraJSON = extra, goExported(extra), lowerCamel(extra)
+			f.ExtraSQL = quoteIdent(f.RelationExtra)
+			target = append(target, fmt.Sprintf("Extra: %q", f.RelationExtra))
+		}
 		if f.RelNumber {
 			target = append(target, "NumberLabel: true")
 		}

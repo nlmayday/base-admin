@@ -158,12 +158,21 @@
   - `createOnly`：`true` 时新增时填写、编辑时只读（如游戏编码），编辑接口不修改它
   - `hint`：表单输入框下方的说明文字（最长 200 字）
   - 主键也可以 `"list": true` 进列表（如流水号、订单号），并可 `"search": "eq"`
+  - `format`：列表显示格式，`coins` 千分位、`signed` 千分位带符号（正绿负红）、`cents` 美分显示成 $x.xx、`permille` 千分比显示成 +x%、
+    `milli` ÷1000 保留 2 位（`suffix` 加后缀，如 `"x"`）、`image` 缩略图；导出仍为原值
+  - `relationExtra`：关联表的第二个显示列，如 `"relation": "short_id", "relationExtra": "nickname"` 显示为 100001（玩家甲）
+  - `searchDefault`：搜索项默认值（重置回到它）；`default`：新增表单默认值；`min`、`max`、`step`：数字输入范围；`placeholder`
+  - `showWhen`：`{"column": "fill_type", "in": [1]}`，另一字段取这些值时才显示
+  - `required`：`false` 时 NOT NULL 文本可保存空串；文本字段保存前去首尾空格
+  - `showIf`：`"feature:vip"`，开关关闭时列表和表单都不显示、编辑保留原值；开关由模块手写的
+    `func (m *Module) featureEnabled(ctx context.Context, name string) bool` 提供（不写则都开）
 - `keyMode`：可选，主键来源。`auto` 数据库自增；`generated` 由模块用雪花 ID 生成（bigint 主键不是自增时的默认值）；
   `input` 新增时填写、之后不能改（文本或整数主键的默认值，如 `cfg_key`、`level`）。
 - `readOnly`：可选，`true` 时只生成列表、详情和导出（流水、订单、日志类表）。
 - `softDelete`：可选，`false` 时 `deleted_at` 是普通时间字段（如注销时间）：列出全部行、可搜索，删除即删除行。
 - `noCreate`、`noDelete`：可选，`true` 时不生成新增 / 删除的接口、权限码和按钮（如游戏只能下架不能删）。
-- `orderBy`：可选，列表和导出的排序，如 `"created_at DESC, id DESC"`（大表请选有索引的列）；默认 `sort` 后主键倒序。
+- `orderBy`：可选，列表和导出的排序，如 `"created_at DESC, id DESC"`，也可比较值 `"status = 0 DESC, id"`（大表请选有索引的列）；默认 `sort` 后主键倒序。
+- `deleteConfirm`：可选，删除确认文案，`{列名}` 换成该行的值。
 - `children`：可选，随主表一起编辑的子表（多语言表）：
   `[{"table": "lg_item_i18n", "foreignKey": "item_id", "keyColumn": "lang", "keyDict": "lang", "label": "多语言"}]`。
   表单按字典 `keyDict` 的每一项列出一组输入，详情接口返回这些行。键也可以来自一张表（与 `keyDict` 二选一）：
@@ -171,6 +180,8 @@
   `keyRequiredColumn` 为真的键必须填写。`keyFilter` 原样写进生成的代码，两种数据库都要用时写 `enabled = TRUE`（`enabled = 1` 只适用于 MySQL）。
   保存只替换请求中出现的键（全部为空的行删除），其他键的行保留（如未启用语言的翻译）。
   子表的 `fields` 可配置 `label`、`form`（`false` 不进表单）、`upload`（`image`）、`hint`；`"listKeys": true` 时列表增加「已填<label>」列，列名可用 `listKeysLabel` 另起（最长 20 字）。
+  `columns`：`[{"key": "en", "field": "name", "label": "名称(英文)"}]` 把某个键的字段作为列表列；子表文本字段 `"search": "like"` 增加列表搜索项（EXISTS 子查询）；
+  `requiredFields`：非空行和必填键的行中这些字段必须填写（去首尾空格后），表单中未填的必填键标红；`hint`：子表标题下的说明；子表字段可配 `placeholder`。
   - `relation`：外键字段显示被引用表的哪一列；`""` 改为直接输入 ID
 - `force`（仅 generate）：覆盖已存在的文件。
 
@@ -185,7 +196,10 @@ generate 返回 `files`（写入的文件）、`newModule`、`wired`、`notes`�
   `<resource>BeforeUpdate(ctx, tx, old, req)` / `<resource>BeforeDelete(ctx, tx, old)`（写入或删除前在同一事务中执行，
   `old` 为修改前的行，返回错误即回滚，如「活动开始后目标不能改」）、`<resource>AfterSave` / `<resource>AfterDelete`
   （写入或删除后在同一事务中执行，返回错误即回滚）、`<resource>AfterCommit`（事务提交后执行，如通知其他服务刷新缓存；
-  出错只记日志，不影响已成功的保存）；Extension.vue 渲染在列表工具栏和每行「操作」列
+  出错只记日志，不影响已成功的保存）；Extension.vue 渲染在列表工具栏和每行「操作」列，还可导出
+  `cellColumns`（接管某些列的渲染，place="cell"）、`hasHeader`（表格上方说明区）、`hasExpand`（展开行）、
+  `canEdit(row)` / `canDelete(row)`（返回 false 不显示编辑 / 删除）
+- 列表页读地址栏参数：与搜索字段同名的参数（如 `?userId=1001`）自动填入并查询；时间列的日期范围按 UTC 日
 - 模块需要的角色可在 `module.go` 的 `Roles()` 中声明（`module.RoleDef`，权限写权限码或 `game:*` 这样的前缀）：
   启动时不存在则创建并授权，之后由管理员维护；新版本新增的权限码会补授
 

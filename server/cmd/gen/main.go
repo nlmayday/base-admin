@@ -73,6 +73,8 @@ type specEntry struct {
 	OrderBy     string                `json:"orderBy,omitempty"`
 	NoCreate    bool                  `json:"noCreate,omitempty"`
 	NoDelete    bool                  `json:"noDelete,omitempty"`
+	// DeleteConfirm is the delete confirmation, {column} for the row's value.
+	DeleteConfirm string `json:"deleteConfirm,omitempty"`
 }
 
 func (e specEntry) job() job {
@@ -80,7 +82,7 @@ func (e specEntry) job() job {
 		ModuleTitle: e.ModuleTitle, ParentMenu: e.ParentMenu, MenuTitle: e.MenuTitle, MenuSort: e.MenuSort,
 		Fields: e.Fields, KeyMode: e.KeyMode,
 		ReadOnly: e.ReadOnly, SoftDelete: e.SoftDelete, Children: e.Children,
-		OrderBy: e.OrderBy, NoCreate: e.NoCreate, NoDelete: e.NoDelete}}
+		OrderBy: e.OrderBy, NoCreate: e.NoCreate, NoDelete: e.NoDelete, DeleteConfirm: e.DeleteConfirm}}
 }
 
 // loader reads a table definition with the tables the spec refers to.
@@ -116,7 +118,8 @@ func parseFlags(args []string, stderr io.Writer) (options, error) {
 	})
 	fs.StringVar(&one.KeyMode, "key-mode", "", "how rows get their primary key: auto, generated (snowflake, Deps.NewID) or input (default: from the column)")
 	fs.BoolVar(&one.ReadOnly, "read-only", false, "generate the list, detail and export only")
-	fs.StringVar(&one.OrderBy, "order-by", "", `list and export order, e.g. "created_at DESC, id DESC" (default: sort, then the key descending)`)
+	fs.StringVar(&one.OrderBy, "order-by", "", `list and export order, e.g. "created_at DESC, id DESC" or "status = 0 DESC, id" (default: sort, then the key descending)`)
+	fs.StringVar(&one.DeleteConfirm, "delete-confirm", "", `delete confirmation, {column} for the row's value, e.g. '删除分类「{code}」？'`)
 	fs.BoolVar(&one.NoCreate, "no-create", false, "no create (route, permission, button)")
 	fs.BoolVar(&one.NoDelete, "no-delete", false, "no delete (route, permission, button), e.g. rows are disabled instead")
 	fs.BoolFunc("no-soft-delete", "treat deleted_at as a plain time column: list every row, delete removes the row", func(string) error {

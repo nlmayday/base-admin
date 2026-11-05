@@ -60,6 +60,7 @@ func TestGeneratedGoCompiles(t *testing.T) {
 		spec  Spec
 	}{
 		{gameTable(), gameSpec()},
+		{taskTable(), taskSpec("tasks")},
 		{levelTable(), Spec{Module: "lvl", Resource: "level", Name: "等级", NewModule: true, NoCreate: true, NoDelete: true}},
 		{ledgerTable(), ledgerSpec()},
 		{ledgerTable(), Spec{Module: "ledgerns", Resource: "wallet-ledger", Name: "钱包流水", NewModule: true, ReadOnly: true,

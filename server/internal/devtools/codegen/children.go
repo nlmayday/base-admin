@@ -2,6 +2,7 @@ package codegen
 
 import (
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -52,7 +53,30 @@ type ChildSpec struct {
 	ListKeys bool `json:"listKeys,omitempty"`
 	// ListKeysLabel heads that column (default 「已填」 + Label).
 	ListKeysLabel string `json:"listKeysLabel,omitempty"`
+	// Columns adds list columns of one key's field, e.g. the English name:
+	// {"key": "en", "field": "name", "label": "名称(英文)"}.
+	Columns []ChildColumn `json:"columns,omitempty"`
+	// RequiredFields must be filled in (after trimming) in the rows of the
+	// required keys and in every row that is not empty, instead of "not
+	// all empty".
+	RequiredFields []string `json:"requiredFields,omitempty"`
+	// Hint is shown under the section title of the form.
+	Hint string `json:"hint,omitempty"`
 }
+
+// ChildColumn is a list column with the field of one key's child row.
+type ChildColumn struct {
+	Key   string `json:"key"`
+	Field string `json:"field"`
+	Label string `json:"label"`
+}
+
+// childColumn is the template model of a ChildColumn.
+type childColumn struct {
+	GoName, JSONName, Label, KeyLit, FieldSQL string
+}
+
+var childKeyPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,32}$`)
 
 // childData is the template model of a child table.
 type childData struct {
@@ -82,6 +106,12 @@ type childData struct {
 	KeyOrder     string
 	// ListKeysLabel heads the list column of the filled keys.
 	ListKeysLabel string
+	// ListColumns are list columns of one key's field; Search the fields
+	// searched from the list (EXISTS); RequiredFields the fields a
+	// non-empty row needs; TrimFields the text fields trimmed on save.
+	ListColumns                        []*childColumn
+	Search, RequiredFields, TrimFields []*Field
+	Hint                               string
 	// ViewConvert: the row and the view have the same fields.
 	ViewConvert bool
 }
@@ -217,11 +247,22 @@ func buildChild(ct ChildTable, mainTable string, pk *Field) (*childData, error) 
 				f.Label, f.Doc = l, structTagValue(l)
 			}
 			f.Hint = strings.TrimSpace(o.Hint)
+			f.Placeholder = strings.TrimSpace(o.Placeholder)
 			if o.Upload != nil && *o.Upload == UploadImage {
 				f.Upload, f.Widget = UploadImage, "image"
 			}
+			if o.Search == SearchLike {
+				d.Search = append(d.Search, f)
+			}
+		}
+		if f.Kind == kindString && (f.Widget == "input" || f.Widget == "textarea") {
+			f.Trim = true
+			d.TrimFields = append(d.TrimFields, f)
 		}
 		d.Fields = append(d.Fields, f)
+	}
+	if err := d.childExtras(t, s); err != nil {
+		return nil, err
 	}
 	if len(d.Fields) == 0 {
 		return nil, fmt.Errorf("子表 %s 没有可编辑的列", t.Name)
@@ -380,8 +421,14 @@ func childOptions(t Table, s ChildSpec) (map[string]FieldOption, error) {
 			return nil, fmt.Errorf("子表 %s：字段 %s 不存在或不能配置", t.Name, o.Column)
 		case out[o.Column].Column != "":
 			return nil, fmt.Errorf("子表 %s：字段 %s 重复配置", t.Name, o.Column)
-		case o.List != nil || o.Export != nil || o.Search != "" || o.Dict != nil || o.Relation != nil || o.RefTable != "" || o.CreateOnly:
-			return nil, fmt.Errorf("子表 %s：字段 %s 只能配置 label、form、upload、hint", t.Name, o.Column)
+		case o.List != nil || o.Export != nil || (o.Search != "" && o.Search != SearchLike) || o.Dict != nil || o.Relation != nil ||
+			o.RefTable != "" || o.CreateOnly || o.Format != "" || o.Default != nil || o.SearchDefault != nil || o.ShowWhen != nil ||
+			o.Min != nil || o.Max != nil || o.Step != nil || o.Required != nil || o.ShowIf != "" || o.RelationExtra != "":
+			return nil, fmt.Errorf("子表 %s：字段 %s 只能配置 label、form、upload、hint、placeholder、search（like）", t.Name, o.Column)
+		case o.Search == SearchLike && !textUDT(c.UDT):
+			return nil, fmt.Errorf("子表 %s：字段 %s 不是文本，不能模糊搜索", t.Name, o.Column)
+		case strings.ContainsAny(o.Placeholder, unsafeText) || utf8.RuneCountInString(o.Placeholder) > 50:
+			return nil, fmt.Errorf("子表 %s：字段 %s 的 placeholder 最长 50 个字符，且不能包含引号、反斜杠、尖括号或花括号", t.Name, o.Column)
 		case o.Label != "" && (name == "" || utf8.RuneCountInString(name) > 20 || strings.ContainsAny(name, unsafeText)):
 			return nil, fmt.Errorf("子表 %s：字段 %s 的中文名最长 20 个字符，且不能包含引号、反斜杠、尖括号或花括号", t.Name, o.Column)
 		case hintProblem(o.Column, o.Hint) != "":
@@ -399,4 +446,71 @@ func childOptions(t Table, s ChildSpec) (map[string]FieldOption, error) {
 // imageColumn reports a text column long enough for an image URL.
 func imageColumn(c Column) bool {
 	return c.UDT == "text" || (c.UDT == "varchar" && (c.MaxLength == 0 || c.MaxLength >= 255))
+}
+
+// childExtras checks and builds Columns, RequiredFields and Hint of child
+// spec s; the error is Chinese.
+func (d *childData) childExtras(t Table, s ChildSpec) error {
+	byColumn := map[string]*Field{}
+	for _, f := range d.Fields {
+		byColumn[f.Column] = f
+	}
+	if msg := hintProblem("hint", s.Hint); msg != "" {
+		return fmt.Errorf("子表 %s：%s", t.Name, msg)
+	}
+	d.Hint = strings.TrimSpace(s.Hint)
+	for _, name := range s.RequiredFields {
+		f, ok := byColumn[name]
+		switch {
+		case !ok:
+			return fmt.Errorf("子表 %s：requiredFields 中的 %s 不是表单中的列", t.Name, name)
+		case slices.Contains(d.RequiredFields, f):
+			return fmt.Errorf("子表 %s：requiredFields 中 %s 重复", t.Name, name)
+		}
+		d.RequiredFields = append(d.RequiredFields, f)
+	}
+	if len(s.Columns) > 5 {
+		return fmt.Errorf("子表 %s：columns 最多 5 列", t.Name)
+	}
+	for _, c := range s.Columns {
+		col, ok := t.Column(c.Field)
+		label := strings.TrimSpace(c.Label)
+		switch {
+		case !ok || c.Field == s.ForeignKey || c.Field == s.KeyColumn || sensitiveColumn(c.Field):
+			return fmt.Errorf("子表 %s：columns 的列 %s 不存在", t.Name, c.Field)
+		case !childKeyPattern.MatchString(c.Key) || (d.Key.Kind != kindString && strings.Trim(c.Key, "0123456789") != ""):
+			return fmt.Errorf("子表 %s：columns 的键 %q 无效", t.Name, c.Key)
+		case label == "" || utf8.RuneCountInString(label) > 20 || strings.ContainsAny(label, unsafeText):
+			return fmt.Errorf("子表 %s：columns 的 label 不能为空，最长 20 个字符，且不能包含引号、反斜杠、尖括号或花括号", t.Name)
+		}
+		key := c.Key
+		if d.Key.Kind == kindString {
+			key = goString(c.Key)
+		}
+		name := d.GoName + goExported(c.Field) + goExported(strings.ReplaceAll(c.Key, "-", "_"))
+		d.ListColumns = append(d.ListColumns, &childColumn{GoName: name, JSONName: strings.ToLower(name[:1]) + name[1:],
+			Label: label, KeyLit: key, FieldSQL: quoteIdent(col.Name)})
+	}
+	return nil
+}
+
+// TrimOnly is the Go code that trims child text field f of row r.
+func (f *Field) TrimOnly(r string) string {
+	v := r + "." + f.GoName
+	if strings.HasPrefix(f.ReqType, "*") {
+		return fmt.Sprintf("if %s != nil {\n\t\t\tv := strings.TrimSpace(*%s)\n\t\t\t%s = &v\n\t\t}", v, v, v)
+	}
+	return fmt.Sprintf("%s = strings.TrimSpace(%s)", v, v)
+}
+
+// BlankExpr is the Go condition that child field f of row r is empty.
+func (f *Field) BlankExpr(r string) string {
+	v := r + "." + f.GoName
+	switch {
+	case strings.HasPrefix(f.ReqType, "*"):
+		return v + " == nil || *" + v + ` == ""`
+	case f.ReqType == "string":
+		return v + ` == ""`
+	}
+	return f.EmptyExpr()
 }

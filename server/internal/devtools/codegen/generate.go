@@ -224,6 +224,23 @@ type tmplData struct {
 	// RequiredRelations are relation fields the create must set (the test
 	// picks an existing row).
 	RequiredRelations []*Field
+	// TrimFields are the text fields trimmed on save; Features the feature
+	// switches fields depend on (FieldOption.ShowIf); Formats: some list
+	// column has a display format; NeedsStrings: the code uses strings.
+	TrimFields   []*Field
+	Features     []string
+	Formats      bool
+	NeedsStrings bool
+	// DeleteConfirmTS is the delete confirmation (a TypeScript template
+	// literal over row), "" for the default.
+	DeleteConfirmTS string
+	// FilterKinds maps the filter parameters to how a route query value
+	// is read ("number", "boolean", "string"), for the list page.
+	FilterKinds []string
+	// IndexFormatImport lists the @/utils/format helpers of the list page;
+	// FormRelationExtra: a form relation shows a second column.
+	IndexFormatImport string
+	FormRelationExtra bool
 
 	DeptJoin, Scope, NeedsActor, NeedsUID, HasRequired, TableHasTime bool
 	StatusSearch, DeptSearch, TextSearch, StatusInTable              bool
@@ -383,10 +400,7 @@ func (d *tmplData) derive() {
 	if terms, _ := parseOrderBy(d.OrderBy); len(terms) > 0 {
 		parts := make([]string, len(terms))
 		for i, o := range terms {
-			parts[i] = "t." + quoteIdent(o.Column)
-			if o.Desc {
-				parts[i] += " DESC"
-			}
+			parts[i] = o.SQL()
 		}
 		d.Order = strings.Join(parts, ", ")
 	}
@@ -410,6 +424,21 @@ func (d *tmplData) derive() {
 	d.deriveLists()
 	d.deriveSearch()
 	d.relationSearch()
+	d.childSearch()
+	d.deriveExtras()
+	d.NeedsStrings = d.NeedsStrings || d.TextSearch || (d.KeyInput && !d.ReadOnly)
+	byColumn := map[string]*Field{}
+	for _, f := range d.Fields {
+		byColumn[f.Column] = f
+	}
+	if d.DeleteConfirm != "" {
+		d.DeleteConfirmTS = deleteConfirmTS(d.DeleteConfirm, byColumn)
+	}
+	d.FilterKinds = filterKinds(d.SearchFields)
+	d.IndexFormatImport = d.indexFormatImports()
+	for _, f := range d.RelationFields {
+		d.FormRelationExtra = d.FormRelationExtra || f.ExtraJSON != ""
+	}
 	d.OptionRelations = d.Relations
 	if d.ReadOnly {
 		d.OptionRelations = d.RelationSearch
@@ -561,6 +590,9 @@ func (d *tmplData) deriveColumns() {
 	}
 	for _, f := range d.Relations {
 		cols.call("COALESCE(", "database.CastText(db, "+goString(f.RelAlias+"."+f.RelLabelSQL)+")", ", '') AS "+quoteIdent(f.LabelColumn))
+		if f.ExtraSQL != "" {
+			cols.call("COALESCE(", "database.CastText(db, "+goString(f.RelAlias+"."+f.ExtraSQL)+")", ", '') AS "+quoteIdent(f.ExtraColumn))
+		}
 	}
 	d.Columns = cols.goExpr()
 	sets := []string{"deleted_at = CURRENT_TIMESTAMP(6)"}

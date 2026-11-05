@@ -17,6 +17,9 @@ import { DEPT_TREE_PROPS } from "@/utils/tree-options";
 [[- if .RelationFields]]
 import ReRemoteSelect from "@/components/ReRemoteSelect/index.vue";
 [[- end]]
+[[- if .FormRelationExtra]]
+import { relationLabel } from "@/utils/format";
+[[- end]]
 [[- if .FormImage]]
 import ReImageUpload from "@/components/ReUpload/ImageUpload.vue";
 [[- end]]
@@ -25,7 +28,7 @@ import ReFileUpload from "@/components/ReUpload/FileUpload.vue";
 import type { AttachmentRef } from "@/api/file";
 [[- end]]
 [[- if .FormDateTime]]
-import ReUtcHint from "@/components/ReUtcHint/index.vue";
+import ReDateTimePicker from "@/components/ReDateTime/Picker.vue";
 import { toUTC } from "@/utils/timezone";
 [[- end]]
 [[- if .ChildDictKeys]]
@@ -55,7 +58,13 @@ import {
 
 defineOptions({ name: "[[.TSUpper]]FormDialog" });
 
-const props = defineProps<{ row: [[.TSUpper]] | null }>();
+const props = defineProps<{
+  row: [[.TSUpper]] | null;
+[[- if .Features]]
+  /** 功能开关（列表页读取），关闭时对应字段不显示 */
+  features?: Record<string, boolean>;
+[[- end]]
+}>();
 const visible = defineModel<boolean>({ required: true });
 const emit = defineEmits<{ (e: "saved"): void; (e: "reload"): void }>();
 
@@ -76,6 +85,11 @@ const saving = ref(false);
 const form = reactive<[[.TSUpper]]Form>(emptyForm());
 const { fieldErrors, clearFieldErrors, applyFieldErrors } = useFieldErrors();
 const isEdit = computed(() => props.row !== null);
+[[- if .Children]]
+/** 空值（去首尾空格后） */
+const blank = (v: unknown): boolean =>
+  v === null || v === undefined || String(v).trim() === "";
+[[- end]]
 [[- range $c := .Children]]
 
 /** [[.Label]]：[[$c.KeySourceLabel]]的每一项一行，打开表单时加载 */
@@ -108,6 +122,17 @@ async function load[[.GoName]](): Promise<void> {
     ...empty[[.GoName]](k.value),
     ...saved.find(r => String(r.[[.Key.JSONName]]) === k.value)
   }));
+}
+
+/** 必填的[[.Key.Label]]尚未填写（标签页标红） */
+function [[.JSONName]]Missing(i: number): boolean {
+  const row = [[.JSONName]]Rows.value[i];
+  if (!row || ![[.JSONName]]Keys.value[i]?.required) return false;
+[[- if .RequiredFields]]
+  return [[ "[" ]][[range $j, $f := .RequiredFields]][[if $j]], [[end]]row.[[$f.JSONName]][[end]]].some(blank);
+[[- else]]
+  return [[ "[" ]][[range $j, $f := .Fields]][[if $j]], [[end]]row.[[$f.JSONName]][[end]]].every(blank);
+[[- end]]
 }
 [[- end]]
 [[- range .DictFields]]
@@ -223,7 +248,7 @@ async function submit(): Promise<void> {
       label-width="100px"
     >
 [[- range .Writable]]
-      <el-form-item
+      <el-form-item[[.FormItemIf]]
         label="[[.Label]]"
         prop="[[.JSONName]]"
         :error="fieldErrors.[[.JSONName]]"
@@ -250,7 +275,7 @@ async function submit(): Promise<void> {
 [[- else if eq .Widget "dict"]]
         <el-select
           v-model="form.[[.JSONName]]"[[.DisabledAttr]]
-          placeholder="请选择[[.Label]]"
+          placeholder="[[.PlaceholderOr (print "请选择" .Label)]]"
           clearable
           class="w-full"
         >
@@ -265,8 +290,8 @@ async function submit(): Promise<void> {
         <ReRemoteSelect
           v-model="form.[[.JSONName]]"[[.DisabledAttr]]
           :fetch="[[.RelOptionsTS]]"
-          :label="props.row?.[[.LabelJSON]]"
-          placeholder="输入关键字搜索[[.Label]]"
+          :label="[[if .ExtraJSON]]props.row ? relationLabel(props.row.[[.LabelJSON]], props.row.[[.ExtraJSON]]) : undefined[[else]]props.row?.[[.LabelJSON]][[end]]"
+          placeholder="[[.PlaceholderOr (print "输入关键字搜索" .Label)]]"
           class="w-full"
         />
 [[- else if eq .Widget "image"]]
@@ -274,55 +299,64 @@ async function submit(): Promise<void> {
 [[- else if eq .Widget "files"]]
         <ReFileUpload v-model="form.[[.JSONName]]" />
 [[- else if eq .Widget "number"]]
-        <el-input-number v-model="form.[[.JSONName]]"[[.DisabledAttr]] class="w-[200px]!" />
+        <el-input-number v-model="form.[[.JSONName]]"[[.DisabledAttr]][[.NumberAttrs]][[.PlaceholderAttr]] class="w-[200px]!" />
 [[- else if eq .Widget "switch"]]
         <el-switch v-model="form.[[.JSONName]]"[[.DisabledAttr]] />
 [[- else if eq .Widget "datetime"]]
-        <el-date-picker
+        <ReDateTimePicker
           v-model="form.[[.JSONName]]"[[.DisabledAttr]]
-          type="datetime"
-          value-format="YYYY-MM-DDTHH:mm:ssZ"
-          placeholder="选择时间"
-          class="w-full!"
+          placeholder="[[.PlaceholderOr "选择时间"]]"
         />
-        <ReUtcHint :value="form.[[.JSONName]]" />
 [[- else if eq .Widget "date"]]
         <el-date-picker
           v-model="form.[[.JSONName]]"[[.DisabledAttr]]
           type="date"
           value-format="YYYY-MM-DD"
-          placeholder="选择日期"
+          placeholder="[[.PlaceholderOr "选择日期"]]"
           class="w-full!"
         />
 [[- else if eq .Widget "textarea"]]
         <el-input
           v-model="form.[[.JSONName]]"
           type="textarea"
-          :rows="3"[[if .MaxLen]]
+          :rows="3"[[.PlaceholderAttr]][[if .MaxLen]]
           maxlength="[[.MaxLen]]"[[end]][[if .CreateOnly]]
           :disabled="isEdit"[[end]]
         />
 [[- else]]
-        <el-input v-model="form.[[.JSONName]]"[[if .MaxLen]] maxlength="[[.MaxLen]]"[[end]][[.DisabledAttr]] />
+        <el-input v-model="form.[[.JSONName]]"[[if .MaxLen]] maxlength="[[.MaxLen]]"[[end]][[.DisabledAttr]][[.PlaceholderAttr]] />
 [[- end]]
 [[- template "formHint" .]]
       </el-form-item>
 [[- end]]
 [[- range $c := .Children]]
       <el-divider content-position="left">[[.Label]]</el-divider>
+[[- if .Hint]]
+      <div class="mb-2 text-xs leading-5 text-[var(--el-text-color-secondary)]">
+        [[.Hint]]
+      </div>
+[[- end]]
       <el-tabs v-if="[[.JSONName]]Rows.length" type="border-card">
         <el-tab-pane
           v-for="(row, i) in [[.JSONName]]Rows"
           :key="String(row.[[.Key.JSONName]])"
-          :label="`${[[.JSONName]]Keys[i]?.label ?? row.[[.Key.JSONName]]}${[[.JSONName]]Keys[i]?.required ? ' *' : ''}`"
         >
+          <template #label>
+            <span
+              :class="{ 'text-[var(--el-color-danger)]': [[.JSONName]]Missing(i) }"
+              :title="[[.JSONName]]Missing(i) ? '必填，尚未填写' : ''"
+            >
+              {{ [[.JSONName]]Keys[i]?.label ?? row.[[.Key.JSONName]]
+              }}{{ [[.JSONName]]Keys[i]?.required ? " *" : "" }}
+            </span>
+          </template>
 [[- range .Fields]]
           <el-form-item
             label="[[.Label]]"
             :error="fieldErrors[`[[$c.JSONName]][${i}].[[.JSONName]]`]"
           >
 [[- if eq .Widget "textarea"]]
-            <el-input v-model="row.[[.JSONName]]" type="textarea" :rows="2"[[if .MaxLen]] maxlength="[[.MaxLen]]"[[end]] />
+            <el-input v-model="row.[[.JSONName]]" type="textarea" :rows="2"[[if .MaxLen]] maxlength="[[.MaxLen]]"[[end]][[.PlaceholderAttr]] />
 [[- else if eq .Widget "number"]]
             <el-input-number v-model="row.[[.JSONName]]" class="w-[200px]!" />
 [[- else if eq .Widget "switch"]]
@@ -330,7 +364,7 @@ async function submit(): Promise<void> {
 [[- else if eq .Widget "date"]]
             <el-date-picker v-model="row.[[.JSONName]]" type="date" value-format="YYYY-MM-DD" class="w-full!" />
 [[- else if eq .Widget "datetime"]]
-            <el-date-picker v-model="row.[[.JSONName]]" type="datetime" value-format="YYYY-MM-DDTHH:mm:ssZ" class="w-full!" />
+            <ReDateTimePicker v-model="row.[[.JSONName]]" />
 [[- else if eq .Widget "image"]]
 [[- if .Nullable]]
             <ReImageUpload
@@ -341,7 +375,7 @@ async function submit(): Promise<void> {
             <ReImageUpload v-model="row.[[.JSONName]]" />
 [[- end]]
 [[- else]]
-            <el-input v-model="row.[[.JSONName]]"[[if .MaxLen]] maxlength="[[.MaxLen]]"[[end]] />
+            <el-input v-model="row.[[.JSONName]]"[[if .MaxLen]] maxlength="[[.MaxLen]]"[[end]][[.PlaceholderAttr]] />
 [[- end]]
 [[- template "formHint" .]]
           </el-form-item>

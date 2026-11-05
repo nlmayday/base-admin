@@ -1,6 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref, type Component } from "vue";
 import { usePagedTable } from "@/composables/usePagedTable";
+[[- if .SearchFields]]
+import { useRouteFilter } from "@/composables/useRouteFilter";
+[[- end]]
 [[- if .CanDelete]]
 import { confirmAction } from "@/composables/useConfirmAction";
 [[- end]]
@@ -11,6 +14,9 @@ import {
 [[- end]]
   export[[.TSPluralUpper]],
   list[[.TSPluralUpper]],
+[[- if .Features]]
+  get[[.TSUpper]]Features,
+[[- end]]
 [[- range .Children]][[if and .Spec.ListKeys .KeyFromTable]]
   list[[$.TSUpper]][[.GoName]]Keys,
 [[- end]][[end]]
@@ -34,7 +40,10 @@ import { getDeptTree, type Dept } from "@/api/iam/dept";
 import { DEPT_TREE_PROPS } from "@/utils/tree-options";
 [[- end]]
 [[- if .TableHasTime]]
-import { formatDateTime } from "@/utils/format";
+import ReDateTime from "@/components/ReDateTime/index.vue";
+[[- end]]
+[[- if .IndexFormatImport]]
+import { [[.IndexFormatImport]] } from "@/utils/format";
 [[- end]]
 [[- if not .ReadOnly]]
 import { hasPerm } from "@/utils/permission";
@@ -45,17 +54,21 @@ import { [[.IndexDictImport]] } from "@/composables/useDict";
 [[- if not .ReadOnly]]
 import [[.TSUpper]]FormDialog from "./components/[[.TSUpper]]FormDialog.vue";
 [[- end]]
-import [[.TSUpper]]Extension, {
-  hasRowActions
-} from "./components/[[.TSUpper]]Extension.vue";
+import { extensionOptions } from "@/utils/extension";
+import [[.TSUpper]]Extension, * as [[.Lower]]Extension from "./components/[[.TSUpper]]Extension.vue";
 
 defineOptions({ name: "[[.ViewName]]" });
+
+/** 扩展文件导出的选项（行按钮、说明区、展开行、接管的列、行内按钮条件） */
+const ext = extensionOptions<[[.TSUpper]]>([[.Lower]]Extension);
+/** header / expand / cell：扩展文件早于这些位置时，其 place 类型里没有它们 */
+const [[.TSUpper]]ExtensionPlace = [[.TSUpper]]Extension as Component;
 [[- if not .ReadOnly]]
 
 /** 没有任何行操作权限（也没有扩展的行按钮）时隐藏「操作」列 */
 const showRowActions = computed(
   () =>
-    hasRowActions ||
+    ext.hasRowActions ||
     ["[[.PermPrefix]]:update"[[if .CanDelete]], "[[.PermPrefix]]:delete"[[end]]].some(code =>
       hasPerm(code)
     )
@@ -85,6 +98,18 @@ const [[.JSONName]]KeyLabel = (v: string) => [[.JSONName]]KeyNames.value[v] ?? v
 const { labelOf: [[.JSONName]]KeyLabel } = useDict([[printf "%q" .Spec.KeyDict]]);
 [[- end]]
 [[- end]][[end]]
+[[- if .Features]]
+
+/** 功能开关：关闭时对应字段不显示 */
+const features = ref<Record<string, boolean>>({});
+onMounted(async () => {
+  try {
+    features.value = (await get[[.TSUpper]]Features()) ?? {};
+  } catch {
+    // 错误提示已由 http 拦截器处理
+  }
+});
+[[- end]]
 [[- if .DictBool]]
 
 /** 是/否字段的选项值为 1 和 0 */
@@ -149,7 +174,9 @@ function openEdit(row: [[.TSUpper]]): void {
 
 function remove(row: [[.TSUpper]]): void {
   confirmAction({
-[[- if .DisplayField]]
+[[- if .DeleteConfirmTS]]
+    confirm: [[.DeleteConfirmTS]],
+[[- else if .DisplayField]]
     confirm: `确定删除[[.Name]]「${row.[[.DisplayField.JSONName]]}」吗？`,
 [[- else]]
     confirm: `确定删除该[[.Name]]（[[.PK.Label]]：${row.[[.PK.JSONName]]}）吗？`,
@@ -163,11 +190,16 @@ function remove(row: [[.TSUpper]]): void {
 [[- end]]
 [[- if .SearchFields]]
 
-function resetFilter(): void {
+/** 筛选回到默认值 */
+function clearFilter(): void {
   Object.assign(filter, emptyFilter());
 [[- range .DateRanges]]
   ranges.[[.JSONName]] = null;
 [[- end]]
+}
+
+function resetFilter(): void {
+  clearFilter();
   search();
 }
 [[- end]]
@@ -183,7 +215,20 @@ async function onExport(): Promise<void> {
   }
 }
 
+[[- if .SearchFields]]
+// 地址栏中与筛选同名的参数（如 ?[[(index .SearchFields 0).JSONName]]=...）填入筛选后查询
+useRouteFilter({
+  filter,
+  kinds: { [[join .FilterKinds ", "]] },
+[[- if .DateRanges]]
+  ranges,
+[[- end]]
+  reset: clearFilter,
+  search
+});
+[[- else]]
 onMounted(reload);
+[[- end]]
 [[- if .DeptSearch]]
 onMounted(async () => {
   try {
@@ -201,7 +246,7 @@ onMounted(async () => {
     <el-card shadow="never" class="mb-3" body-class="pb-0!">
       <el-form :inline="true" :model="filter" @submit.prevent="search">
 [[- range .SearchFields]]
-        <el-form-item label="[[.Label]]">
+        <el-form-item label="[[.Label]][[if and (eq .SearchWidget "dateRange") (eq .Kind "time")]](UTC)[[end]]">
 [[- if eq .SearchWidget "status"]]
           <el-select
             v-model="filter.[[.JSONName]]"
@@ -360,82 +405,42 @@ onMounted(async () => {
           </el-button>
         </div>
       </div>
+      <!-- 说明区写在 [[.TSUpper]]Extension.vue（hasHeader） -->
+      <[[.TSUpper]]ExtensionPlace
+        v-if="ext.hasHeader"
+        place="header"
+        class="mb-3 block"
+        @reload="reload"
+      />
       <el-table v-loading="loading" :data="rows" row-key="[[.PK.JSONName]]" border>
-[[- range .TableFields]]
-[[- if eq .Role "status"]]
-        <el-table-column label="[[.Label]]" width="[[.FixedWidth]]" align="center">
+        <el-table-column v-if="ext.hasExpand" type="expand">
           <template #default="{ row }">
-            <ReStatusTag :status="row.status" />
-          </template>
-        </el-table-column>
-[[- else if eq .Upload "image"]]
-        <el-table-column label="[[.Label]]" width="90" align="center">
-          <template #default="{ row }">
-            <el-image
-              v-if="row.[[.JSONName]]"
-              :src="row.[[.JSONName]]"
-              :preview-src-list="[row.[[.JSONName]]]"
-              fit="cover"
-              preview-teleported
-              class="w-10 h-10 rounded"
+            <[[.TSUpper]]ExtensionPlace
+              place="expand"
+              :row="row as [[.TSUpper]]"
+              @reload="reload"
             />
-            <span v-else>-</span>
           </template>
         </el-table-column>
-[[- else if eq .Upload "files"]]
-        <el-table-column label="[[.Label]]" width="100" align="center">
+[[- range .TableFields]]
+        <el-table-column[[.ColumnIf]] label="[[.Label]]" [[.ColumnAttrs]]>
           <template #default="{ row }">
-            {{ row.[[.JSONName]].length ? `${row.[[.JSONName]].length} 个` : "-" }}
+            <[[$.TSUpper]]ExtensionPlace
+              v-if="ext.cellColumns.includes('[[.JSONName]]')"
+              place="cell"
+              column="[[.JSONName]]"
+              :row="row as [[$.TSUpper]]"
+              @reload="reload"
+            />
+[[- template "indexCell" .]]
           </template>
         </el-table-column>
-[[- else if .Dict]]
-        <el-table-column label="[[.Label]]" min-width="[[.FixedWidth]]">
-          <template #default="{ row }">
-            <el-tag
-              v-if="[[.JSONName]]Label([[.DictRowTS]]) !== '-'"
-              :type="[[.JSONName]]TagType([[.DictRowTS]])"
-              disable-transitions
-            >
-              {{ [[.JSONName]]Label([[.DictRowTS]]) }}
-            </el-tag>
-            <span v-else>-</span>
-          </template>
-        </el-table-column>
-[[- else if .Relation]]
-        <el-table-column label="[[.Label]]" min-width="120" show-overflow-tooltip>
-          <template #default="{ row }">{{ row.[[.LabelJSON]] || "-" }}</template>
-        </el-table-column>
-[[- else if eq .Role "dept_id"]]
-        <el-table-column label="[[.Label]]" min-width="120" show-overflow-tooltip>
-          <template #default="{ row }">{{ row.deptName || "-" }}</template>
-        </el-table-column>
-[[- else if eq .Kind "time"]]
-        <el-table-column label="[[.Label]]" width="215">
-          <template #default="{ row }">
-            {{ formatDateTime(row.[[.JSONName]]) }}
-          </template>
-        </el-table-column>
-[[- else if eq .Kind "bool"]]
-        <el-table-column label="[[.Label]]" width="[[.FixedWidth]]" align="center">
-          <template #default="{ row }">
-            <el-tag :type="row.[[.JSONName]] ? 'success' : 'info'">
-              {{ row.[[.JSONName]] ? "是" : "否" }}
-            </el-tag>
-          </template>
-        </el-table-column>
-[[- else if .Nullable]]
-        <el-table-column label="[[.Label]]" min-width="[[.MinWidth]]" show-overflow-tooltip>
-          <template #default="{ row }">{{ row.[[.JSONName]] ?? "-" }}</template>
-        </el-table-column>
-[[- else]]
-        <el-table-column
-          prop="[[.JSONName]]"
-          label="[[.Label]]"
-          min-width="[[.MinWidth]]"
-          show-overflow-tooltip
-        />
 [[- end]]
-[[- end]]
+[[- range $c := .Children]][[range .ListColumns]]
+        <el-table-column label="[[.Label]]" min-width="140" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.[[.JSONName]] || "-" }}</template>
+        </el-table-column>
+[[- end]][[end]]
 [[- range .Children]][[if .Spec.ListKeys]]
         <el-table-column label="[[.ListKeysLabel]]" min-width="160" show-overflow-tooltip>
           <template #default="{ row }">
@@ -454,6 +459,7 @@ onMounted(async () => {
         >
           <template #default="{ row }">
             <el-button
+              v-if="ext.canEdit(row as [[.TSUpper]])"
               v-perm="'[[.PermPrefix]]:update'"
               link
               type="primary"
@@ -463,6 +469,7 @@ onMounted(async () => {
             </el-button>
 [[- if .CanDelete]]
             <el-button
+              v-if="ext.canDelete(row as [[.TSUpper]])"
               v-perm="'[[.PermPrefix]]:delete'"
               link
               type="danger"
@@ -480,7 +487,7 @@ onMounted(async () => {
         </el-table-column>
 [[- else]]
         <el-table-column
-          v-if="hasRowActions"
+          v-if="ext.hasRowActions"
           label="操作"
           width="150"
           fixed="right"
@@ -511,10 +518,66 @@ onMounted(async () => {
 [[- if not .ReadOnly]]
     <[[.TSUpper]]FormDialog
       v-model="dialogVisible"
-      :row="editing"
+      :row="editing"[[if .Features]]
+      :features="features"[[end]]
       @saved="reload"
       @reload="reload"
     />
 [[- end]]
   </div>
 </template>
+
+[[- define "indexCell"]]
+[[- if eq .Role "status"]]
+            <ReStatusTag v-else :status="row.status" />
+[[- else if or (eq .Upload "image") (eq .Format "image")]]
+            <template v-else>
+              <el-image
+                v-if="row.[[.JSONName]]"
+                :src="row.[[.JSONName]]"
+                :preview-src-list="[row.[[.JSONName]]]"
+                fit="cover"
+                preview-teleported
+                class="w-10 h-10 rounded"
+              />
+              <span v-else>-</span>
+            </template>
+[[- else if eq .Upload "files"]]
+            <span v-else>
+              {{ row.[[.JSONName]].length ? `${row.[[.JSONName]].length} 个` : "-" }}
+            </span>
+[[- else if .Dict]]
+            <template v-else>
+              <el-tag
+                v-if="[[.JSONName]]Label([[.DictRowTS]]) !== '-'"
+                :type="[[.JSONName]]TagType([[.DictRowTS]])"
+                disable-transitions
+              >
+                {{ [[.JSONName]]Label([[.DictRowTS]]) }}
+              </el-tag>
+              <span v-else>-</span>
+            </template>
+[[- else if .Relation]]
+[[- if .ExtraGo]]
+            <span v-else>{{ relationLabel(row.[[.LabelJSON]], row.[[.ExtraJSON]]) }}</span>
+[[- else]]
+            <span v-else>{{ row.[[.LabelJSON]] || "-" }}</span>
+[[- end]]
+[[- else if eq .Role "dept_id"]]
+            <span v-else>{{ row.deptName || "-" }}</span>
+[[- else if eq .Kind "time"]]
+            <ReDateTime v-else :value="row.[[.JSONName]]" />
+[[- else if eq .Kind "bool"]]
+            <el-tag v-else :type="row.[[.JSONName]] ? 'success' : 'info'">
+              {{ row.[[.JSONName]] ? "是" : "否" }}
+            </el-tag>
+[[- else if eq .Format "signed"]]
+            <span v-else :class="signClass(row.[[.JSONName]])">{{ [[.FormatCall]] }}</span>
+[[- else if .Format]]
+            <span v-else>{{ [[.FormatCall]] }}</span>
+[[- else if .Nullable]]
+            <span v-else>{{ row.[[.JSONName]] ?? "-" }}</span>
+[[- else]]
+            <span v-else>{{ row.[[.JSONName]] }}</span>
+[[- end]]
+[[- end]]

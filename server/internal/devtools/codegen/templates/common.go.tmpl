@@ -9,12 +9,15 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 
+	"base-admin/server/internal/platform/database"
 	"base-admin/server/internal/platform/httpx"
 	"base-admin/server/internal/platform/requestid"
 )
@@ -26,7 +29,50 @@ var errVersionConflict = httpx.Conflict("数据已被他人修改，请刷新")
 // referenced here and linters do not report them as unused.
 var _ = []any{
 	errVersionConflict, opCreate, opUpdate, opDelete, afterCommitFailed, checkDict, dictLabels,
-	optionKey, duplicateError, escapeLike, csvValue, handle,
+	optionKey, duplicateError, escapeLike, csvValue, handle, relationLabel, childValues, (*Module).featureOn,
+}
+
+// featureSource is implemented by a featureEnabled method that the module
+// writes by hand (in any file it owns, e.g. features.go), to tell whether
+// a feature switch is on; fields with showIf "feature:<name>" follow it.
+// Without one every feature is on.
+type featureSource interface {
+	featureEnabled(ctx context.Context, name string) bool
+}
+
+// featureOn reports whether feature name is on.
+func (m *Module) featureOn(ctx context.Context, name string) bool {
+	if f, ok := any(m).(featureSource); ok {
+		return f.featureEnabled(ctx, name)
+	}
+	return true
+}
+
+// relationLabel is a relation's label with its second column: 100001（玩家甲）.
+func relationLabel(label, extra string) string {
+	if extra == "" || label == "" {
+		return label + extra
+	}
+	return label + "（" + extra + "）"
+}
+
+// childValues reads column col of the child rows whose key is key, for
+// the parents, by parent (fmt.Sprint); names come from generated code.
+func childValues(ctx context.Context, db *gorm.DB, table, fk, keyColumn string, key any, col string, parents any) (map[string]string, error) {
+	var rows []struct {
+		Parent string
+		Value  *string
+	}
+	err := db.WithContext(ctx).Table(table).
+		Select(database.CastText(db, fk)+" AS parent, "+database.CastText(db, col)+" AS value").
+		Where(fk+" IN ? AND "+keyColumn+" = ?", parents, key).Scan(&rows).Error
+	out := make(map[string]string, len(rows))
+	for _, r := range rows {
+		if r.Value != nil {
+			out[r.Parent] = *r.Value
+		}
+	}
+	return out, err
 }
 
 // Operations passed to the AfterCommit hooks (<resource>_ext.go).
@@ -163,9 +209,13 @@ func escapeLike(s string) string {
 	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
 }
 
-// csvCell neutralizes spreadsheet formula injection.
+// plainNumber matches a number as the export writes it (-50, 1.25), which
+// a spreadsheet never takes for a formula.
+var plainNumber = regexp.MustCompile(`^-?[0-9]+(\.[0-9]+)?$`)
+
+// csvCell neutralizes spreadsheet formula injection; numbers stay numbers.
 func csvCell(s string) string {
-	if s != "" && strings.ContainsRune("=+-@\t\r", rune(s[0])) {
+	if s != "" && strings.ContainsRune("=+-@\t\r", rune(s[0])) && !plainNumber.MatchString(s) {
 		return "'" + s
 	}
 	return s

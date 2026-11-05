@@ -45,8 +45,16 @@ export type [[.TSUpper]] = {
 [[- range .Relations]]
   /** [[.LabelDoc]] */
   [[.LabelJSON]]: string;
+[[- if .ExtraJSON]]
+  /** [[.Label]]（[[.RelTable]].[[.RelationExtra]]） */
+  [[.ExtraJSON]]: string;
+[[- end]]
 [[- end]]
 [[- range .Children]]
+[[- range .ListColumns]]
+  /** [[.Label]]：列表接口返回 */
+  [[.JSONName]]?: string;
+[[- end]]
   /** [[.Label]]：详情接口返回，列表不返回 */
   [[.JSONName]]?: [[$.TSUpper]][[.GoName]][];
 [[- if .Spec.ListKeys]]
@@ -112,6 +120,13 @@ export const update[[.TSUpper]] = (
 export const delete[[.TSUpper]] = (id: string) =>
   http.delete<null>(`[[.URLPath]]/${enc(id)}`);
 [[- end]]
+[[- end]]
+
+[[- if .Features]]
+
+/** 字段依赖的功能开关（[[join .Features "、"]]），关闭时不显示 */
+export const get[[.TSUpper]]Features = () =>
+  http.get<Record<string, boolean>>("/[[.URLName]]/options/features");
 [[- end]]
 
 export const export[[.TSPluralUpper]] = (filter: [[.TSUpper]]Filter) =>

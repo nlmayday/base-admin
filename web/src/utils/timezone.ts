@@ -67,6 +67,35 @@ export function toUTC<T extends string | Date | null | undefined>(
     : (value as Exclude<T, Date>);
 }
 
+/**
+ * 时间在另一个时区的写法（显示为本地时给 UTC，显示为 UTC 时给本地），
+ * 用于悬停提示；浏览器本身就在 UTC 或值无效时为 ""。
+ */
+export function otherZoneText(value: string | Date | null | undefined): string {
+  if (!value || localZoneLabel(value) === "GMT+0") return "";
+  const d = dayjs(value);
+  if (!d.isValid()) return "";
+  return displayZone.value === "utc"
+    ? `${d.format("YYYY-MM-DD HH:mm:ss")} (${localZoneLabel(value)})`
+    : `${d.utc().format("YYYY-MM-DD HH:mm:ss")} (UTC)`;
+}
+
+/** 按顶栏时区读写的墙上时间 "YYYY-MM-DD HH:mm:ss"，与 RFC 3339 互转 */
+export function toZoneWall(value: string | null | undefined): string {
+  if (!value) return "";
+  const d = dayjs(value);
+  return d.isValid()
+    ? inDisplayZone(d.toDate()).format("YYYY-MM-DD HH:mm:ss")
+    : "";
+}
+
+/** 顶栏时区的墙上时间转 UTC 的 RFC 3339；空值为 "" */
+export function fromZoneWall(wall: string | null | undefined): string {
+  if (!wall) return "";
+  const d = displayZone.value === "utc" ? dayjs.utc(wall) : dayjs(wall);
+  return d.isValid() ? d.utc().format("YYYY-MM-DD[T]HH:mm:ss[Z]") : "";
+}
+
 /** 选择器里的本地时间对应的 UTC，如 2026-11-04 02:00:00 UTC；空值为 "" */
 export function utcHint(value: string | Date | null | undefined): string {
   if (!value) return "";

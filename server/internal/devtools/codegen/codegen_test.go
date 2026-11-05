@@ -257,7 +257,7 @@ func TestGenerateCustomer(t *testing.T) {
 	assert.Contains(t, index, "确定删除客户「${row.phone}」吗？", "rows are named by a unique column")
 	assert.Contains(t, index, `defineOptions({ name: "ExampleCustomer" });`)
 	assert.Contains(t, index, `v-perm="'example:customer:export'"`)
-	assert.Contains(t, index, "{{ formatDateTime(row.createdAt) }}")
+	assert.Contains(t, index, `<ReDateTime v-else :value="row.createdAt" />`, "hover shows the other time zone")
 	form := fileByPath(t, res, "CustomerFormDialog.vue").Content
 	assert.Contains(t, form, `:validate-on-rule-change="false"`)
 	assert.Contains(t, form, "version: props.row.version")
