@@ -1,0 +1,86 @@
+/*
+ * 标题层级：一级菜单、卡片标题、表头、弹窗标题比正文更突出（参考 gin-vue-admin）。
+ * element-plus 的 css 和侧边栏的 body[layout] 规则优先级更高，这里的选择器要多一层。
+ */
+
+/* 侧边栏：一级菜单加粗加深，当前页所在的一级菜单用主题色，二级菜单保持常规字重 */
+body[layout] .sidebar-container {
+  .outer-most > .el-sub-menu__title,
+  .outer-most > .el-menu-item,
+  .outer-most.el-menu-item {
+    font-weight: 600;
+    color: color-mix(
+      in srgb,
+      var(--pure-theme-menu-title-hover) 82%,
+      transparent
+    );
+  }
+
+  .el-menu .outer-most.is-active > .el-sub-menu__title {
+    color: var(--el-color-primary) !important;
+  }
+
+  .nest-menu .el-menu-item {
+    font-weight: 400;
+  }
+
+  .el-menu-item.is-active {
+    font-weight: 600;
+  }
+}
+
+/* 卡片、列表的标题（class="card-title"）和 PureTableBar 的标题：加粗、主文字色，左侧一条主题色竖条 */
+.card-title,
+.pure-table-bar__title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+
+  &::before {
+    display: inline-block;
+    flex: none;
+    align-self: center;
+    width: 3px;
+    height: 14px;
+    margin-right: 8px;
+    vertical-align: -1px;
+    content: "";
+    background: var(--el-color-primary);
+    border-radius: 2px;
+  }
+
+  /* 标题前已有图标时不再加竖条 */
+  &.no-bar::before {
+    display: none;
+  }
+}
+
+/* 表头：浅底色、主文字色、加粗 */
+:root .el-table {
+  --el-table-header-bg-color: var(--el-fill-color-light);
+  --el-table-header-text-color: var(--el-text-color-primary);
+
+  thead th.el-table__cell {
+    font-weight: 600;
+  }
+}
+
+/* 弹窗、抽屉、确认框标题 */
+.el-dialog__title,
+.el-drawer__title,
+.el-message-box__title {
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+
+/* 面包屑的当前页 */
+.el-breadcrumb__item:last-child .el-breadcrumb__inner,
+.el-breadcrumb__item:last-child .el-breadcrumb__inner a {
+  font-weight: 600 !important;
+  color: var(--el-text-color-primary) !important;
+}
+
+/* 标签页的当前页 */
+.scroll-item.is-active {
+  font-weight: 600;
+}

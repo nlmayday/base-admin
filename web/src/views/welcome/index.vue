@@ -29,7 +29,7 @@ const canMonitor = computed(() => hasPerm("ops:monitor:view"));
     </el-row>
 
     <template v-if="canOperationLog || canLoginLog">
-      <div class="section-title">近 7 天动态</div>
+      <div class="section-title card-title">近 7 天动态</div>
       <AuditStatsCard v-if="canOperationLog" kind="operation" />
       <AuditStatsCard v-if="canLoginLog" kind="login" />
     </template>
@@ -59,7 +59,5 @@ const canMonitor = computed(() => hasPerm("ops:monitor:view"));
 
 .section-title {
   margin-top: 4px;
-  font-weight: 500;
-  color: var(--el-text-color-regular);
 }
 </style>

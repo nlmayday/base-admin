@@ -66,7 +66,7 @@ defineExpose({ reload: load });
   <el-card v-loading="loading" shadow="never" class="h-full">
     <template #header>
       <div class="flex items-center justify-between">
-        <span class="font-medium">系统状态</span>
+        <span class="card-title">系统状态</span>
         <router-link
           to="/ops/monitor"
           class="text-sm text-[var(--el-color-primary)]"

@@ -59,7 +59,7 @@ watch(() => props.percent, render);
 <template>
   <el-card shadow="never" class="h-full" body-class="py-3!">
     <div class="flex items-center justify-between">
-      <span class="font-medium">{{ title }}</span>
+      <span class="card-title">{{ title }}</span>
       <slot name="extra" />
     </div>
     <div v-loading="loading" class="relative">

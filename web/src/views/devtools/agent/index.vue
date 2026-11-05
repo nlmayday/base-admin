@@ -69,7 +69,7 @@ onMounted(load);
   <div class="main">
     <el-card shadow="never" class="mb-3">
       <template #header>
-        <span class="font-medium">AI 接口</span>
+        <span class="card-title">AI 接口</span>
       </template>
       <el-alert
         v-if="!data.enabled"
@@ -116,7 +116,7 @@ onMounted(load);
     <el-card shadow="never">
       <template #header>
         <div class="flex items-center justify-between">
-          <span class="font-medium">密钥</span>
+          <span class="card-title">密钥</span>
           <div>
             <el-button @click="load">刷新</el-button>
             <el-button type="primary" @click="dialogVisible = true">

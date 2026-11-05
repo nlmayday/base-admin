@@ -218,7 +218,7 @@ onMounted(load);
     >
       <el-card shadow="never" class="mb-3">
         <template #header>
-          <div class="font-medium">站点设置</div>
+          <div class="card-title">站点设置</div>
           <div class="settings-hint">
             站点名称和 Logo 会显示在登录页，无需登录即可读取
           </div>
@@ -266,7 +266,7 @@ onMounted(load);
 
       <el-card shadow="never" class="mb-3">
         <template #header>
-          <div class="font-medium">上传设置</div>
+          <div class="card-title">上传设置</div>
           <div class="settings-hint">
             文件上传按此处的扩展名白名单和大小限制校验；HTML、SVG、脚本和可执行文件始终禁止
           </div>
@@ -306,7 +306,7 @@ onMounted(load);
 
       <el-card shadow="never" class="mb-3">
         <template #header>
-          <div class="font-medium">日志设置</div>
+          <div class="card-title">日志设置</div>
           <div class="settings-hint">
             超过保留天数的登录日志和操作日志会被定时清理
           </div>
@@ -330,7 +330,7 @@ onMounted(load);
 
       <el-card shadow="never" class="mb-3">
         <template #header>
-          <div class="font-medium">导出与列表</div>
+          <div class="card-title">导出与列表</div>
           <div class="settings-hint">
             导出超过上限时直接拒绝并提示缩小查询范围，不会截断；导出中的时间为
             UTC，表头标注 (UTC)。每页条数对之后打开的列表生效

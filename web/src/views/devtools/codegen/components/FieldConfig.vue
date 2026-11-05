@@ -92,7 +92,7 @@ function labelError(f: CodegenFieldInfo): string {
   <div>
     <div class="mb-2 flex items-center justify-between">
       <div class="flex items-center gap-2">
-        <span class="font-medium">字段配置</span>
+        <span class="card-title">字段配置</span>
         <span class="text-xs text-[var(--el-text-color-secondary)]">
           中文名用于表头、表单和搜索项；不改也可以直接生成
         </span>

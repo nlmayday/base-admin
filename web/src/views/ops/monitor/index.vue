@@ -124,7 +124,7 @@ onBeforeUnmount(() => clearTimeout(timer));
     <el-card shadow="never" class="mb-3" body-class="py-3!">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div class="flex items-center gap-3">
-          <span class="text-base font-medium">服务器监控</span>
+          <span class="card-title">服务器监控</span>
           <el-tag v-if="failed" type="danger" effect="plain" size="small">
             刷新失败，已暂停自动刷新
           </el-tag>
@@ -153,7 +153,7 @@ onBeforeUnmount(() => clearTimeout(timer));
           <template #header>
             <div class="flex items-center gap-2">
               <ServerIcon class="text-(--el-color-primary)" />
-              <span class="font-medium">主机信息</span>
+              <span class="card-title no-bar">主机信息</span>
             </div>
           </template>
           <div v-if="server">
@@ -236,7 +236,7 @@ onBeforeUnmount(() => clearTimeout(timer));
             <el-card shadow="never">
               <template #header>
                 <div class="flex items-center justify-between">
-                  <span class="font-medium">CPU / 内存趋势</span>
+                  <span class="card-title">CPU / 内存趋势</span>
                   <span class="text-xs text-(--el-text-color-secondary)">
                     仅在本页打开期间采集，最多 10 分钟
                   </span>
@@ -254,7 +254,7 @@ onBeforeUnmount(() => clearTimeout(timer));
         <el-card shadow="never" class="h-full">
           <template #header>
             <div class="flex items-center justify-between">
-              <span class="font-medium">CPU 核心</span>
+              <span class="card-title">CPU 核心</span>
               <span
                 v-if="server"
                 class="text-xs text-(--el-text-color-secondary)"
@@ -281,7 +281,7 @@ onBeforeUnmount(() => clearTimeout(timer));
       <el-col :xs="24" :lg="14" class="mb-3">
         <el-card shadow="never" class="h-full">
           <template #header>
-            <span class="font-medium">磁盘</span>
+            <span class="card-title">磁盘</span>
           </template>
           <el-table :data="server?.disks ?? []" size="small" max-height="300">
             <template #empty>

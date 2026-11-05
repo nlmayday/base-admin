@@ -64,7 +64,7 @@ const visibleLinks = computed<Link[]>(() => {
 <template>
   <el-card shadow="never" class="h-full">
     <template #header>
-      <span class="font-medium">快捷入口</span>
+      <span class="card-title">快捷入口</span>
     </template>
     <div v-if="links.length" ref="container" class="links">
       <button

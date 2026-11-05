@@ -101,7 +101,7 @@ defineExpose({ reload });
   <el-card shadow="never" class="h-full" body-class="p-3!">
     <template #header>
       <div class="flex items-center justify-between">
-        <span class="font-medium">字典类型</span>
+        <span class="card-title">字典类型</span>
         <el-button
           v-perm="'system:dict:create'"
           type="primary"

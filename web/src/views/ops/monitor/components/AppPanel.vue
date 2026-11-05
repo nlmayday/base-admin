@@ -82,7 +82,7 @@ const poolUsage = computed(() => {
         <template #header>
           <div class="flex items-center gap-2">
             <CodeIcon class="text-(--el-color-primary)" />
-            <span class="font-medium">Go 运行时</span>
+            <span class="card-title no-bar">Go 运行时</span>
           </div>
         </template>
         <dl v-if="runtimeItems.length" class="kv-grid">
@@ -99,7 +99,7 @@ const poolUsage = computed(() => {
         <template #header>
           <div class="flex items-center gap-2">
             <DatabaseIcon class="text-(--el-color-primary)" />
-            <span class="font-medium">数据库连接池</span>
+            <span class="card-title no-bar">数据库连接池</span>
           </div>
         </template>
         <template v-if="dbItems.length">
@@ -132,7 +132,7 @@ const poolUsage = computed(() => {
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-2">
               <StackIcon class="text-(--el-color-danger)" />
-              <span class="font-medium">Redis</span>
+              <span class="card-title no-bar">Redis</span>
             </div>
             <el-tag
               v-if="stats"

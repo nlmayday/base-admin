@@ -131,7 +131,7 @@ onMounted(reload);
     <el-card shadow="never">
       <div class="mb-3 flex items-center justify-between">
         <div class="flex items-center gap-2">
-          <span class="font-medium">菜单列表</span>
+          <span class="card-title">菜单列表</span>
           <span class="text-xs text-[var(--el-text-color-secondary)]">
             模块菜单由后端注册，只能修改标题、图标、排序和隐藏；可新增自定义目录与外链。按钮为菜单下的操作权限，在角色管理中分配。
           </span>

@@ -328,7 +328,7 @@ onMounted(() => {
         @drop.prevent="onDrop"
       >
         <div class="mb-3 flex items-center justify-between">
-          <span class="font-medium">
+          <span class="card-title">
             {{ currentCategoryName }}
             <span
               class="ml-1 text-xs font-normal text-[var(--el-text-color-secondary)]"

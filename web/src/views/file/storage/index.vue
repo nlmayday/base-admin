@@ -205,7 +205,7 @@ onMounted(load);
       <el-card shadow="never" class="lg:col-span-2">
         <template #header>
           <div class="flex items-center justify-between">
-            <span class="font-medium">存储驱动</span>
+            <span class="card-title">存储驱动</span>
             <el-button link type="primary" :loading="loading" @click="load">
               <RefreshIcon class="mr-1" />刷新
             </el-button>
@@ -284,7 +284,7 @@ onMounted(load);
       <el-card shadow="never" class="lg:col-span-3">
         <template #header>
           <div class="flex items-center justify-between">
-            <span class="font-medium">类型分布</span>
+            <span class="card-title">类型分布</span>
             <el-radio-group v-model="pieMetric" size="small">
               <el-radio-button value="size">按空间</el-radio-button>
               <el-radio-button value="count">按数量</el-radio-button>
@@ -299,13 +299,13 @@ onMounted(load);
     <div class="mb-3 grid grid-cols-1 gap-3 lg:grid-cols-5">
       <el-card shadow="never" class="lg:col-span-3">
         <template #header>
-          <span class="font-medium">近 14 天上传</span>
+          <span class="card-title">近 14 天上传</span>
         </template>
         <EChart v-if="stats" :option="trendOption" height="260px" />
       </el-card>
       <el-card shadow="never" class="lg:col-span-2">
         <template #header>
-          <span class="font-medium">常见扩展名</span>
+          <span class="card-title">常见扩展名</span>
         </template>
         <ul v-if="topExtensions.length" class="ext-list">
           <li v-for="e in topExtensions" :key="e.key">
@@ -338,7 +338,7 @@ onMounted(load);
     <el-card shadow="never">
       <template #header>
         <div class="flex items-center justify-between">
-          <span class="font-medium">允许上传的类型</span>
+          <span class="card-title">允许上传的类型</span>
           <span class="text-xs text-[var(--el-text-color-secondary)]">
             在「系统配置 ›
             基础设置」中调整；HTML、SVG、脚本与可执行文件始终禁止上传

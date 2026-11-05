@@ -69,7 +69,7 @@ onMounted(reload);
     <el-card shadow="never">
       <div class="mb-3 flex items-center justify-between">
         <div class="flex items-center gap-3">
-          <span class="font-medium">在线会话</span>
+          <span class="card-title">在线会话</span>
           <el-tag type="success" effect="plain" round>
             {{ pagination.total }} 个会话
           </el-tag>
