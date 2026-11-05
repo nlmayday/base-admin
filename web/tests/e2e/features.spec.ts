@@ -57,8 +57,18 @@ test("工作台展示统计卡片与快捷入口", async ({ page }) => {
   await expect(page.getByRole("link", { name: /^在线会话/ })).toBeVisible();
   await expect(page.getByText("快捷入口")).toBeVisible();
   await expect(page.getByText("系统状态")).toBeVisible();
-  await page.getByRole("button", { name: /用户管理/ }).click();
-  await expect(page).toHaveURL(/#\/system\/user/);
+  // 快捷入口按菜单顺序取当前用户可见的页面，业务菜单多时不一定有「用户管理」：
+  // 点第一个入口，应打开同名页面
+  const first = page.getByTestId("quick-link").first();
+  await expect(first).toBeVisible();
+  const title = (
+    await first.getByTestId("quick-link-title").innerText()
+  ).trim();
+  await first.click();
+  await expect(page).not.toHaveURL(/#\/welcome/);
+  await expect(
+    page.locator(".el-breadcrumb__item:last-child .el-breadcrumb__inner")
+  ).toHaveText(title);
 });
 
 test("在界面上维护字典项，业务接口按字典返回标签样式", async ({ page }) => {
@@ -110,7 +120,7 @@ test("连续登录失败后要求图形验证码", async ({ page }) => {
     // 默认策略：失败 3 次后需要验证码
     for (let i = 0; i < 3; i++) {
       await submit.click();
-      await expect(page.getByText("用户名或密码错误").first()).toBeVisible();
+      await expect(page.getByText("账号或密码错误").first()).toBeVisible();
     }
     await expect(page.getByPlaceholder("验证码")).toBeVisible();
     await expect(page.locator(".captcha-img")).toBeVisible();

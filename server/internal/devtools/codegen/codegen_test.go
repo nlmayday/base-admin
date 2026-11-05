@@ -470,3 +470,22 @@ func TestAfterCommitHook(t *testing.T) {
 	assert.NotContains(t, fileByPath(t, ro, "/order_log_ext.go").Content, "AfterCommit")
 	assert.NotContains(t, fileByPath(t, ro, "/order_log.go").Content, "Committed")
 }
+
+// Generated writes fill 操作对象 of the operation log: create, update and
+// delete call set<X>Target; an auto key is only known after the insert.
+func TestGeneratedWritesSetAuditTarget(t *testing.T) {
+	res, err := Generate(customerTable(), customerSpec())
+	require.NoError(t, err)
+	src := fileByPath(t, res, "/customer.go").Content
+	assert.Contains(t, src, `"base-admin/server/internal/modules/audit"`)
+	assert.Contains(t, src, "func setCustomerTarget(c *gin.Context, key int64) {\n\taudit.SetTarget(c, fmt.Sprintf(\"customer:%v\", key))\n}")
+	for _, fn := range []string{"createCustomer", "updateCustomer", "deleteCustomer"} {
+		body := src[strings.Index(src, "func (m *Module) "+fn+"("):]
+		body = body[:strings.Index(body, "\n}\n")]
+		assert.Equal(t, 1, strings.Count(body, "setCustomerTarget(c, key)"), fn)
+	}
+
+	ro, err := Generate(orderLogTable(), Spec{Module: "ledger", Resource: "order-log", Name: "订单流水", NewModule: true, ReadOnly: true})
+	require.NoError(t, err)
+	assert.NotContains(t, fileByPath(t, ro, "/order_log.go").Content, "audit")
+}

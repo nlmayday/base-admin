@@ -92,7 +92,7 @@ func TestRetentionDays(t *testing.T) {
 }
 
 func TestReasonLabel(t *testing.T) {
-	assert.Equal(t, "用户名或密码错误", reasonLabel("bad_credentials"))
+	assert.Equal(t, "账号或密码错误", reasonLabel("bad_credentials"))
 	assert.Equal(t, "账号已锁定", reasonLabel("locked"))
 	assert.Equal(t, "custom", reasonLabel("custom"))
 }

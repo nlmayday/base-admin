@@ -237,7 +237,8 @@ func TestOperationLogTarget(t *testing.T) {
 	require.Equal(t, http.StatusOK, h.call(http.MethodPut, "/api/v1/probe/players/1234/ban", "", alice).Status)
 	require.Equal(t, http.StatusOK, h.call(http.MethodPost, "/api/v1/probe/players/ban", "{}", alice).Status)
 	require.Equal(t, http.StatusOK, h.call(http.MethodPost, "/api/v1/probe/items", `{"name":"pen"}`, alice).Status)
-	h.waitCount(tableOperationLogs, "TRUE", 5)
+	h.call(http.MethodDelete, "/api/v1/probe/items/77", "", alice, "probe:item:delete")
+	h.waitCount(tableOperationLogs, "TRUE", 6)
 
 	var list httpx.Page[opLogView]
 	h.decode(h.call(http.MethodGet, "/api/v1/audit/operation-logs?target="+url.QueryEscape("player:123"), "", alice, allViewPerms...), &list)
@@ -253,6 +254,7 @@ func TestOperationLogTarget(t *testing.T) {
 	}
 	assert.True(t, targets["player:1,player:2"], "batch targets are joined")
 	assert.True(t, targets[""], "requests without a target")
+	assert.True(t, targets["item:77"], "a route with :id gets its target from the path")
 
 	export := h.call(http.MethodGet, "/api/v1/audit/operation-logs/export?target="+url.QueryEscape("player:1234"), "", alice, allViewPerms...)
 	require.Equal(t, http.StatusOK, export.Status)
