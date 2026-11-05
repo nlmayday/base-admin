@@ -222,7 +222,7 @@ onMounted(() => {
 
     <el-card shadow="never">
       <div class="mb-3 flex items-center justify-between">
-        <span class="font-medium">操作日志</span>
+        <span class="card-title">操作日志</span>
         <div>
           <el-button :loading="loading" @click="refresh">刷新</el-button>
           <el-button

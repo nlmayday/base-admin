@@ -181,7 +181,7 @@ onMounted(() => {
 
     <el-card shadow="never">
       <div class="mb-3 flex items-center justify-between">
-        <span class="font-medium">参数列表</span>
+        <span class="card-title">参数列表</span>
         <div>
           <el-button v-if="canOpenSettings" @click="goSettings">
             基础设置

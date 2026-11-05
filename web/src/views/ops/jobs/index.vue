@@ -186,7 +186,7 @@ onMounted(() => {
 
     <el-card shadow="never">
       <div class="mb-3 flex items-center justify-between">
-        <span class="font-medium">定时任务</span>
+        <span class="card-title">定时任务</span>
         <div class="flex items-center gap-2">
           <el-button :loading="loading" @click="reload">刷新</el-button>
           <el-button

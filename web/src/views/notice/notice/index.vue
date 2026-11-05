@@ -142,7 +142,7 @@ onMounted(reload);
     </el-card>
     <el-card shadow="never">
       <div class="mb-3 flex justify-between">
-        <span class="font-medium">通知公告列表</span>
+        <span class="card-title">通知公告列表</span>
         <div>
           <el-button
             v-perm="'notice:notice:create'"

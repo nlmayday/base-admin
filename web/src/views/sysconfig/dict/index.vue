@@ -139,7 +139,7 @@ function remove(row: DictItem): void {
         <el-card shadow="never">
           <div class="mb-3 flex items-center justify-between gap-3">
             <div class="flex min-w-0 items-center gap-2">
-              <span class="truncate font-medium">{{ currentType.name }}</span>
+              <span class="card-title truncate">{{ currentType.name }}</span>
               <el-tag type="info" disable-transitions>
                 {{ currentType.code }}
               </el-tag>

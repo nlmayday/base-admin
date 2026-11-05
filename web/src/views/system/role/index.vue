@@ -112,7 +112,7 @@ onMounted(() => {
     </el-card>
     <el-card shadow="never">
       <div class="mb-3 flex justify-between">
-        <span class="font-medium">角色列表</span>
+        <span class="card-title">角色列表</span>
         <el-button
           v-perm="'iam:role:create'"
           type="primary"

@@ -445,7 +445,11 @@ onMounted(() => {
   display: flex;
   gap: 12px;
   align-items: baseline;
-  font-weight: 500;
+}
+
+/* 竖条和标题之间已有 gap */
+.card-title::before {
+  margin-right: -4px;
 }
 
 .card-sub,

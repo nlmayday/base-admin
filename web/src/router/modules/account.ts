@@ -2,7 +2,7 @@ export default {
   path: "/account",
   redirect: "/account/index",
   meta: {
-    icon: "ri/user-settings-line",
+    icon: "ri:user-settings-line",
     title: "个人中心",
     showLink: false,
     rank: 99

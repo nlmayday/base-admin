@@ -148,7 +148,7 @@ function remove(c: FileCategory): void {
   <el-card shadow="never" class="h-full" body-class="p-2!">
     <template #header>
       <div class="flex items-center justify-between">
-        <span class="font-medium">文件分类</span>
+        <span class="card-title">文件分类</span>
         <el-tooltip v-if="canEdit" content="新建分类" placement="top">
           <el-button
             link

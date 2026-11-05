@@ -73,7 +73,7 @@ onMounted(reload);
     <el-card shadow="never" class="mb-3" body-class="py-3!">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <div class="flex flex-wrap items-center gap-4 text-sm">
-          <span class="font-medium">接口文档</span>
+          <span class="card-title">接口文档</span>
           <span class="text-[var(--el-text-color-secondary)]">
             {{ stats.modules }} 个模块 · {{ stats.routes }} 个接口 ·
             {{ stats.public }} 个公开接口

@@ -490,7 +490,7 @@ onMounted(async () => {
       >
         <template #header>
           <div class="flex items-center justify-between">
-            <span class="font-medium">代码生成</span>
+            <span class="card-title">代码生成</span>
             <span class="text-xs text-[var(--el-text-color-secondary)]">
               「生成预览」不写入文件；「生成到项目」写入文件并自动接入新模块（仅开发环境）
             </span>

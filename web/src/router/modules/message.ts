@@ -2,7 +2,7 @@ export default {
   path: "/message",
   redirect: "/message/index",
   meta: {
-    icon: "ri/notification-3-line",
+    icon: "ri:notification-3-line",
     title: "我的消息",
     showLink: false,
     rank: 98

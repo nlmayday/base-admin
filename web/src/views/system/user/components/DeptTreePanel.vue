@@ -38,7 +38,7 @@ defineExpose({ clear });
   <el-card shadow="never" class="h-full" body-class="p-3!">
     <template #header>
       <div class="flex items-center justify-between">
-        <span class="font-medium">部门</span>
+        <span class="card-title">部门</span>
         <el-button link type="primary" @click="clear">全部</el-button>
       </div>
     </template>

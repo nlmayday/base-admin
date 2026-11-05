@@ -190,7 +190,7 @@ onMounted(() => {
 
     <el-card shadow="never">
       <div class="mb-3 flex items-center justify-between">
-        <span class="font-medium">
+        <span class="card-title">
           执行记录
           <span
             v-if="hasRunning"
