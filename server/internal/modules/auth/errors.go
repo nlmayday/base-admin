@@ -27,7 +27,7 @@ var (
 	errUnauthenticated = httpx.NewError(http.StatusUnauthorized, CodeUnauthenticated, "未登录或会话已失效")
 	errForbidden       = httpx.NewError(http.StatusForbidden, CodeForbidden, "无权限")
 	errCSRF            = httpx.NewError(http.StatusForbidden, CodeCSRF, "请求来源校验失败")
-	errBadCredentials  = httpx.NewError(http.StatusUnauthorized, CodeBadCredentials, "用户名或密码错误")
+	errBadCredentials  = httpx.NewError(http.StatusUnauthorized, CodeBadCredentials, "账号或密码错误")
 	errPasswordChange  = httpx.NewError(http.StatusForbidden, CodePasswordChangeRequired, "请先修改密码")
 	errUnavailable     = httpx.Unavailable("认证服务暂不可用")
 	errCaptcha         = httpx.NewError(http.StatusUnauthorized, CodeCaptchaRequired, "验证码错误或已过期").

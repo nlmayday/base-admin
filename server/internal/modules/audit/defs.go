@@ -44,7 +44,7 @@ var menuDefs = []menu.Def{
 
 // reasonLabels translates login failure reasons for exports.
 var reasonLabels = map[string]string{
-	auth.ReasonBadCredentials: "用户名或密码错误",
+	auth.ReasonBadCredentials: "账号或密码错误",
 	auth.ReasonRateLimited:    "请求过于频繁",
 	auth.ReasonCaptcha:        "验证码错误",
 	auth.ReasonLocked:         "账号已锁定",

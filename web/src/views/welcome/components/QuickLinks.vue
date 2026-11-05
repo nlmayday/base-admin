@@ -72,12 +72,15 @@ const visibleLinks = computed<Link[]>(() => {
         :key="l.path"
         type="button"
         class="link"
+        data-testid="quick-link"
         @click="router.push(l.path)"
       >
         <span class="link-icon">
           <component :is="useRenderIcon(l.icon || 'ri:apps-line')" />
         </span>
-        <span class="truncate text-sm">{{ l.title }}</span>
+        <span class="truncate text-sm" data-testid="quick-link-title">{{
+          l.title
+        }}</span>
         <span
           v-if="l.group"
           class="truncate text-xs text-[var(--el-text-color-secondary)]"

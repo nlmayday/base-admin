@@ -196,7 +196,8 @@ generate 返回 `files`（写入的文件）、`newModule`、`wired`、`notes`�
   `<resource>BeforeUpdate(ctx, tx, old, req)` / `<resource>BeforeDelete(ctx, tx, old)`（写入或删除前在同一事务中执行，
   `old` 为修改前的行，返回错误即回滚，如「活动开始后目标不能改」）、`<resource>AfterSave` / `<resource>AfterDelete`
   （写入或删除后在同一事务中执行，返回错误即回滚）、`<resource>AfterCommit`（事务提交后执行，如通知其他服务刷新缓存；
-  出错只记日志，不影响已成功的保存）；Extension.vue 渲染在列表工具栏和每行「操作」列，还可导出
+  出错只记日志，不影响已成功的保存）；生成的新增、编辑、删除会把操作日志的「操作对象」记为 `<resource>:<主键>`，
+  `_ext.go` 里自定义的写接口也调用 `set<Resource>Target(c, key)`；Extension.vue 渲染在列表工具栏和每行「操作」列，还可导出
   `cellColumns`（接管某些列的渲染，place="cell"）、`hasHeader`（表格上方说明区）、`hasExpand`（展开行）、
   `canEdit(row)` / `canDelete(row)`（返回 false 不显示编辑 / 删除）
 - 列表页读地址栏参数：与搜索字段同名的参数（如 `?userId=1001`）自动填入并查询；时间列的日期范围按 UTC 日

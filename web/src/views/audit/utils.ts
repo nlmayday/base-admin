@@ -50,7 +50,7 @@ export const SUCCESS_OPTIONS: ReadonlyArray<{
 
 /** 登录失败原因 */
 export const REASON_LABELS: Record<string, string> = {
-  bad_credentials: "用户名或密码错误",
+  bad_credentials: "账号或密码错误",
   rate_limited: "请求过于频繁",
   captcha: "验证码错误",
   locked: "账号已锁定",

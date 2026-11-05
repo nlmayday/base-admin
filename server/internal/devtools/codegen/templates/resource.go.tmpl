@@ -38,6 +38,9 @@ import (
 	"base-admin/server/internal/core/menu"
 	"base-admin/server/internal/core/module"
 	"base-admin/server/internal/core/perm"
+[[- if not .ReadOnly]]
+	"base-admin/server/internal/modules/audit"
+[[- end]]
 [[- if .NeedsDatabase]]
 	"base-admin/server/internal/platform/database"
 [[- end]]
@@ -308,6 +311,15 @@ func parse[[.Upper]]Key(c *gin.Context) ([[.KeyGo]], error) {
 	return [[.KeyGo]](n), nil
 [[- end]]
 }
+[[- if not .ReadOnly]]
+
+// set[[.Upper]]Target records the row a write acts on ("[[.Resource]]:<key>")
+// in its operation log (操作日志 → 操作对象). Call it in hand-written write
+// endpoints of [[.FileBase]]_ext.go too.
+func set[[.Upper]]Target(c *gin.Context, key [[.KeyGo]]) {
+	audit.SetTarget(c, fmt.Sprintf("[[.Resource]]:%v", key))
+}
+[[- end]]
 
 // load[[.Upper]] reads one visible row; rows outside the data scope are 404.
 func (m *Module) load[[.Upper]](ctx context.Context, db *gorm.DB, key [[.KeyGo]]) ([[.Lower]]View, error) {
@@ -718,6 +730,8 @@ func (m *Module) create[[.Upper]](c *gin.Context) (any, error) {
 [[- end]]
 [[- if .KeyAuto]]
 	var key [[.KeyGo]]
+[[- else]]
+	set[[.Upper]]Target(c, key)
 [[- end]]
 	var view [[.Lower]]View
 	err := database.RunTx(ctx, m.db, func(tx *gorm.DB) error {
@@ -754,6 +768,9 @@ func (m *Module) create[[.Upper]](c *gin.Context) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+[[- if .KeyAuto]]
+	set[[.Upper]]Target(c, key)
+[[- end]]
 	m.[[.Lower]]Committed(ctx, opCreate, key, &view)
 	return view, nil
 }
@@ -764,6 +781,7 @@ func (m *Module) update[[.Upper]](c *gin.Context) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	set[[.Upper]]Target(c, key)
 	var req [[.Lower]]Request
 	if err := httpx.BindJSON(c, &req); err != nil {
 		return nil, err
@@ -901,6 +919,7 @@ func (m *Module) delete[[.Upper]](c *gin.Context) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	set[[.Upper]]Target(c, key)
 	ctx := c.Request.Context()
 	err = database.RunTx(ctx, m.db, func(tx *gorm.DB) error {
 		old, err := m.load[[.Upper]](ctx, tx, key)

@@ -71,7 +71,7 @@ func TestLoginLogs(t *testing.T) {
 	require.Equal(t, http.StatusOK, r.Status, r.Body)
 	lines := strings.Split(strings.TrimSpace(strings.TrimPrefix(r.Body, "\xef\xbb\xbf")), "\n")
 	require.Len(t, lines, 3, r.Body)
-	assert.Contains(t, r.Body, "用户名或密码错误")
+	assert.Contains(t, r.Body, "账号或密码错误")
 	assert.Contains(t, r.Body, "请求过于频繁")
 	assert.Contains(t, r.Body, "'=ghost")
 	h.waitCount(tableOperationLogs, "summary = '导出登录日志'", 1)
