@@ -13,7 +13,10 @@ export default defineConfig([
     "*.d.ts",
     "public/*",
     "src/assets/**",
-    "src/**/iconfont/**"
+    "src/**/iconfont/**",
+    // Playwright output (git-ignored): reports bundle the trace viewer's js
+    "tests/e2e/playwright-report/**",
+    "tests/e2e/test-results/**"
   ]),
   {
     ...js.configs.recommended,
