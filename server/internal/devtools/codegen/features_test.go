@@ -273,3 +273,46 @@ func bannerWithOptions() Table {
 }
 
 func (c ChildSpec) asList() []ChildSpec { return []ChildSpec{c} }
+
+func TestUnusedLookupAndLabelDocs(t *testing.T) {
+	// Read-only, the relation not searched: no options route, no lookup.
+	spec := ledgerSpec()
+	spec.Fields = []FieldOption{{Column: "user_id", Relation: ptr("short_id")}}
+	res, err := Generate(ledgerTable(), spec)
+	require.NoError(t, err)
+	src := files(t, res)["wallet_ledger.go"]
+	assert.NotContains(t, src, "walletLedgerUserIDLookup")
+	assert.NotContains(t, src, "core/lookup")
+	assert.Contains(t, src, "LEFT JOIN lg_user r1", "the list still shows the label")
+	assert.Contains(t, src, "`json:\"userName\" doc:\"玩家（lg_user.short_id）\"`")
+
+	// The text key itself shown.
+	game := gameTable()
+	game.Columns[2].Ref = &Ref{Table: "lg_game_family", Key: "family", Labels: []string{"endpoint", "family"}}
+	gs := gameSpec()
+	gs.Fields = append(gs.Fields[:1], FieldOption{Column: "game_type", Relation: ptr("family")})
+	res, err = Generate(game, gs)
+	require.NoError(t, err)
+	f := files(t, res)
+	assert.Contains(t, f["game.go"], `lookup.Target{Table: "lg_game_family", Key: "family", Label: "family", SoftDelete: false}`)
+	assert.Contains(t, f["game.go"], "doc:\"玩法家族（lg_game_family.family）\"")
+	assert.Contains(t, f["game.ts"], "/** 玩法家族（lg_game_family.family） */")
+
+	res, err = Generate(dealTable(), Spec{Module: "crm", Resource: "deal", Name: "商机"})
+	require.NoError(t, err)
+	assert.Contains(t, files(t, res)["deal.go"], "doc:\"客户名称\"")
+}
+
+func TestListKeysLabel(t *testing.T) {
+	tb := bannerWithOptions()
+	c := tb.Children[0].Spec
+	c.ListKeysLabel = "已填语言"
+	tb.Children[0].Spec = c
+	res, err := Generate(tb, Spec{Module: "game", Resource: "banner", Name: "横幅", Children: c.asList()})
+	require.NoError(t, err)
+	assert.Contains(t, files(t, res)["index.vue"], `label="已填语言"`)
+	c.ListKeysLabel = strings.Repeat("长", 21)
+	tb.Children[0].Spec = c
+	_, err = Generate(tb, Spec{Module: "game", Resource: "banner", Name: "横幅", Children: c.asList()})
+	assert.ErrorContains(t, err, "listKeysLabel")
+}

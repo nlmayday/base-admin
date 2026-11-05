@@ -103,9 +103,9 @@ func declareRef(ctx context.Context, db *gorm.DB, t Table, o FieldOption) (Table
 	if key != "id" {
 		r.Key = key
 	}
-	notKey := func(l string) bool { return l == key }
-	r.Labels = slices.DeleteFunc(r.Labels, notKey)
-	r.NumberLabels = slices.DeleteFunc(r.NumberLabels, notKey)
+	// The key itself may be shown (a family code), but other columns are
+	// offered first.
+	r.Labels, r.NumberLabels = keyLast(r.Labels, key), keyLast(r.NumberLabels, key)
 	switch {
 	case len(r.Labels) == 0 && len(r.NumberLabels) == 0:
 		return t, specError("关联表 %s 没有可显示的列", o.RefTable)
@@ -118,6 +118,14 @@ func declareRef(ctx context.Context, db *gorm.DB, t Table, o FieldOption) (Table
 	cols2[i].Ref = r
 	t.Columns = cols2
 	return t, nil
+}
+
+// keyLast moves key to the end of labels, if it is there.
+func keyLast(labels []string, key string) []string {
+	if !slices.Contains(labels, key) {
+		return labels
+	}
+	return append(slices.DeleteFunc(slices.Clone(labels), func(l string) bool { return l == key }), key)
 }
 
 func textUDT(udt string) bool { return udt == "varchar" || udt == "text" || udt == "bpchar" }

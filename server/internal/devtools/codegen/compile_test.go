@@ -62,6 +62,8 @@ func TestGeneratedGoCompiles(t *testing.T) {
 		{gameTable(), gameSpec()},
 		{levelTable(), Spec{Module: "lvl", Resource: "level", Name: "等级", NewModule: true, NoCreate: true, NoDelete: true}},
 		{ledgerTable(), ledgerSpec()},
+		{ledgerTable(), Spec{Module: "ledgerns", Resource: "wallet-ledger", Name: "钱包流水", NewModule: true, ReadOnly: true,
+			Fields: []FieldOption{{Column: "user_id", Relation: ptr("short_id")}}}},
 		{bannerWithOptions(), Spec{Module: "bnr", Resource: "banner", Name: "横幅", NewModule: true,
 			Children: bannerWithOptions().Children[0].Spec.asList()}},
 	}...)

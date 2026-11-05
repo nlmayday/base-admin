@@ -219,8 +219,12 @@ type Field struct {
 	// RelValue and RelValuePtr are the chosen key as lookup.Target takes it
 	// (of a NOT NULL and a nullable request field); RelNumber: the label is
 	// an integer column, matched exactly.
-	RelValue, RelValuePtr           string
-	RelNumber                       bool
+	RelValue, RelValuePtr string
+	RelNumber             bool
+	// RelLookup: the code uses the lookup variable; LabelDoc describes the
+	// shown value in the API docs.
+	RelLookup                       bool
+	LabelDoc                        string
 	LabelColumn, LabelGo, LabelJSON string
 	// DictSource is the TypeScript expression that yields the options
 	// (useDict or staticDict).

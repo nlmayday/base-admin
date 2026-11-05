@@ -70,7 +70,10 @@ export function childSpecs(children: ChildModel[]): CodegenChild[] {
         keyColumn: c.keyColumn.trim()
       };
       if (c.label?.trim()) out.label = c.label.trim();
-      if (c.listKeys) out.listKeys = true;
+      if (c.listKeys) {
+        out.listKeys = true;
+        if (c.listKeysLabel?.trim()) out.listKeysLabel = c.listKeysLabel.trim();
+      }
       const fields = childFieldOptions(fieldRows ?? []);
       if (fields.length) out.fields = fields;
       if (keySource === "dict") {

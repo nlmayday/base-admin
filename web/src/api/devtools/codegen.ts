@@ -111,6 +111,8 @@ export type CodegenChild = {
   fields?: CodegenFieldOption[];
   /** 列表增加「已填…」列，显示已填写的键 */
   listKeys?: boolean;
+  /** 该列的列名，默认「已填」+ label */
+  listKeysLabel?: string;
 };
 
 export type CodegenTable = {

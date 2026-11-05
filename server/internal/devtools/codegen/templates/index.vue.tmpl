@@ -68,7 +68,7 @@ const { [[.DictBindings]] } = [[.DictSource]];
 [[- range .Children]][[if .Spec.ListKeys]]
 [[- if .KeyFromTable]]
 
-/** [[.Label]]的[[.Key.Label]]名称（来自 [[.Spec.KeyTable]]），用于「已填[[.Label]]」列 */
+/** [[.Label]]的[[.Key.Label]]名称（来自 [[.Spec.KeyTable]]），用于「[[.ListKeysLabel]]」列 */
 const [[.JSONName]]KeyNames = ref<Record<string, string>>({});
 onMounted(async () => {
   try {
@@ -437,7 +437,7 @@ onMounted(async () => {
 [[- end]]
 [[- end]]
 [[- range .Children]][[if .Spec.ListKeys]]
-        <el-table-column label="已填[[.Label]]" min-width="160" show-overflow-tooltip>
+        <el-table-column label="[[.ListKeysLabel]]" min-width="160" show-overflow-tooltip>
           <template #default="{ row }">
             {{
               (row.[[.JSONName]]Keys ?? []).map([[.JSONName]]KeyLabel).join("、") || "-"

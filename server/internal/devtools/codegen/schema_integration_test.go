@@ -269,7 +269,12 @@ func TestLoadDeclaredRefsAndChildren(t *testing.T) {
 	require.NoError(t, err)
 	family, _ := tb.Column("family")
 	require.NotNil(t, family.Ref)
-	assert.Equal(t, &Ref{Table: "lg_family", Key: "family", Labels: []string{"name"}}, family.Ref)
+	assert.Equal(t, &Ref{Table: "lg_family", Key: "family", Labels: []string{"name", "family"}}, family.Ref,
+		"the key itself may be shown, after the other columns")
+	only := "family"
+	_, err = Load(context.Background(), db, "lg_item", Spec{Fields: []FieldOption{
+		{Column: "family", RefTable: "lg_family", RefKey: "family", Relation: &only}}})
+	require.NoError(t, err)
 
 	for _, bad := range []FieldOption{
 		{Column: "owner", RefTable: "lg_nope"},
