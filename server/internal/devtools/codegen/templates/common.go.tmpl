@@ -21,6 +21,14 @@ import (
 
 var errVersionConflict = httpx.Conflict("数据已被他人修改，请刷新")
 
+// The helpers below serve all generated resources of the module; one
+// resource may need only some (a read-only one never writes), so they are
+// referenced here and linters do not report them as unused.
+var _ = []any{
+	errVersionConflict, opCreate, opUpdate, opDelete, afterCommitFailed, checkDict, dictLabels,
+	optionKey, duplicateError, escapeLike, csvValue, handle,
+}
+
 // Operations passed to the AfterCommit hooks (<resource>_ext.go).
 const (
 	opCreate = "create"

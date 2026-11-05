@@ -11,8 +11,10 @@ import (
 // regenerating [[.FileBase]].go.
 
 // [[.Lower]]Restrict narrows every query of [[.Name]] (list, detail,
-// export[[if not .ReadOnly]], update and delete[[end]]) with a fixed condition, for example
+// export[[if not .ReadOnly]], update[[end]][[if .CanDelete]] and delete[[end]]) with a fixed condition, for example
 // q.Where("t.is_test = ?", false); the table's columns are t.<column>.
+// Counts run without the joined tables, so use t.<column> only (or join
+// what you need here).
 func (m *Module) [[.Lower]]Restrict(ctx context.Context, q *gorm.DB) *gorm.DB {
 	return q
 }
@@ -25,14 +27,30 @@ func (m *Module) [[.Lower]]AfterSave(ctx context.Context, tx *gorm.DB, row [[.Lo
 	return nil
 }
 
+// [[.Lower]]BeforeUpdate runs in the transaction of an update before the
+// row is written, with the row as it was (old) and the request, which it
+// may adjust; an error rolls back, e.g. fieldError("startAt", "活动开始后不能修改").
+func (m *Module) [[.Lower]]BeforeUpdate(ctx context.Context, tx *gorm.DB, old [[.Lower]]View, req *[[.Lower]]Request) error {
+	return nil
+}
+[[- if .CanDelete]]
+
+// [[.Lower]]BeforeDelete runs in the transaction of a delete before the row
+// is deleted, with the row as it was; an error rolls back, e.g.
+// httpx.Conflict("当天的任务不能删除").
+func (m *Module) [[.Lower]]BeforeDelete(ctx context.Context, tx *gorm.DB, old [[.Lower]]View) error {
+	return nil
+}
+
 // [[.Lower]]AfterDelete runs in the transaction of a delete, after the row
 // is deleted; an error rolls the transaction back.
 func (m *Module) [[.Lower]]AfterDelete(ctx context.Context, tx *gorm.DB, key [[.KeyGo]]) error {
 	return nil
 }
+[[- end]]
 
-// [[.Lower]]AfterCommit runs after a create, update or delete is committed
-// (op is opCreate, opUpdate or opDelete; row is nil after a delete), say
+// [[.Lower]]AfterCommit runs after a write is committed (op is opCreate,
+// opUpdate or opDelete; row is nil after a delete), say
 // to tell another service to reload its cache. The write already stands:
 // an error is only logged. It runs before the response is sent and is not
 // cancelled with the request; start a goroutine for slow work.

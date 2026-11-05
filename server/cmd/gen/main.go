@@ -70,13 +70,17 @@ type specEntry struct {
 	ReadOnly    bool                  `json:"readOnly,omitempty"`
 	SoftDelete  *bool                 `json:"softDelete,omitempty"`
 	Children    []codegen.ChildSpec   `json:"children,omitempty"`
+	OrderBy     string                `json:"orderBy,omitempty"`
+	NoCreate    bool                  `json:"noCreate,omitempty"`
+	NoDelete    bool                  `json:"noDelete,omitempty"`
 }
 
 func (e specEntry) job() job {
 	return job{table: e.Table, spec: codegen.Spec{Module: e.Module, Resource: e.Resource, Name: e.Name,
 		ModuleTitle: e.ModuleTitle, ParentMenu: e.ParentMenu, MenuTitle: e.MenuTitle, MenuSort: e.MenuSort,
 		Fields: e.Fields, KeyMode: e.KeyMode,
-		ReadOnly: e.ReadOnly, SoftDelete: e.SoftDelete, Children: e.Children}}
+		ReadOnly: e.ReadOnly, SoftDelete: e.SoftDelete, Children: e.Children,
+		OrderBy: e.OrderBy, NoCreate: e.NoCreate, NoDelete: e.NoDelete}}
 }
 
 // loader reads a table definition with the tables the spec refers to.
@@ -112,6 +116,9 @@ func parseFlags(args []string, stderr io.Writer) (options, error) {
 	})
 	fs.StringVar(&one.KeyMode, "key-mode", "", "how rows get their primary key: auto, generated (snowflake, Deps.NewID) or input (default: from the column)")
 	fs.BoolVar(&one.ReadOnly, "read-only", false, "generate the list, detail and export only")
+	fs.StringVar(&one.OrderBy, "order-by", "", `list and export order, e.g. "created_at DESC, id DESC" (default: sort, then the key descending)`)
+	fs.BoolVar(&one.NoCreate, "no-create", false, "no create (route, permission, button)")
+	fs.BoolVar(&one.NoDelete, "no-delete", false, "no delete (route, permission, button), e.g. rows are disabled instead")
 	fs.BoolFunc("no-soft-delete", "treat deleted_at as a plain time column: list every row, delete removes the row", func(string) error {
 		off := false
 		one.SoftDelete = &off
@@ -123,7 +130,7 @@ func parseFlags(args []string, stderr io.Writer) (options, error) {
 	fs.StringVar(&o.dsn, "dsn", os.Getenv("ADMIN_DATABASE_URL"), "database URL, postgres:// or mysql:// (default: $ADMIN_DATABASE_URL)")
 	fs.BoolVar(&o.force, "force", false, "overwrite existing files")
 	fs.BoolVar(&o.dryRun, "dry-run", false, "print the files instead of writing them")
-	fs.BoolVar(&o.noFormat, "no-format", false, "do not run prettier on the generated frontend files")
+	fs.BoolVar(&o.noFormat, "no-format", false, "do not run prettier (frontend) and gofmt -s (Go) on the generated files")
 	fs.BoolVar(&o.noWire, "no-wire", false, "do not register a new module in server/internal/app/modules.go")
 	fields := fs.String("fields", "", `field options as JSON, e.g. '[{"column":"order_no","label":"订单号","search":"like"}]' (copy it from 开发工具 → 代码生成)`)
 	if err := fs.Parse(args); err != nil {
@@ -278,6 +285,9 @@ func generateOne(ctx context.Context, o options, j job, root string, stdout io.W
 	}
 	if !o.noFormat {
 		if note := codegen.FormatWeb(ctx, root, written); note != "" {
+			_, _ = fmt.Fprintln(stdout, "note:", note)
+		}
+		if note := codegen.FormatGo(ctx, root, written); note != "" {
 			_, _ = fmt.Fprintln(stdout, "note:", note)
 		}
 	}

@@ -15,18 +15,22 @@ import (
 // syncLockKey serializes startup synchronization across instances.
 const syncLockKey = "base-admin:module-sync"
 
-// Sync writes declared permissions and menus to the database and runs every
-// module's seed, in one transaction guarded by database.LockTx (design doc
-// 4.4). It bumps the auth version so cached snapshots pick up changes.
+// Sync writes declared permissions, menus and roles (RoleProvider) to the
+// database and runs every module's seed, in one transaction guarded by
+// database.LockTx (design doc 4.4). It bumps the auth version so cached snapshots pick up changes.
 func Sync(ctx context.Context, db *gorm.DB, mods []Module) error {
 	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := database.LockTx(tx, syncLockKey); err != nil {
 			return fmt.Errorf("acquire sync lock: %w", err)
 		}
-		if err := syncPermissions(tx, mods); err != nil {
+		added, err := syncPermissions(tx, mods)
+		if err != nil {
 			return err
 		}
 		if err := syncMenus(tx, mods); err != nil {
+			return err
+		}
+		if err := syncRoles(tx, mods, added); err != nil {
 			return err
 		}
 		for _, m := range mods {
@@ -41,7 +45,18 @@ func Sync(ctx context.Context, db *gorm.DB, mods []Module) error {
 	})
 }
 
-func syncPermissions(tx *gorm.DB, mods []Module) error {
+// syncPermissions upserts the declared permissions and returns the codes
+// that were not in the table before (for syncRoles).
+func syncPermissions(tx *gorm.DB, mods []Module) (map[string]bool, error) {
+	var existing []string
+	if err := tx.Raw("SELECT code FROM sys_permissions").Scan(&existing).Error; err != nil {
+		return nil, fmt.Errorf("list permissions: %w", err)
+	}
+	known := make(map[string]bool, len(existing))
+	for _, c := range existing {
+		known[c] = true
+	}
+	added := map[string]bool{}
 	var codes []string
 	for _, m := range mods {
 		for i, d := range m.Permissions() {
@@ -54,7 +69,10 @@ func syncPermissions(tx *gorm.DB, mods []Module) error {
 				d.Code, m.Name(), d.Name, d.Menu, database.TextArray(d.EffectiveRequires()), i,
 			).Error
 			if err != nil {
-				return fmt.Errorf("upsert permission %s: %w", d.Code, err)
+				return nil, fmt.Errorf("upsert permission %s: %w", d.Code, err)
+			}
+			if !known[d.Code] {
+				added[d.Code] = true
 			}
 		}
 	}
@@ -62,11 +80,10 @@ func syncPermissions(tx *gorm.DB, mods []Module) error {
 	// and the change is visible to administrators.
 	sql, args := notIn(`UPDATE sys_permissions SET status = 'deprecated', synced_at = CURRENT_TIMESTAMP(6)
 		WHERE status = 'active'`, codes)
-	err := tx.Exec(sql, args...).Error
-	if err != nil {
-		return fmt.Errorf("deprecate removed permissions: %w", err)
+	if err := tx.Exec(sql, args...).Error; err != nil {
+		return nil, fmt.Errorf("deprecate removed permissions: %w", err)
 	}
-	return nil
+	return added, nil
 }
 
 func syncMenus(tx *gorm.DB, mods []Module) error {

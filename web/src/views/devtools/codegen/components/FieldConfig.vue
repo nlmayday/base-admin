@@ -158,6 +158,30 @@ function labelError(f: CodegenFieldInfo): string {
           </el-tooltip>
         </template>
       </el-table-column>
+      <el-table-column label="仅新增" width="70" align="center">
+        <template #default="{ row }">
+          <el-tooltip
+            content="新增时填写，编辑时只读（如游戏编码）"
+            placement="top"
+          >
+            <el-checkbox
+              v-model="row.createOnly"
+              :disabled="!row.createOnlyAllowed || !row.form"
+            />
+          </el-tooltip>
+        </template>
+      </el-table-column>
+      <el-table-column label="表单说明" min-width="160">
+        <template #default="{ row }">
+          <el-input
+            v-model="row.hint"
+            size="small"
+            maxlength="200"
+            placeholder="输入框下方的说明"
+            :disabled="!row.form"
+          />
+        </template>
+      </el-table-column>
       <el-table-column label="控件" width="210">
         <template #default="{ row }">
           <el-select

@@ -152,16 +152,25 @@
     只读模块的字段也可以用，`status` 用了选项后不再是启用/停用；是/否字段只在不进表单时可用，字典值为 `1`、`0`
   - `upload`：`image` / `files` / `""`
   - `refTable`、`refKey`、`relation`：没有外键时手动声明关联，如
-    `{"column": "user_id", "refTable": "lg_user", "relation": "nickname"}`（`refKey` 默认 `id`）
+    `{"column": "user_id", "refTable": "lg_user", "relation": "nickname"}`（`refKey` 默认 `id`）。本列与关联列同为 bigint 或同为文本
+    （如 `{"column": "game_type", "refTable": "lg_game_family", "refKey": "family", "relation": "name"}`）；
+    显示列可以是整数列（如 `"relation": "short_id"`，按编号精确匹配，走索引）；列表搜索栏能选到已删除的记录，表单不能
+  - `createOnly`：`true` 时新增时填写、编辑时只读（如游戏编码），编辑接口不修改它
+  - `hint`：表单输入框下方的说明文字（最长 200 字）
+  - 主键也可以 `"list": true` 进列表（如流水号、订单号），并可 `"search": "eq"`
 - `keyMode`：可选，主键来源。`auto` 数据库自增；`generated` 由模块用雪花 ID 生成（bigint 主键不是自增时的默认值）；
   `input` 新增时填写、之后不能改（文本或整数主键的默认值，如 `cfg_key`、`level`）。
 - `readOnly`：可选，`true` 时只生成列表、详情和导出（流水、订单、日志类表）。
 - `softDelete`：可选，`false` 时 `deleted_at` 是普通时间字段（如注销时间）：列出全部行、可搜索，删除即删除行。
+- `noCreate`、`noDelete`：可选，`true` 时不生成新增 / 删除的接口、权限码和按钮（如游戏只能下架不能删）。
+- `orderBy`：可选，列表和导出的排序，如 `"created_at DESC, id DESC"`（大表请选有索引的列）；默认 `sort` 后主键倒序。
 - `children`：可选，随主表一起编辑的子表（多语言表）：
   `[{"table": "lg_item_i18n", "foreignKey": "item_id", "keyColumn": "lang", "keyDict": "lang", "label": "多语言"}]`。
   表单按字典 `keyDict` 的每一项列出一组输入，详情接口返回这些行。键也可以来自一张表（与 `keyDict` 二选一）：
   `"keyTable": "lg_language", "keyValueColumn": "code", "keyLabelColumn": "name", "keyFilter": "enabled = 1", "keySortColumn": "sort", "keyRequiredColumn": "required"`，
   `keyRequiredColumn` 为真的键必须填写。`keyFilter` 原样写进生成的代码，两种数据库都要用时写 `enabled = TRUE`（`enabled = 1` 只适用于 MySQL）。
+  保存只替换请求中出现的键（全部为空的行删除），其他键的行保留（如未启用语言的翻译）。
+  子表的 `fields` 可配置 `label`、`form`（`false` 不进表单）、`upload`（`image`）、`hint`；`"listKeys": true` 时列表增加「已填<label>」列。
   - `relation`：外键字段显示被引用表的哪一列；`""` 改为直接输入 ID
 - `force`（仅 generate）：覆盖已存在的文件。
 
@@ -172,9 +181,13 @@ generate 返回 `files`（写入的文件）、`newModule`、`wired`、`notes`�
   `<resource>_integration_test.go`（集成测试）
 - `web/src/api/<module>/<resource>.ts`、`web/src/views/<module>/<resource>/index.vue`（列表、搜索、新增/编辑、导出）
 - 扩展文件 `<resource>_ext.go`、`components/<Resource>Extension.vue`：只在不存在时写入，`force` 也不覆盖，
-  自定义逻辑写在这里：`<resource>Restrict`（所有查询的固定条件）、`<resource>AfterSave` / `<resource>AfterDelete`
+  自定义逻辑写在这里：`<resource>Restrict`（所有查询的固定条件；列表计数不带关联表，只用 `t.<列>`）、
+  `<resource>BeforeUpdate(ctx, tx, old, req)` / `<resource>BeforeDelete(ctx, tx, old)`（写入或删除前在同一事务中执行，
+  `old` 为修改前的行，返回错误即回滚，如「活动开始后目标不能改」）、`<resource>AfterSave` / `<resource>AfterDelete`
   （写入或删除后在同一事务中执行，返回错误即回滚）、`<resource>AfterCommit`（事务提交后执行，如通知其他服务刷新缓存；
   出错只记日志，不影响已成功的保存）；Extension.vue 渲染在列表工具栏和每行「操作」列
+- 模块需要的角色可在 `module.go` 的 `Roles()` 中声明（`module.RoleDef`，权限写权限码或 `game:*` 这样的前缀）：
+  启动时不存在则创建并授权，之后由管理员维护；新版本新增的权限码会补授
 
 生成的接口（以 module=shop、resource=product、表 biz_products 为例，路径是资源名的复数，
 不带模块名，均在 `/api/v1` 下，由后台页面用登录会话调用，不能用本接口的密钥调用）：

@@ -4,7 +4,7 @@ import type {
   CodegenKeyMode,
   CodegenTable
 } from "@/api/devtools/codegen";
-import type { AdvancedModel } from "./advanced";
+import type { AdvancedModel, ChildModel } from "./advanced";
 
 defineOptions({ name: "CodegenAdvancedOptions" });
 
@@ -39,7 +39,19 @@ function addChild(): void {
     keyFilter: "",
     keySortColumn: "",
     keyRequiredColumn: "",
-    label: "多语言"
+    label: "多语言",
+    listKeys: false,
+    fieldRows: []
+  });
+}
+
+function addChildField(c: ChildModel): void {
+  c.fieldRows.push({
+    column: "",
+    label: "",
+    image: false,
+    hidden: false,
+    hint: ""
   });
 }
 </script>
@@ -73,6 +85,24 @@ function addChild(): void {
           只生成列表、详情和导出，不生成表单和写接口（流水、订单、日志）
         </span>
       </el-form-item>
+      <el-form-item v-if="!model.readOnly" label="关闭操作">
+        <el-checkbox v-model="model.noCreate">不能新增</el-checkbox>
+        <el-checkbox v-model="model.noDelete">不能删除</el-checkbox>
+        <span class="hint">
+          不生成对应的接口、权限码和按钮，如游戏只能下架不能删
+        </span>
+      </el-form-item>
+      <el-form-item label="默认排序">
+        <el-input
+          v-model="model.orderBy"
+          placeholder="如 created_at DESC, id DESC"
+          maxlength="200"
+          class="w-[260px]!"
+        />
+        <span class="hint">
+          列表和导出的排序（大表请对这些列建索引）；不填为 sort 后主键倒序
+        </span>
+      </el-form-item>
       <el-form-item label="软删除">
         <el-switch v-model="model.softDelete" />
         <span class="hint">
@@ -89,7 +119,7 @@ function addChild(): void {
           >
             <el-select
               v-model="r.column"
-              placeholder="本表列（bigint）"
+              placeholder="本表列（bigint 或文本）"
               filterable
               class="w-[150px]!"
             >
@@ -126,8 +156,10 @@ function addChild(): void {
           </div>
           <el-button link type="primary" @click="addRef">添加关联</el-button>
           <div class="hint ml-0!">
-            没有外键约束时使用，如 user_id →
-            lg_user.nickname；列表显示名称，表单为可搜索的下拉
+            没有外键约束时使用，如 user_id → lg_user.nickname，或文本编码
+            game_type → lg_game_family.family（关联列填
+            family）；显示列可以是整数列（如
+            short_id，按编号精确搜索）；列表显示名称，表单为可搜索的下拉，搜索栏还能选到已删除的记录
           </div>
         </div>
       </el-form-item>
@@ -227,9 +259,43 @@ function addChild(): void {
               maxlength="20"
               class="w-[100px]!"
             />
+            <el-checkbox v-model="c.listKeys">列表显示已填的键</el-checkbox>
             <el-button link type="danger" @click="model.children.splice(i, 1)">
               删除
             </el-button>
+            <div class="w-full pl-4">
+              <div
+                v-for="(f, j) in c.fieldRows"
+                :key="j"
+                class="mb-1 flex flex-wrap items-center gap-1"
+              >
+                <el-input
+                  v-model="f.column"
+                  placeholder="子表列，如 image_url"
+                  class="w-[140px]!"
+                />
+                <el-input
+                  v-model="f.label"
+                  placeholder="中文名"
+                  maxlength="20"
+                  class="w-[110px]!"
+                />
+                <el-checkbox v-model="f.image">图片上传</el-checkbox>
+                <el-checkbox v-model="f.hidden">不在表单</el-checkbox>
+                <el-input
+                  v-model="f.hint"
+                  placeholder="表单说明，如 不填时用主图"
+                  maxlength="200"
+                  class="w-[200px]!"
+                />
+                <el-button link type="danger" @click="c.fieldRows.splice(j, 1)">
+                  删除
+                </el-button>
+              </div>
+              <el-button link type="primary" @click="addChildField(c)">
+                配置子表字段
+              </el-button>
+            </div>
           </div>
           <el-button link type="primary" @click="addChild">添加子表</el-button>
           <div class="hint ml-0!">

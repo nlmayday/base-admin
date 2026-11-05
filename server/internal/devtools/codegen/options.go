@@ -53,6 +53,23 @@ type FieldOption struct {
 	// column, e.g. user_id → lg_user.nickname. Load reads the table.
 	RefTable string `json:"refTable,omitempty"`
 	RefKey   string `json:"refKey,omitempty"`
+	// CreateOnly: the column is set in the create form and read-only when
+	// editing (a game code, a family chosen once).
+	CreateOnly bool `json:"createOnly,omitempty"`
+	// Hint is a help text shown under the form input (up to 200
+	// characters), for what does not fit in the label.
+	Hint string `json:"hint,omitempty"`
+}
+
+// maxHint bounds FieldOption.Hint.
+const maxHint = 200
+
+// hintProblem checks a hint; "" when it is fine.
+func hintProblem(column, hint string) string {
+	if strings.ContainsAny(hint, unsafeText) || utf8.RuneCountInString(hint) > maxHint {
+		return fmt.Sprintf("字段 %s 的说明（hint）最长 %d 个字符，且不能包含引号、反斜杠、尖括号、花括号或换行", column, maxHint)
+	}
+	return ""
 }
 
 // OptionsFromComment as FieldOption.Dict uses the options parsed from the
@@ -94,6 +111,12 @@ type FieldInfo struct {
 	Relation       string   `json:"relation"`
 	RelationTable  string   `json:"relationTable"`
 	RelationLabels []string `json:"relationLabels"`
+	// CreateOnlyAllowed: the column may be set only on create
+	// (FieldOption.CreateOnly) when it is in the form; CreateOnly and Hint
+	// are the defaults (off, none).
+	CreateOnlyAllowed bool   `json:"createOnlyAllowed"`
+	CreateOnly        bool   `json:"createOnly"`
+	Hint              string `json:"hint"`
 }
 
 // kindNames are the column types shown on the codegen page.
@@ -115,9 +138,6 @@ func Describe(t Table) ([]FieldInfo, error) {
 	}
 	out := make([]FieldInfo, 0, len(d.Fields))
 	for _, f := range d.Fields {
-		if f.Role == roleID && !f.CreateOnly {
-			continue // a key the system assigns has nothing to configure
-		}
 		locked, hint := formLock(f)
 		out = append(out, FieldInfo{
 			Column: f.Column, Type: kindNames[f.Kind], Comment: f.comment, Label: f.Label,
@@ -126,6 +146,7 @@ func Describe(t Table) ([]FieldInfo, error) {
 			Dict: f.Dict, CommentOptions: append([]EnumOption{}, f.commentEnum...), // never null in JSON
 			Upload: f.Upload, UploadModes: uploadModes(f),
 			Relation: f.Relation, RelationTable: relationTable(f), RelationLabels: relationLabels(f),
+			CreateOnlyAllowed: f.canWrite && f.Role != roleID && f.Upload == "",
 		})
 	}
 	return out, nil
@@ -136,7 +157,7 @@ func formLock(f *Field) (bool, string) {
 	switch {
 	case !f.canWrite:
 		return true, "由系统维护"
-	case f.Role != "" && !f.CreateOnly:
+	case f.Role != "" && f.Role != roleID:
 		return true, "系统字段，固定在表单中"
 	case f.mustWrite:
 		return true, "不能为空且没有默认值，必须填写"
@@ -164,7 +185,7 @@ func searchModes(f *Field) []string {
 		modes = append(modes, SearchEq)
 	case f.Role == roleCreatedAt || f.Role == roleUpdatedAt:
 		modes = append(modes, SearchRange)
-	case f.Role != "" && !f.CreateOnly:
+	case f.Role != "" && f.Role != roleID:
 	case f.Kind == kindString:
 		modes = append(modes, SearchLike, SearchEq)
 	case f.Kind.numeric() || f.Kind == kindDecimal || f.Kind == kindDate:
@@ -263,6 +284,21 @@ func (s Spec) FieldProblems(t Table) []Problem {
 		if o.Relation != nil && *o.Relation != "" && !slices.Contains(relationLabels(f), *o.Relation) {
 			add("字段 " + o.Column + " 的关联显示列无效")
 		}
+		if msg := hintProblem(o.Column, o.Hint); msg != "" {
+			add(msg)
+		}
+		if o.CreateOnly {
+			switch {
+			case f.Role == roleID:
+				add("字段 " + o.Column + " 是主键：手填的主键本来就只在新增时填写")
+			case s.NoCreate:
+				add("字段 " + o.Column + "：关闭新增（noCreate）后没有新增表单，不能设为「仅新增时填写」")
+			case !formOn(f, o) || s.ReadOnly:
+				add("字段 " + o.Column + " 不在表单中，不能设为「仅新增时填写」")
+			case f.Upload != "" || (o.Upload != nil && *o.Upload != ""):
+				add("字段 " + o.Column + " 是上传字段，不能设为「仅新增时填写」")
+			}
+		}
 		if o.Upload != nil && *o.Upload != "" {
 			switch {
 			case !slices.Contains(uploadModes(f), *o.Upload):
@@ -271,6 +307,13 @@ func (s Spec) FieldProblems(t Table) []Problem {
 				add("字段 " + o.Column + " 不能同时使用上传和下拉选项")
 			case o.Search != "" && o.Search != SearchNone:
 				add("字段 " + o.Column + " 使用上传后不能搜索")
+			}
+		}
+	}
+	if terms, err := parseOrderBy(s.OrderBy); err == nil {
+		for _, o := range terms {
+			if _, ok := t.Column(o.Column); !ok {
+				out = append(out, Problem{Field: "orderBy", Message: "orderBy 的列 " + o.Column + " 不存在"})
 			}
 		}
 	}
@@ -322,6 +365,10 @@ func (d *tmplData) applyOptions() {
 		}
 		if o.Search != "" {
 			f.Search = o.Search
+		}
+		f.Hint = strings.TrimSpace(o.Hint)
+		if o.CreateOnly && f.Role != roleID {
+			f.CreateOnly = true
 		}
 		if o.Upload != nil {
 			f.setUpload(*o.Upload)

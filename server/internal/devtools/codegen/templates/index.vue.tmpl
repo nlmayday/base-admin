@@ -1,14 +1,19 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
 import { usePagedTable } from "@/composables/usePagedTable";
+[[- if .CanDelete]]
 import { confirmAction } from "@/composables/useConfirmAction";
+[[- end]]
 import {
-[[- if not .ReadOnly]]
+[[- if .CanDelete]]
   delete[[.TSUpper]],
   [[.Lower]]Key,
 [[- end]]
   export[[.TSPluralUpper]],
   list[[.TSPluralUpper]],
+[[- range .Children]][[if and .Spec.ListKeys .KeyFromTable]]
+  list[[$.TSUpper]][[.GoName]]Keys,
+[[- end]][[end]]
 [[- range .RelationSearch]]
   [[.RelOptionsTS]],
 [[- end]]
@@ -34,7 +39,7 @@ import { formatDateTime } from "@/utils/format";
 [[- if not .ReadOnly]]
 import { hasPerm } from "@/utils/permission";
 [[- end]]
-[[- if .IndexDicts]]
+[[- if .IndexDictImport]]
 import { [[.IndexDictImport]] } from "@/composables/useDict";
 [[- end]]
 [[- if not .ReadOnly]]
@@ -51,7 +56,7 @@ defineOptions({ name: "[[.ViewName]]" });
 const showRowActions = computed(
   () =>
     hasRowActions ||
-    ["[[.PermPrefix]]:update", "[[.PermPrefix]]:delete"].some(code =>
+    ["[[.PermPrefix]]:update"[[if .CanDelete]], "[[.PermPrefix]]:delete"[[end]]].some(code =>
       hasPerm(code)
     )
 );
@@ -60,6 +65,26 @@ const showRowActions = computed(
 [[- range .IndexDicts]]
 const { [[.DictBindings]] } = [[.DictSource]];
 [[- end]]
+[[- range .Children]][[if .Spec.ListKeys]]
+[[- if .KeyFromTable]]
+
+/** [[.Label]]的[[.Key.Label]]名称（来自 [[.Spec.KeyTable]]），用于「已填[[.Label]]」列 */
+const [[.JSONName]]KeyNames = ref<Record<string, string>>({});
+onMounted(async () => {
+  try {
+    const keys = (await list[[$.TSUpper]][[.GoName]]Keys()) ?? [];
+    [[.JSONName]]KeyNames.value = Object.fromEntries(
+      keys.map(k => [k.value, k.label])
+    );
+  } catch {
+    // 错误提示已由 http 拦截器处理；列中显示原值
+  }
+});
+const [[.JSONName]]KeyLabel = (v: string) => [[.JSONName]]KeyNames.value[v] ?? v;
+[[- else]]
+const { labelOf: [[.JSONName]]KeyLabel } = useDict([[printf "%q" .Spec.KeyDict]]);
+[[- end]]
+[[- end]][[end]]
 [[- if .DictBool]]
 
 /** 是/否字段的选项值为 1 和 0 */
@@ -108,16 +133,19 @@ const exporting = ref(false);
 [[- if not .ReadOnly]]
 const dialogVisible = ref(false);
 const editing = ref<[[.TSUpper]] | null>(null);
+[[- if .CanCreate]]
 
 function openCreate(): void {
   editing.value = null;
   dialogVisible.value = true;
 }
+[[- end]]
 
 function openEdit(row: [[.TSUpper]]): void {
   editing.value = row;
   dialogVisible.value = true;
 }
+[[- if .CanDelete]]
 
 function remove(row: [[.TSUpper]]): void {
   confirmAction({
@@ -131,6 +159,7 @@ function remove(row: [[.TSUpper]]): void {
     reload
   });
 }
+[[- end]]
 [[- end]]
 [[- if .SearchFields]]
 
@@ -216,8 +245,8 @@ onMounted(async () => {
 [[- else if eq .SearchWidget "relation"]]
           <ReRemoteSelect
             v-model="filter.[[.JSONName]]"
-            :fetch="[[.RelOptionsTS]]"
-            placeholder="全部"
+            :fetch="(kw: string) => [[.RelOptionsTS]](kw, true)"
+            placeholder="[[if .RelNumber]]输入编号[[else]]全部[[end]]"
             class="w-[180px]!"
           />
 [[- else if eq .SearchWidget "bool"]]
@@ -313,7 +342,7 @@ onMounted(async () => {
         <div class="flex items-center">
           <!-- 扩展按钮写在 [[.TSUpper]]Extension.vue（重新生成不会覆盖） -->
           <[[.TSUpper]]Extension place="toolbar" class="mr-3" @reload="reload" />
-[[- if not .ReadOnly]]
+[[- if .CanCreate]]
           <el-button
             v-perm="'[[.PermPrefix]]:create'"
             type="primary"
@@ -407,6 +436,15 @@ onMounted(async () => {
         />
 [[- end]]
 [[- end]]
+[[- range .Children]][[if .Spec.ListKeys]]
+        <el-table-column label="已填[[.Label]]" min-width="160" show-overflow-tooltip>
+          <template #default="{ row }">
+            {{
+              (row.[[.JSONName]]Keys ?? []).map([[.JSONName]]KeyLabel).join("、") || "-"
+            }}
+          </template>
+        </el-table-column>
+[[- end]][[end]]
 [[- if not .ReadOnly]]
         <el-table-column
           v-if="showRowActions"
@@ -423,6 +461,7 @@ onMounted(async () => {
             >
               编辑
             </el-button>
+[[- if .CanDelete]]
             <el-button
               v-perm="'[[.PermPrefix]]:delete'"
               link
@@ -431,6 +470,7 @@ onMounted(async () => {
             >
               删除
             </el-button>
+[[- end]]
             <[[.TSUpper]]Extension
               place="row"
               :row="row as [[.TSUpper]]"

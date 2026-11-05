@@ -1,4 +1,8 @@
-import type { CodegenChild, CodegenKeyMode } from "@/api/devtools/codegen";
+import type {
+  CodegenChild,
+  CodegenFieldOption,
+  CodegenKeyMode
+} from "@/api/devtools/codegen";
 
 /** 手动声明的关联：本表的 bigint 列 → 关联表.显示列（不需要外键约束） */
 export type DeclaredRef = {
@@ -8,8 +12,38 @@ export type DeclaredRef = {
   relation: string;
 };
 
+/** 子表的一个字段配置（页面模型） */
+export type ChildFieldModel = {
+  column: string;
+  label: string;
+  /** 图片上传（存图片地址） */
+  image: boolean;
+  /** 不在表单中（可为空或有默认值的列） */
+  hidden: boolean;
+  hint: string;
+};
+
 /** 子表配置；keySource 只在页面上用，决定键来自字典还是表 */
-export type ChildModel = CodegenChild & { keySource: "dict" | "table" };
+export type ChildModel = Omit<CodegenChild, "fields"> & {
+  keySource: "dict" | "table";
+  fieldRows: ChildFieldModel[];
+};
+
+/** 子表字段配置转为提交的字段选项，去掉空项 */
+function childFieldOptions(rows: ChildFieldModel[]): CodegenFieldOption[] {
+  const out: CodegenFieldOption[] = [];
+  for (const r of rows) {
+    const column = r.column.trim();
+    if (!column) continue;
+    const o: CodegenFieldOption = { column };
+    if (r.label.trim()) o.label = r.label.trim();
+    if (r.image) o.upload = "image";
+    if (r.hidden) o.form = false;
+    if (r.hint.trim()) o.hint = r.hint.trim();
+    if (Object.keys(o).length > 1) out.push(o);
+  }
+  return out;
+}
 
 export type AdvancedModel = {
   keyMode: CodegenKeyMode;
@@ -18,19 +52,27 @@ export type AdvancedModel = {
   softDelete: boolean;
   refs: DeclaredRef[];
   children: ChildModel[];
+  /** 列表和导出的排序，如 created_at DESC, id DESC */
+  orderBy: string;
+  /** 不生成新增、删除 */
+  noCreate: boolean;
+  noDelete: boolean;
 };
 
 /** 提交给后端的子表配置：只保留所选键来源的项，去掉空值 */
 export function childSpecs(children: ChildModel[]): CodegenChild[] {
   return children
     .filter(c => c.table)
-    .map(({ keySource, ...c }) => {
+    .map(({ keySource, fieldRows, ...c }) => {
       const out: CodegenChild = {
         table: c.table.trim(),
         foreignKey: c.foreignKey.trim(),
         keyColumn: c.keyColumn.trim()
       };
       if (c.label?.trim()) out.label = c.label.trim();
+      if (c.listKeys) out.listKeys = true;
+      const fields = childFieldOptions(fieldRows ?? []);
+      if (fields.length) out.fields = fields;
       if (keySource === "dict") {
         out.keyDict = c.keyDict;
         return out;
@@ -52,8 +94,15 @@ export function childSpecs(children: ChildModel[]): CodegenChild[] {
 
 /** 后端的子表配置转回页面模型 */
 export function childModels(children: CodegenChild[]): ChildModel[] {
-  return children.map(c => ({
+  return children.map(({ fields, ...c }) => ({
     ...c,
-    keySource: c.keyTable ? "table" : "dict"
+    keySource: c.keyTable ? "table" : "dict",
+    fieldRows: (fields ?? []).map(f => ({
+      column: f.column,
+      label: f.label ?? "",
+      image: f.upload === "image",
+      hidden: f.form === false,
+      hint: f.hint ?? ""
+    }))
   }));
 }

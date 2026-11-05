@@ -50,6 +50,9 @@ type previewRequest struct {
 	ReadOnly    bool                  `json:"readOnly,omitempty" doc:"只读：只生成列表、详情和导出"`
 	SoftDelete  *bool                 `json:"softDelete,omitempty" doc:"false 时 deleted_at 作为普通时间字段（如注销时间）：列出全部行，删除即删除行；不传或 true 时按软删除处理"`
 	Children    []codegen.ChildSpec   `json:"children,omitempty" binding:"max=5" doc:"随主表一起编辑的子表（如多语言表），每个键（如语言）一行"`
+	OrderBy     string                `json:"orderBy,omitempty" binding:"max=200" doc:"列表和导出的排序，如 created_at DESC, id DESC；不传为 sort 后主键倒序"`
+	NoCreate    bool                  `json:"noCreate,omitempty" doc:"不生成新增（接口、权限码、按钮）"`
+	NoDelete    bool                  `json:"noDelete,omitempty" doc:"不生成删除（接口、权限码、按钮），如只能下架不能删"`
 }
 
 type generateRequest struct {
@@ -274,7 +277,8 @@ func (m *Module) loadTable(c *gin.Context, name string) (codegen.Table, error) {
 func (m *Module) prepare(c *gin.Context, req previewRequest) (codegen.Result, codegen.Spec, error) {
 	spec := codegen.Spec{Module: req.Module, Resource: req.Resource, Name: req.Name, ModuleTitle: req.ModuleTitle,
 		MenuTitle: req.MenuTitle, MenuSort: req.MenuSort,
-		Fields: req.Fields, KeyMode: req.KeyMode, ReadOnly: req.ReadOnly, SoftDelete: req.SoftDelete, Children: req.Children}
+		Fields: req.Fields, KeyMode: req.KeyMode, ReadOnly: req.ReadOnly, SoftDelete: req.SoftDelete, Children: req.Children,
+		OrderBy: req.OrderBy, NoCreate: req.NoCreate, NoDelete: req.NoDelete}
 	if problems := spec.Problems(); len(problems) > 0 {
 		return codegen.Result{}, spec, problemsError(problems)
 	}
@@ -361,6 +365,9 @@ func (m *Module) codegenGenerate(c *gin.Context) (any, error) {
 	// as soon as the new view files appear.
 	ctx := context.WithoutCancel(c.Request.Context())
 	if note := codegen.FormatWeb(ctx, root, written); note != "" {
+		view.Notes = append(view.Notes, note)
+	}
+	if note := codegen.FormatGo(ctx, root, written); note != "" {
 		view.Notes = append(view.Notes, note)
 	}
 	view.Wired, view.Notes = wire(root, spec, res, view.Notes)
@@ -484,12 +491,24 @@ func cliCommand(req previewRequest) string {
 	if req.SoftDelete != nil && !*req.SoftDelete {
 		parts = append(parts, "-no-soft-delete")
 	}
+	if req.OrderBy != "" {
+		parts = append(parts, "-order-by "+shellQuote(req.OrderBy))
+	}
+	if req.NoCreate {
+		parts = append(parts, "-no-create")
+	}
+	if req.NoDelete {
+		parts = append(parts, "-no-delete")
+	}
 	if len(req.Children) > 0 {
 		raw, _ := json.Marshal(req.Children)
-		parts = append(parts, "-children '"+string(raw)+"'")
+		parts = append(parts, "-children "+shellQuote(string(raw)))
 	}
 	return strings.Join(parts, " ")
 }
+
+// shellQuote quotes s for a POSIX shell (a key filter may hold quotes).
+func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
 
 func repoRoot(configured string) (string, error) {
 	if configured != "" {

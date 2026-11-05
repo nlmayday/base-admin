@@ -52,6 +52,7 @@ func Validate(mods []Module, reg *Registry, engineRoutes gin.RoutesInfo, apiPref
 	defs := collectPermissions(&rep, mods)
 	menus := collectMenus(&rep, mods, defs)
 	validateRequires(&rep, defs)
+	validateRoles(&rep, mods, defs)
 	validatePermissionMenus(&rep, defs, menus)
 	used := validateRoutes(&rep, reg.Routes(), defs)
 	validateEngineRoutes(&rep, reg.Routes(), engineRoutes, apiPrefix)

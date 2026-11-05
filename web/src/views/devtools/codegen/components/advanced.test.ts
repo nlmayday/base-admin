@@ -13,7 +13,8 @@ const base: ChildModel = {
   keyFilter: " enabled = 1 ",
   keySortColumn: "",
   keyRequiredColumn: "required",
-  label: "多语言"
+  label: "多语言",
+  fieldRows: []
 };
 
 describe("childSpecs", () => {
@@ -41,6 +42,54 @@ describe("childSpecs", () => {
       }
     ]);
     expect(childSpecs([{ ...base, table: "" }])).toEqual([]);
+  });
+
+  it("passes the list keys and the child field options", () => {
+    const [spec] = childSpecs([
+      {
+        ...base,
+        listKeys: true,
+        fieldRows: [
+          {
+            column: " image_url ",
+            label: "图片",
+            image: true,
+            hidden: false,
+            hint: " 不填用主图 "
+          },
+          {
+            column: "badge_text",
+            label: "",
+            image: false,
+            hidden: true,
+            hint: ""
+          },
+          { column: "title", label: "", image: false, hidden: false, hint: "" },
+          { column: "", label: "x", image: false, hidden: false, hint: "" }
+        ]
+      }
+    ]);
+    expect(spec.listKeys).toBe(true);
+    expect(spec.fields).toEqual([
+      {
+        column: "image_url",
+        label: "图片",
+        upload: "image",
+        hint: "不填用主图"
+      },
+      { column: "badge_text", form: false }
+    ]);
+    const [back] = childModels([spec]);
+    expect(back.fieldRows).toEqual([
+      {
+        column: "image_url",
+        label: "图片",
+        image: true,
+        hidden: false,
+        hint: "不填用主图"
+      },
+      { column: "badge_text", label: "", image: false, hidden: true, hint: "" }
+    ]);
   });
 
   it("round-trips the key source", () => {

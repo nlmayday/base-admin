@@ -43,8 +43,8 @@ func TestRelationGenerated(t *testing.T) {
 
 	api := fileByPath(t, res, "/deal.ts").Content
 	assert.Contains(t, api, "customerName: string;")
-	assert.Contains(t, api, `export const listDealCustomerIdOptions = (keyword: string) =>`)
-	assert.Contains(t, api, `"/deals/options/customerId", { keyword }`)
+	assert.Contains(t, api, `export const listDealCustomerIdOptions = (keyword: string, deleted = false) =>`)
+	assert.Contains(t, api, `deleted: deleted ? 1 : undefined`)
 	form := fileByPath(t, res, "Dialog.vue").Content
 	assert.Contains(t, form, `:fetch="listDealCustomerIdOptions"`)
 	assert.Contains(t, form, `:label="props.row?.customerName"`)

@@ -137,3 +137,36 @@ func FormatWeb(ctx context.Context, root string, files []File) (note string) {
 	}
 	return ""
 }
+
+// FormatGo formats the written Go files with gofmt -s of the toolchain
+// that server/go.mod selects (go env GOROOT run there), the formatter
+// `make lint` checks with; Generate's go/format is that of the running
+// binary and does not simplify. A note says what to run when it fails.
+func FormatGo(ctx context.Context, root string, files []File) (note string) {
+	var targets []string
+	for _, f := range files {
+		if rel, ok := strings.CutPrefix(f.Path, "server/"); ok && strings.HasSuffix(rel, ".go") {
+			targets = append(targets, rel)
+		}
+	}
+	if len(targets) == 0 {
+		return ""
+	}
+	const manual = "请在 server 目录运行 gofmt -s -w 格式化生成的 Go 文件"
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	serverDir := filepath.Join(root, "server")
+	env := exec.CommandContext(ctx, "go", "env", "GOROOT")
+	env.Dir = serverDir
+	out, err := env.Output()
+	if err != nil {
+		return "未找到 go 命令（" + err.Error() + "），" + manual
+	}
+	gofmt := filepath.Join(strings.TrimSpace(string(out)), "bin", "gofmt")
+	cmd := exec.CommandContext(ctx, gofmt, append([]string{"-s", "-w"}, targets...)...) //nolint:gosec // G204: the toolchain's gofmt, generated paths
+	cmd.Dir = serverDir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Sprintf("gofmt 失败（%v）：%s；%s", err, out, manual)
+	}
+	return ""
+}

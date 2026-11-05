@@ -41,8 +41,10 @@ const UNSAFE_RE = /["'`\\<>{}]/;
 const CLI_USAGE = `cd server
 go run ./cmd/gen -table biz_orders -module sales -resource order -name '订单' \\
   [-module-title '销售管理'] [-fields '<字段配置 JSON>'] [-key-mode generated] \\
-  [-read-only] [-no-soft-delete] [-children '<子表 JSON>'] [-force] [-dry-run]
-# 批量：每项与本页的请求相同（table、module、resource、name、fields、keyMode、readOnly、softDelete、children）
+  [-read-only] [-no-soft-delete] [-no-create] [-no-delete] [-order-by '<列 DESC, ...>']
+  [-children '<子表 JSON>'] [-force] [-dry-run]
+# 批量：每项与本页的请求相同（table、module、resource、name、menuTitle、menuSort、fields、keyMode、readOnly、softDelete、
+# noCreate、noDelete、orderBy、children）
 go run ./cmd/gen -spec specs.json [-force]`;
 
 const loadingTables = ref(false);
@@ -67,7 +69,10 @@ const emptyAdvanced = (): AdvancedModel => ({
   readOnly: false,
   softDelete: true,
   refs: [],
-  children: []
+  children: [],
+  orderBy: "",
+  noCreate: false,
+  noDelete: false
 });
 const advanced = ref<AdvancedModel>(emptyAdvanced());
 /** 字段配置：defaults 是后端给出的默认值，fields 是当前编辑的副本 */
@@ -161,7 +166,10 @@ async function restoreLast(): Promise<void> {
         refKey: f.refKey ?? "",
         relation: f.relation ?? ""
       })),
-    children: childModels(req.children ?? [])
+    children: childModels(req.children ?? []),
+    orderBy: req.orderBy ?? "",
+    noCreate: req.noCreate ?? false,
+    noDelete: req.noDelete ?? false
   };
   result.value = last.result;
 }
@@ -220,6 +228,8 @@ function fieldOptions(): CodegenFieldOption[] {
     if ((f.dict ?? "") !== d.dict) o.dict = f.dict ?? "";
     if ((f.upload ?? "") !== d.upload) o.upload = f.upload ?? "";
     if ((f.relation ?? "") !== d.relation) o.relation = f.relation ?? "";
+    if (f.createOnly && f.form) o.createOnly = true;
+    if (f.hint?.trim()) o.hint = f.hint.trim();
     if (Object.keys(o).length > 1) out.push(o);
   }
   return out;
@@ -228,7 +238,14 @@ function fieldOptions(): CodegenFieldOption[] {
 const fieldsValid = computed(() =>
   fields.value.every(f => {
     const label = f.label.trim();
-    return label && label.length <= 20 && !UNSAFE_RE.test(label);
+    const hint = f.hint ?? "";
+    return (
+      label &&
+      label.length <= 20 &&
+      !UNSAFE_RE.test(label) &&
+      hint.length <= 200 &&
+      !UNSAFE_RE.test(hint)
+    );
   })
 );
 
@@ -262,7 +279,10 @@ function request(): CodegenRequest {
     ...(a.keyMode ? { keyMode: a.keyMode } : {}),
     ...(a.readOnly ? { readOnly: true } : {}),
     ...(a.softDelete ? {} : { softDelete: false }),
-    ...(children.length ? { children } : {})
+    ...(children.length ? { children } : {}),
+    ...(a.orderBy.trim() ? { orderBy: a.orderBy.trim() } : {}),
+    ...(!a.readOnly && a.noCreate ? { noCreate: true } : {}),
+    ...(!a.readOnly && a.noDelete ? { noDelete: true } : {})
   };
 }
 
@@ -283,6 +303,9 @@ const command = computed(() => {
   if (req.keyMode) parts.push(`-key-mode ${req.keyMode}`);
   if (req.readOnly) parts.push("-read-only");
   if (req.softDelete === false) parts.push("-no-soft-delete");
+  if (req.orderBy) parts.push(`-order-by '${req.orderBy}'`);
+  if (req.noCreate) parts.push("-no-create");
+  if (req.noDelete) parts.push("-no-delete");
   if (req.children?.length) {
     parts.push(`-children '${JSON.stringify(req.children)}'`);
   }
