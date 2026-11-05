@@ -73,6 +73,7 @@
 
   .tag-title {
     padding: 0 4px;
+    font-weight: 500;
     color: var(--el-text-color-primary);
     text-decoration: none;
   }
@@ -194,6 +195,10 @@
   color: #fff;
   box-shadow: 0 0 0.7px #888;
 
+  &:not(.chrome-item) {
+    background: var(--el-color-primary-light-9);
+  }
+
   .chrome-tab {
     z-index: 10;
   }
@@ -203,11 +208,13 @@
   }
 
   .tag-title {
+    font-weight: 600;
     color: var(--el-color-primary) !important;
   }
 
   .chrome-close-btn {
     color: var(--el-color-primary);
+    opacity: 1;
 
     &:hover {
       background-color: var(--el-color-primary);
@@ -264,11 +271,11 @@
 
 /* 卡片模式下鼠标移出隐藏蓝色边框 */
 .card-out {
-  color: #666;
+  color: var(--el-text-color-primary);
   border: none;
 
   .tag-title {
-    color: #666;
+    color: var(--el-text-color-primary);
   }
 }
 
@@ -324,7 +331,7 @@
     right: 7px;
     width: 1px;
     height: 14px;
-    background-color: #2b2d2f;
+    background-color: var(--el-border-color-lighter);
   }
 
   &:hover {
@@ -362,10 +369,16 @@
     height: 16px;
     color: #666;
     border-radius: 50%;
+    opacity: 0.4;
+    transition: opacity 0.12s;
 
     &:hover {
       color: white;
       background-color: #b1b3b8;
     }
+  }
+
+  &:hover .chrome-close-btn {
+    opacity: 1;
   }
 }

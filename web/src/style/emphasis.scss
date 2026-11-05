@@ -1,9 +1,12 @@
 /*
- * 标题层级（参考 gin-vue-admin），不用 700，中文会发黑：
+ * 标题层级（参考 gin-vue-admin），不用 700，中文会发黑。导航默认比正文重一级，
+ * 当前项再重一级，不靠很浅的颜色区分：
  * - 页面标题、卡片标题：16px / 600（class="card-title"）
- * - 表头、一级菜单：14px / 600
+ * - 一级菜单、表头：14px / 600
+ * - 二级菜单、顶部标签页：14px / 500，当前项 600（标签页在 lay-tag/index.scss）
+ * - 页面内标签（el-tabs）：15px / 500，当前项 600 + 主题色 + 2px 下划线
  * - 表单标签：14px / 500
- * - 正文、二级菜单：14px / 400
+ * - 正文、表格数据：14px / 400，主文字色，数字等宽
  * element-plus 的 css 和侧边栏的 body[layout] 规则优先级更高，这里的选择器要多一层。
  */
 
@@ -25,7 +28,12 @@ body[layout] .sidebar-container {
   }
 
   .nest-menu .el-menu-item {
-    font-weight: 400;
+    font-weight: 500;
+    color: color-mix(
+      in srgb,
+      var(--pure-theme-menu-title-hover) 72%,
+      transparent
+    );
   }
 
   .el-menu-item.is-active {
@@ -61,10 +69,13 @@ body[layout] .sidebar-container {
   }
 }
 
-/* 表头：浅底色、主文字色、加粗 */
+/* 表头：浅底色、主文字色、加粗；数据行用主文字色，数字等宽便于上下对齐 */
 :root .el-table {
   --el-table-header-bg-color: var(--el-fill-color-light);
   --el-table-header-text-color: var(--el-text-color-primary);
+  --el-table-text-color: var(--el-text-color-primary);
+
+  font-variant-numeric: tabular-nums;
 
   thead th.el-table__cell {
     font-weight: 600;
@@ -86,9 +97,23 @@ body[layout] .sidebar-container {
   color: var(--el-text-color-primary) !important;
 }
 
-/* 标签页的当前页 */
-.scroll-item.is-active {
-  font-weight: 600;
+/* 页面内标签：弹窗、抽屉和卡片式标签里保持 14px */
+.el-tabs .el-tabs__item {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--el-text-color-primary);
+
+  &.is-active {
+    font-weight: 600;
+    color: var(--el-color-primary);
+  }
+}
+
+.el-dialog .el-tabs .el-tabs__item,
+.el-drawer .el-tabs .el-tabs__item,
+.el-tabs--card .el-tabs__item,
+.el-tabs--border-card .el-tabs__item {
+  font-size: 14px;
 }
 
 /* 链接按钮（表格操作列等）：warning / danger / success 用深一级的颜色，白底上更清楚；禁用时同色降低透明度 */

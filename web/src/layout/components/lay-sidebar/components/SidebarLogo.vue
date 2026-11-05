@@ -1,11 +1,28 @@
 <script setup lang="ts">
+import { nextTick, ref, watch } from "vue";
 import { useNav } from "@/layout/hooks/useNav";
 
-defineProps({
+const props = defineProps({
   collapse: Boolean
 });
 
 const { title, getLogo } = useNav();
+
+/** 站点名放不下时依次缩小字号，到最小仍放不下才显示省略号（悬停看全名） */
+const TITLE_SIZES = [18, 16, 14];
+const titleEl = ref<HTMLElement | null>(null);
+const titleSize = ref(TITLE_SIZES[0]);
+
+async function fitTitle() {
+  for (const size of TITLE_SIZES) {
+    titleSize.value = size;
+    await nextTick();
+    const el = titleEl.value;
+    if (!el || el.scrollWidth <= el.clientWidth) return;
+  }
+}
+
+watch([title, () => props.collapse, titleEl], fitTitle, { immediate: true });
 </script>
 
 <template>
@@ -29,7 +46,12 @@ const { title, getLogo } = useNav();
         to="/"
       >
         <img :src="getLogo()" alt="logo" />
-        <span class="sidebar-title">{{ title }}</span>
+        <span
+          ref="titleEl"
+          class="sidebar-title"
+          :style="{ fontSize: `${titleSize}px` }"
+          >{{ title }}</span
+        >
       </router-link>
     </transition>
   </div>
