@@ -64,7 +64,7 @@ func TestOrderByAndCountWithoutJoins(t *testing.T) {
 	res, err := Generate(ledgerTable(), ledgerSpec())
 	require.NoError(t, err)
 	src := files(t, res)["wallet_ledger.go"]
-	assert.Contains(t, src, `database.PageFirst(q, "t", "t.created_at DESC, t.id DESC", offset, limit)`,
+	assert.Contains(t, src, `database.PageFirst(q, walletLedgerTable+" AS t", "t.id", "t.created_at DESC, t.id DESC", offset, limit)`,
 		"paged on the table, then joined")
 	page := src[strings.Index(src, "func (m *Module) listWalletLedgers"):]
 	page = page[:strings.Index(page, "\n}\n")]

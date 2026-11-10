@@ -35,18 +35,28 @@ func CountAtMost(q *gorm.DB, limit int) (int64, error) {
 	return n, err
 }
 
-// PageFirst pages q before anything is joined to it: SELECT alias.* FROM
-// (q ORDER BY order LIMIT limit OFFSET offset) AS alias, ordered again by
-// order. Join the tables names are shown from onto the result.
+// PageFirst pages q by its key before anything is joined to it:
+//
+//	SELECT … FROM from JOIN (SELECT key AS page_key FROM … WHERE …
+//	  ORDER BY order LIMIT limit OFFSET offset) AS page ON page.page_key = key
+//	ORDER BY order
+//
+// from is q's table with its alias ("game_rounds AS t"), key its primary
+// key ("t.id") and order names columns of from only. Join the tables names
+// are shown from onto the result and select the columns.
 //
 // Joined in the same query as the ORDER BY … LIMIT, small lookup tables
-// (players, games) lead MySQL to a hash join that reads and sorts the
-// whole large table instead of walking its time index: seconds on a table
-// of ten million rows. Paged first, the index is walked for one page and
-// only that page is joined. order names columns of alias only.
-func PageFirst(q *gorm.DB, alias, order string, offset, limit int) *gorm.DB {
-	page := q.Session(&gorm.Session{}).Select(alias + ".*").Order(order).Offset(offset).Limit(limit)
-	return q.Session(&gorm.Session{NewDB: true}).Table("(?) AS "+alias, page).Order(order)
+// (players, games) lead MySQL to a hash join that reads and sorts the whole
+// large table instead of walking its time index: seconds on a table of ten
+// million rows. Paged first, the index is walked for one page and only
+// that page is joined. Paging the key rather than whole rows lets a filter
+// on an indexed column be checked in the index (with InnoDB every
+// secondary index carries the primary key), so a filter that matches few
+// rows reads index entries, not a full row for every entry it passes.
+func PageFirst(q *gorm.DB, from, key, order string, offset, limit int) *gorm.DB {
+	page := q.Session(&gorm.Session{}).Select(key + " AS page_key").Order(order).Offset(offset).Limit(limit)
+	return q.Session(&gorm.Session{NewDB: true}).Table(from).
+		Joins("JOIN (?) AS page ON page.page_key = "+key, page).Order(order)
 }
 
 // InsertID runs an INSERT and returns the id the database generated for

@@ -238,13 +238,13 @@ func select[[.PluralUpper]](q *gorm.DB) *gorm.DB {
 
 // select[[.PluralUpper]]Page selects one page of the [[.Name]] rows of q in the
 // list's order.
-[[- if .HasJoins]] The page is taken from the table alone and then joined
-// (database.PageFirst): joined first, MySQL may read and sort the whole
-// table instead of walking its index for one page.
+[[- if .HasJoins]] The page's keys are taken from the table alone and then
+// joined (database.PageFirst): joined first, MySQL may read and sort the
+// whole table instead of walking its index for one page.
 [[- end]]
 func select[[.PluralUpper]]Page(q *gorm.DB, offset, limit int) *gorm.DB {
 [[- if .HasJoins]]
-	return select[[.PluralUpper]](database.PageFirst(q, "t", "[[.Order]]", offset, limit))
+	return select[[.PluralUpper]](database.PageFirst(q, [[.Lower]]Table+" AS t", [[goString (printf "t.%s" .PK.Quoted)]], "[[.Order]]", offset, limit))
 [[- else]]
 	return select[[.PluralUpper]](q).Order("[[.Order]]").Offset(offset).Limit(limit)
 [[- end]]

@@ -86,12 +86,15 @@ type opFilter struct {
 	timeRange
 }
 
-const opLogOrder = "o.created_at DESC, o.id DESC"
+const (
+	opLogFrom  = tableOperationLogs + " AS o"
+	opLogOrder = "o.created_at DESC, o.id DESC"
+)
 
 // baseOpQuery has no joins: the logs are counted and paged on their own
 // table (with its created_at index); withUser joins the user afterwards.
 func baseOpQuery(ctx context.Context, db *gorm.DB) *gorm.DB {
-	return db.WithContext(ctx).Table(tableOperationLogs + " AS o")
+	return db.WithContext(ctx).Table(opLogFrom)
 }
 
 // withUser selects the log columns of q with the user's names.
@@ -150,7 +153,7 @@ func (m *Module) listOperationLogs(c *gin.Context) (any, error) {
 		return nil, err
 	}
 	var rows []opLogRow
-	if err := withUser(database.PageFirst(q, "o", opLogOrder, pq.Offset(), pc.limit)).Scan(&rows).Error; err != nil {
+	if err := withUser(database.PageFirst(q, opLogFrom, "o.id", opLogOrder, pq.Offset(), pc.limit)).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	list := make([]opLogView, len(rows))
@@ -197,7 +200,7 @@ func (m *Module) exportOperationLogs(c *gin.Context) {
 		return
 	}
 	var rows []opLogRow
-	if err := withUser(database.PageFirst(q, "o", opLogOrder, 0, maxRows)).Scan(&rows).Error; err != nil {
+	if err := withUser(database.PageFirst(q, opLogFrom, "o.id", opLogOrder, 0, maxRows)).Scan(&rows).Error; err != nil {
 		httpx.Fail(c, err)
 		return
 	}

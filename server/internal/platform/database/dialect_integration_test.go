@@ -328,7 +328,7 @@ func TestPageFirst(t *testing.T) {
 	// then paged and joined.
 	q := db.Table("t_child AS c").Where("c.parent_id <> ?", parents[2]).Session(&gorm.Session{})
 	var rows []row
-	err := PageFirst(q, "c", "c.id DESC", 2, 3).
+	err := PageFirst(q, "t_child AS c", "c.id", "c.id DESC", 2, 3).
 		Joins("LEFT JOIN t_parent p ON p.id = c.parent_id").
 		Select("c.id, p.name").Scan(&rows).Error
 	require.NoError(t, err)

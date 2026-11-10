@@ -235,7 +235,7 @@ func TestGenerateCustomer(t *testing.T) {
 		`q = q.Where("LOWER(t.phone) LIKE LOWER(?)", "%"+escapeLike(v)+"%")`,
 		`q = q.Where("LOWER(t.name) LIKE LOWER(?)", "%"+escapeLike(v)+"%")`,
 		`q = q.Where("t.status = ?", f.Status)`,
-		`database.PageFirst(q, "t", "t.sort, t.id DESC", offset, limit)`,
+		`database.PageFirst(q, customerTable+" AS t", "t.id", "t.sort, t.id DESC", offset, limit)`,
 		`g := r.Group("/customers")`,
 		`Response: httpx.Page[customerView]{}`,
 		`Sensitive: true`,
