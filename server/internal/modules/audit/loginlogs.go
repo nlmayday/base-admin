@@ -88,20 +88,20 @@ func (m *Module) listLoginLogs(c *gin.Context) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	var total int64
-	if err := q.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+	pc, err := capCount(q, pq)
+	if err != nil {
 		return nil, err
 	}
 	var rows []loginLogRow
 	if err := q.Select(loginLogColumns).Order("l.created_at DESC, l.id DESC").
-		Offset(pq.Offset()).Limit(pq.PageSize).Scan(&rows).Error; err != nil {
+		Offset(pq.Offset()).Limit(pc.limit).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	list := make([]loginLogView, len(rows))
 	for i, r := range rows {
 		list[i] = toLoginLogView(r)
 	}
-	return httpx.Page[loginLogView]{List: list, Total: total, Page: pq.Page, PageSize: pq.PageSize}, nil
+	return httpx.Page[loginLogView]{List: list, Total: pc.total, TotalCapped: pc.capped, Page: pq.Page, PageSize: pq.PageSize}, nil
 }
 
 func toLoginLogView(r loginLogRow) loginLogView {

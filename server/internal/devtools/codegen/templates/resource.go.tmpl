@@ -236,6 +236,20 @@ func select[[.PluralUpper]](q *gorm.DB) *gorm.DB {
 	return q.Select([[.Lower]]Columns(q))
 }
 
+// select[[.PluralUpper]]Page selects one page of the [[.Name]] rows of q in the
+// list's order.
+[[- if .HasJoins]] The page is taken from the table alone and then joined
+// (database.PageFirst): joined first, MySQL may read and sort the whole
+// table instead of walking its index for one page.
+[[- end]]
+func select[[.PluralUpper]]Page(q *gorm.DB, offset, limit int) *gorm.DB {
+[[- if .HasJoins]]
+	return select[[.PluralUpper]](database.PageFirst(q, "t", "[[.Order]]", offset, limit))
+[[- else]]
+	return select[[.PluralUpper]](q).Order("[[.Order]]").Offset(offset).Limit(limit)
+[[- end]]
+}
+
 func apply[[.Upper]]Filter(q *gorm.DB, f [[.Lower]]Filter) *gorm.DB {
 [[- range .SearchFields]]
 	[[.FilterApply]]
@@ -283,7 +297,7 @@ func (m *Module) list[[.PluralUpper]](c *gin.Context) (any, error) {
 	}
 [[- end]]
 	var rows [][[.Lower]]Row
-	if err := select[[.PluralUpper]](q).Order("[[.Order]]").Offset(pq.Offset()).Limit([[if .CountCap]]limit[[else]]pq.PageSize[[end]]).Scan(&rows).Error; err != nil {
+	if err := select[[.PluralUpper]]Page(q, pq.Offset(), [[if .CountCap]]limit[[else]]pq.PageSize[[end]]).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	views := make([][[.Lower]]View, len(rows))
@@ -1054,7 +1068,7 @@ func (m *Module) export[[.PluralUpper]](c *gin.Context) {
 	}
 [[- end]]
 	var rows [][[.Lower]]Row
-	if err := select[[.PluralUpper]](q).Order("[[.Order]]").Limit(maxRows).Scan(&rows).Error; err != nil {
+	if err := select[[.PluralUpper]]Page(q, 0, maxRows).Scan(&rows).Error; err != nil {
 		httpx.Fail(c, err)
 		return
 	}

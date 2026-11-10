@@ -453,7 +453,7 @@ func (d *tmplData) derive() {
 	for _, f := range d.RelationFields {
 		f.RelLookup = true
 	}
-	d.NeedsDatabase = !d.ReadOnly || d.CountCap > 0 || strings.Contains(d.Columns, "database.")
+	d.NeedsDatabase = !d.ReadOnly || d.CountCap > 0 || d.HasJoins || strings.Contains(d.Columns, "database.")
 	d.CountCapRows = countCapRows(d.CountCap)
 	for _, f := range d.ExportFields {
 		if f.Dict == "" || f.Role == roleStatus || f.Relation != "" || (f.Role == roleDept && d.DeptJoin) {

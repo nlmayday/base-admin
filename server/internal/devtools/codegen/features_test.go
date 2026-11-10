@@ -64,7 +64,11 @@ func TestOrderByAndCountWithoutJoins(t *testing.T) {
 	res, err := Generate(ledgerTable(), ledgerSpec())
 	require.NoError(t, err)
 	src := files(t, res)["wallet_ledger.go"]
-	assert.Contains(t, src, `Order("t.created_at DESC, t.id DESC")`)
+	assert.Contains(t, src, `database.PageFirst(q, "t", "t.created_at DESC, t.id DESC", offset, limit)`,
+		"paged on the table, then joined")
+	page := src[strings.Index(src, "func (m *Module) listWalletLedgers"):]
+	page = page[:strings.Index(page, "\n}\n")]
+	assert.Contains(t, page, "selectWalletLedgersPage(q, pq.Offset(), limit)")
 	assert.Contains(t, src, "func selectWalletLedgers(q *gorm.DB) *gorm.DB {\n\tq = q.Joins(`LEFT JOIN lg_user r1 ON r1.id = t.user_id`)")
 	scoped := src[strings.Index(src, "func (m *Module) scopedWalletLedgers"):strings.Index(src, "func selectWalletLedgers")]
 	assert.NotContains(t, scoped, "Joins", "the count runs on the table alone")
@@ -412,7 +416,7 @@ func TestDisplayFormAndSearchOptions(t *testing.T) {
 	assert.Contains(t, index, `kinds: { title: "string", fillType: "string", handled: "boolean", userId: "string", i18nName: "string" },`)
 	assert.Contains(t, index, "useRouteFilter({")
 	// 8 order expression, 9 UTC days
-	assert.Contains(t, src, `Order("t.handled = FALSE DESC, t.id DESC")`)
+	assert.Contains(t, src, `"t.handled = FALSE DESC, t.id DESC"`)
 	assert.Contains(t, src, "time.ParseInLocation(time.DateOnly, f.StartAtStart, time.UTC)")
 	assert.Contains(t, index, `label="开始时间(UTC)"`)
 	// 10 default, min/max/step, placeholder; 11 showWhen
@@ -500,7 +504,7 @@ func TestCountCap(t *testing.T) {
 	assert.Contains(t, src, "total, err := database.CountAtMost(q, 10000+1)")
 	assert.Contains(t, src, "if pq.Offset() >= 10000 {\n\t\treturn nil, errWalletLedgerBeyondCap")
 	assert.Contains(t, src, "limit := min(pq.PageSize, 10000-pq.Offset())")
-	assert.Contains(t, src, ".Offset(pq.Offset()).Limit(limit).Scan(&rows)")
+	assert.Contains(t, src, "selectWalletLedgersPage(q, pq.Offset(), limit).Scan(&rows)")
 	assert.Contains(t, src, "TotalCapped: capped}")
 	assert.Contains(t, src, `httpx.BadRequest("只能查看前 1 万条，请加筛选条件")`)
 	assert.NotContains(t, src, ".Count(&total)")

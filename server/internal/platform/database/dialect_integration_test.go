@@ -304,3 +304,40 @@ func TestCountAtMost(t *testing.T) {
 	_, err = CountAtMost(q, 0)
 	assert.Error(t, err)
 }
+
+func TestPageFirst(t *testing.T) {
+	db := dialectDB(t)
+	parents := make([]int64, 3)
+	for i := range parents {
+		id, err := InsertID(db, `INSERT INTO t_parent (code, name, tags) VALUES (?, ?, ?)`,
+			fmt.Sprintf("p%d", i), fmt.Sprintf("name%d", i), TextArray{})
+		require.NoError(t, err)
+		parents[i] = id
+	}
+	children := make([]int64, 10)
+	for i := range children {
+		id, err := InsertID(db, `INSERT INTO t_child (parent_id) VALUES (?)`, parents[i%3])
+		require.NoError(t, err)
+		children[i] = id
+	}
+	type row struct {
+		ID   int64
+		Name string
+	}
+	// The list's query: conditions on the large table only, counted alone,
+	// then paged and joined.
+	q := db.Table("t_child AS c").Where("c.parent_id <> ?", parents[2]).Session(&gorm.Session{})
+	var rows []row
+	err := PageFirst(q, "c", "c.id DESC", 2, 3).
+		Joins("LEFT JOIN t_parent p ON p.id = c.parent_id").
+		Select("c.id, p.name").Scan(&rows).Error
+	require.NoError(t, err)
+	// Children not of parents[2], newest first: 9 7 6 4 3 1 0 (index); skip 2.
+	assert.Equal(t, []row{
+		{children[6], "name0"}, {children[4], "name1"}, {children[3], "name0"},
+	}, rows, "conditions, order, offset and limit apply before the join")
+
+	n, err := CountAtMost(q, 100)
+	require.NoError(t, err)
+	assert.EqualValues(t, 7, n, "the query is reusable after paging")
+}

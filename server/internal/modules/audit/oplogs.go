@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 
 	"base-admin/server/internal/core/export"
+	"base-admin/server/internal/platform/database"
 	"base-admin/server/internal/platform/httpx"
 	"base-admin/server/internal/platform/ids"
 )
@@ -85,9 +86,17 @@ type opFilter struct {
 	timeRange
 }
 
+const opLogOrder = "o.created_at DESC, o.id DESC"
+
+// baseOpQuery has no joins: the logs are counted and paged on their own
+// table (with its created_at index); withUser joins the user afterwards.
 func baseOpQuery(ctx context.Context, db *gorm.DB) *gorm.DB {
-	return db.WithContext(ctx).Table(tableOperationLogs + " AS o").
-		Joins("LEFT JOIN sys_users u ON u.id = o.user_id")
+	return db.WithContext(ctx).Table(tableOperationLogs + " AS o")
+}
+
+// withUser selects the log columns of q with the user's names.
+func withUser(q *gorm.DB) *gorm.DB {
+	return q.Joins("LEFT JOIN sys_users u ON u.id = o.user_id").Select(opLogColumns)
 }
 
 func (m *Module) opLogQuery(c *gin.Context) (*gorm.DB, error) {
@@ -101,7 +110,8 @@ func (m *Module) opLogQuery(c *gin.Context) (*gorm.DB, error) {
 func applyOpFilter(q *gorm.DB, f opFilter) (*gorm.DB, error) {
 	if v := strings.TrimSpace(f.User); v != "" {
 		like := "%" + escapeLike(v) + "%"
-		q = q.Where("(LOWER(u.username) LIKE LOWER(?) OR LOWER(u.nickname) LIKE LOWER(?))", like, like)
+		q = q.Where("o.user_id IN (SELECT id FROM sys_users WHERE LOWER(username) LIKE LOWER(?) OR LOWER(nickname) LIKE LOWER(?))",
+			like, like)
 	}
 	if v := strings.TrimSpace(f.Module); v != "" {
 		q = q.Where("o.module = ?", v)
@@ -135,20 +145,19 @@ func (m *Module) listOperationLogs(c *gin.Context) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	var total int64
-	if err := q.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+	pc, err := capCount(q, pq)
+	if err != nil {
 		return nil, err
 	}
 	var rows []opLogRow
-	if err := q.Select(opLogColumns).Order("o.created_at DESC, o.id DESC").
-		Offset(pq.Offset()).Limit(pq.PageSize).Scan(&rows).Error; err != nil {
+	if err := withUser(database.PageFirst(q, "o", opLogOrder, pq.Offset(), pc.limit)).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	list := make([]opLogView, len(rows))
 	for i, r := range rows {
 		list[i] = toOpLogView(r)
 	}
-	return httpx.Page[opLogView]{List: list, Total: total, Page: pq.Page, PageSize: pq.PageSize}, nil
+	return httpx.Page[opLogView]{List: list, Total: pc.total, TotalCapped: pc.capped, Page: pq.Page, PageSize: pq.PageSize}, nil
 }
 
 func (m *Module) getOperationLog(c *gin.Context) (any, error) {
@@ -157,7 +166,7 @@ func (m *Module) getOperationLog(c *gin.Context) (any, error) {
 		return nil, err
 	}
 	var rows []opLogRow
-	if err := baseOpQuery(c.Request.Context(), m.db).Select(opLogColumns+", o.request_body").
+	if err := withUser(baseOpQuery(c.Request.Context(), m.db)).Select(opLogColumns+", o.request_body").
 		Where("o.id = ?", id).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
@@ -188,8 +197,7 @@ func (m *Module) exportOperationLogs(c *gin.Context) {
 		return
 	}
 	var rows []opLogRow
-	if err := q.Select(opLogColumns).Order("o.created_at DESC, o.id DESC").
-		Limit(maxRows).Scan(&rows).Error; err != nil {
+	if err := withUser(database.PageFirst(q, "o", opLogOrder, 0, maxRows)).Scan(&rows).Error; err != nil {
 		httpx.Fail(c, err)
 		return
 	}

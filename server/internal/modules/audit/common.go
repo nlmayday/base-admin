@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"base-admin/server/internal/platform/database"
 	"base-admin/server/internal/platform/httpx"
 	"base-admin/server/internal/platform/ids"
 )
@@ -129,4 +130,35 @@ func writeCSV(c *gin.Context, prefix string, header []string, n int, rowFn func(
 		_ = w.Write(rowFn(i))
 	}
 	w.Flush()
+}
+
+// logCountCap is how far the log lists count: COUNT(*) over millions of
+// log rows takes seconds, and nobody pages past the first ten thousand.
+const logCountCap = 10000
+
+var errBeyondCountCap = httpx.BadRequest("只能查看前 1 万条，请加筛选条件")
+
+// pageCount is the counted total of a log list and the rows of its page.
+type pageCount struct {
+	total  int64
+	capped bool
+	limit  int
+}
+
+// capCount counts q up to logCountCap; pages past the cap are refused and
+// the last page stops at it.
+func capCount(q *gorm.DB, pq httpx.PageQuery) (pageCount, error) {
+	total, err := database.CountAtMost(q, logCountCap+1)
+	if err != nil {
+		return pageCount{}, err
+	}
+	pc := pageCount{total: total, limit: pq.PageSize}
+	if total > logCountCap {
+		pc.total, pc.capped = logCountCap, true
+	}
+	if pq.Offset() >= logCountCap {
+		return pageCount{}, errBeyondCountCap
+	}
+	pc.limit = min(pq.PageSize, logCountCap-pq.Offset())
+	return pc, nil
 }

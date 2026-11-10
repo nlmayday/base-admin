@@ -4,6 +4,7 @@ package audit
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -261,4 +262,58 @@ func TestOperationLogTarget(t *testing.T) {
 	assert.Contains(t, export.Body, "操作对象")
 	assert.Contains(t, export.Body, "player:1234")
 	assert.NotContains(t, export.Body, "player:123,")
+}
+
+// insertMany adds n rows to table in a few statements; values is one row's
+// VALUES tuple without parameters.
+func (h *harness) insertMany(table, columns, values string, n int) {
+	h.t.Helper()
+	for n > 0 {
+		k := min(n, 1000)
+		tuples := strings.TrimSuffix(strings.Repeat(values+",", k), ",")
+		require.NoError(h.t, h.db.Exec("INSERT INTO "+table+" ("+columns+") VALUES "+tuples).Error)
+		n -= k
+	}
+}
+
+// Large log tables are counted only up to the cap, and pages past it are
+// refused, so the list never runs COUNT(*) over millions of rows.
+func TestLogListsCountCap(t *testing.T) {
+	h := newHarness(t)
+	bob := h.createUser("bob", "鲍勃")
+	h.insertMany(tableOperationLogs,
+		"user_id, module, method, route, path, summary, status, code, success, duration_ms, created_at",
+		fmt.Sprintf("(%d, 'iam', 'GET', '/x', '/x', '查看', 200, 0, TRUE, 5, CURRENT_TIMESTAMP(6))", bob), logCountCap+5)
+	h.insertMany(tableLoginLogs, "kind, username, success, reason, ip, created_at",
+		"('login', 'bob', TRUE, '', '10.0.0.1', CURRENT_TIMESTAMP(6))", logCountCap+5)
+
+	for _, tc := range []struct{ path, perm string }{
+		{"/api/v1/audit/operation-logs", PermOperationLogView},
+		{"/api/v1/audit/login-logs", PermLoginLogView},
+	} {
+		var page httpx.Page[json.RawMessage]
+		h.decode(h.call(http.MethodGet, tc.path+"?pageSize=20", "", bob, tc.perm), &page)
+		assert.EqualValues(t, logCountCap, page.Total, tc.path)
+		assert.True(t, page.TotalCapped, tc.path)
+		assert.Len(t, page.List, 20, tc.path)
+
+		last := fmt.Sprintf("%s?page=%d&pageSize=30", tc.path, logCountCap/30+1)
+		h.decode(h.call(http.MethodGet, last, "", bob, tc.perm), &page)
+		assert.Len(t, page.List, logCountCap%30, "the last page stops at the cap: %s", tc.path)
+
+		beyond := h.call(http.MethodGet, fmt.Sprintf("%s?page=%d&pageSize=20", tc.path, logCountCap/20+1), "", bob, tc.perm)
+		assert.Equal(t, http.StatusBadRequest, beyond.Status, tc.path)
+		assert.Contains(t, beyond.Body, "只能查看前 1 万条", tc.path)
+
+		var narrow httpx.Page[json.RawMessage]
+		h.decode(h.call(http.MethodGet, tc.path+"?pageSize=20&success=false", "", bob, tc.perm), &narrow)
+		assert.EqualValues(t, 0, narrow.Total, tc.path)
+		assert.False(t, narrow.TotalCapped, "a narrow filter is counted exactly: %s", tc.path)
+	}
+
+	var page httpx.Page[opLogView]
+	h.decode(h.call(http.MethodGet, "/api/v1/audit/operation-logs?pageSize=5&user=bo", "", bob, PermOperationLogView), &page)
+	require.Len(t, page.List, 5)
+	assert.Equal(t, "bob", page.List[0].Username, "the user is joined onto the page")
+	assert.Equal(t, "鲍勃", page.List[0].Nickname)
 }

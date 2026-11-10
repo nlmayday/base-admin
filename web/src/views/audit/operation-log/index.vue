@@ -337,17 +337,21 @@ onMounted(() => {
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination
-        class="mt-3 justify-end"
-        :current-page="pagination.currentPage"
-        :page-size="pagination.pageSize"
-        :page-sizes="[10, 20, 50, 100]"
-        :total="pagination.total"
-        layout="total, sizes, prev, pager, next, jumper"
-        background
-        @size-change="onSizeChange"
-        @current-change="onCurrentChange"
-      />
+      <div class="mt-3 flex flex-wrap items-center justify-end gap-3">
+        <el-text v-if="pagination.totalCapped" type="warning" size="small">
+          超过 1 万条，只显示前 1 万条，请加筛选条件
+        </el-text>
+        <el-pagination
+          :current-page="pagination.currentPage"
+          :page-size="pagination.pageSize"
+          :page-sizes="[10, 20, 50, 100]"
+          :total="pagination.total"
+          layout="total, sizes, prev, pager, next, jumper"
+          background
+          @size-change="onSizeChange"
+          @current-change="onCurrentChange"
+        />
+      </div>
     </el-card>
 
     <OperationLogDrawer v-model="drawerVisible" :log-id="selectedId" />

@@ -35,6 +35,20 @@ func CountAtMost(q *gorm.DB, limit int) (int64, error) {
 	return n, err
 }
 
+// PageFirst pages q before anything is joined to it: SELECT alias.* FROM
+// (q ORDER BY order LIMIT limit OFFSET offset) AS alias, ordered again by
+// order. Join the tables names are shown from onto the result.
+//
+// Joined in the same query as the ORDER BY … LIMIT, small lookup tables
+// (players, games) lead MySQL to a hash join that reads and sorts the
+// whole large table instead of walking its time index: seconds on a table
+// of ten million rows. Paged first, the index is walked for one page and
+// only that page is joined. order names columns of alias only.
+func PageFirst(q *gorm.DB, alias, order string, offset, limit int) *gorm.DB {
+	page := q.Session(&gorm.Session{}).Select(alias + ".*").Order(order).Offset(offset).Limit(limit)
+	return q.Session(&gorm.Session{NewDB: true}).Table("(?) AS "+alias, page).Order(order)
+}
+
 // InsertID runs an INSERT and returns the id the database generated for
 // the new row: RETURNING id on PostgreSQL, the insert id of the statement
 // on MySQL. query is a plain INSERT without a RETURNING clause.
