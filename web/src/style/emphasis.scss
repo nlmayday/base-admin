@@ -80,6 +80,25 @@ body[layout] .sidebar-container {
   thead th.el-table__cell {
     font-weight: 600;
   }
+
+  /*
+   * 操作列里的「更多」下拉：Element 的 el-dropdown 是 vertical-align: top，
+   * 和 el-button 的 middle 不齐；间距也只给了 el-button + el-button
+   */
+  .cell .el-dropdown {
+    vertical-align: middle;
+  }
+
+  /* 用 span 做触发器时字重和旁边的链接按钮一致 */
+  .cell .el-dropdown-link {
+    font-weight: var(--el-font-weight-primary);
+  }
+
+  .cell .el-button + .el-dropdown,
+  .cell .el-dropdown + .el-button,
+  .cell .el-dropdown + .el-dropdown {
+    margin-left: 12px;
+  }
 }
 
 /* 弹窗、抽屉、确认框标题 */
